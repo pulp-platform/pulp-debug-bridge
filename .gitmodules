@@ -1,0 +1,6 @@
+[submodule "json-tools"]
+	path = json-tools
+	url = https://github.com/pulp-platform/json-tools.git
+[submodule "hal"]
+	path = hal
+	url = https://github.com/pulp-platform/hal.git
