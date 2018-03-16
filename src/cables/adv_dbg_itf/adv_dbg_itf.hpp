@@ -40,6 +40,9 @@ class Adv_dbg_itf : public Cable  {
     virtual ~Adv_dbg_itf();
 
     bool connect(js::config *config);
+    void lock();
+    void unlock();
+
 
     bool access(bool write, unsigned int addr, int size, char* buffer);
 

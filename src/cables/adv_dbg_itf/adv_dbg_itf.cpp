@@ -982,3 +982,13 @@ int Adv_dbg_itf::flush()
 
   return result;
 }
+
+void Adv_dbg_itf::lock()
+{
+  pthread_mutex_lock(&mutex);
+}
+
+void Adv_dbg_itf::unlock()
+{
+  pthread_mutex_unlock(&mutex);
+}

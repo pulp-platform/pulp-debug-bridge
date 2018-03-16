@@ -83,6 +83,12 @@ class Ctype_cable(object):
         self.module.cable_jtag_get_reg(self.instance, reg, width, ctypes.byref(out_value), value)
         return out_value.value
 
+    def lock(self):
+        self.module.cable_lock(self.instance)
+
+    def unlock(self):
+        self.module.cable_unlock(self.instance)
+
 
 
 
@@ -189,8 +195,35 @@ class debug_bridge(object):
     def write(self, addr, size, buffer):
         return self.get_cable().write(addr, size, buffer)
 
+    def write_int(self, addr, value, size):
+        return self.write(addr, size, value.to_bytes(size, byteorder='little'))
+
     def write_32(self, addr, value):
-        return self.write(addr, 4, value.to_bytes(4, byteorder='little'))
+        return self.write_int(addr, value, 4)
+
+    def write_16(self, addr, value):
+        return self.write_int(addr, value, 2)
+
+    def write_8(self, addr, value):
+        return self.write_int(addr, value, 1)
+
+    def read_int(self, addr, size):
+        byte_array = None
+        for byte in self.read(addr, size):
+            if byte_array == None:
+                byte_array = byte
+            else:
+                byte_array += byte
+        return int.from_bytes(byte_array, byteorder='little')
+
+    def read_32(self, addr):
+        return self.read_int(addr, 4)
+
+    def read_16(self, addr):
+        return self.read_int(addr, 2)
+
+    def read_8(self, addr):
+        return self.read_int(addr, 1)
 
     def __get_binary_symbol_addr(self, name):
         for binary in self.binaries:
@@ -230,3 +263,9 @@ class debug_bridge(object):
         if self.ioloop_handle is not None:
             return self.module.bridge_ioloop_close(self.ioloop_handle, 0)
         return 0
+
+    def lock(self):
+        self.get_cable().lock()
+
+    def unlock(self):
+        self.get_cable().unlock()

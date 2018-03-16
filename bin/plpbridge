@@ -22,6 +22,8 @@
 import bridge.debug_bridge as db
 import argparse
 import code
+import imp
+import os.path
 
 try:
   import plptree
@@ -132,6 +134,26 @@ def reset(bridge):
     return bridge.reset()
 
 
+def script(bridge):
+
+    for script in args.scripts:
+        if args.verbose:
+            print ('Executing script: ' + script)
+
+        if script.find('@') == -1:
+            script_name = script
+            script_entry = "debug_bridge_entry"
+        else:
+            script_entry, script_name = script.split('@')
+
+        module = imp.load_source("user_script", script_name)
+
+        entry = getattr(module, script_entry)
+        entry(bridge)
+
+    return 0
+
+
 
 commands = {
   'read'    : ['Read data from the target',     read],
@@ -141,6 +163,7 @@ commands = {
   'start'   : ['Start execution',               start],
   'wait'    : ['Wait termination',              wait],
   'reset'   : ['Chip reset',                    reset],
+  'script'  : ['Execute user scripts',          script],
 }
 
 
@@ -157,6 +180,7 @@ parser = argparse.ArgumentParser(description='Control a pulp target',
 parser.add_argument('command', metavar='CMD', type=str, nargs='*',
                    help='a command to be executed (see the command help afterwards)')
 
+parser.add_argument("--script", dest="scripts", default=[], action="append", help="Specify a script to be executed with the script command")
 parser.add_argument("--config", dest="config", default=None, help="Specify the system configuration")
 parser.add_argument("--ipython", dest="ipython", action="store_true", help="Enter ipython shell")
 parser.add_argument("--shell", dest="shell", action="store_true", help="Enter python shell")

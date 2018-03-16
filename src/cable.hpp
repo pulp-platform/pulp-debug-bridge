@@ -38,7 +38,6 @@ public:
 
     virtual void device_select(unsigned int i) {}
 
-
     bool jtag_soft_reset();
     bool jtag_write_tms(int val);
     bool jtag_shift_ir();
@@ -72,6 +71,10 @@ class Cable : public Cable_io_itf, public Cable_jtag_itf, public Cable_ctrl_itf
 {
 public:
   virtual bool connect(js::config *config) { return true; }
+
+  virtual void lock() { }
+
+  virtual void unlock() { }
 
 };
 

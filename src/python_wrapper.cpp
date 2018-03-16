@@ -186,6 +186,18 @@ extern "C" bool cable_jtag_get_reg(void *handler, unsigned int reg, int width, u
   return cable->jtag_get_reg(reg, width, out_value, value);
 }
 
+extern "C" void cable_lock(void *handler)
+{
+  Cable *cable = (Cable *)handler;
+  cable->lock();
+}
+
+extern "C" void cable_unlock(void *handler)
+{
+  Cable *cable = (Cable *)handler;
+  cable->unlock();
+}
+
 
 
 
