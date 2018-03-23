@@ -272,7 +272,7 @@ bool Adv_dbg_itf::read(unsigned int addr, int size, char* buffer)
       int iter_size = local_size;
       if (iter_size > 1024) iter_size = 1024;
 
-      retval = retval && read_internal(AXI_READ32, addr, local_size, buffer);
+      retval = retval && read_internal(AXI_READ32, addr, iter_size, buffer);
       local_size   -= iter_size;
       size   -= iter_size;
       buffer += iter_size;
