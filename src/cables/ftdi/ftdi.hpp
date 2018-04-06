@@ -45,7 +45,7 @@ struct ftdi_param {
   char  *recv_buf;
 };
 
-class LogIF;
+class Log;
 
 class Ftdi : public Cable {
   public:
@@ -55,7 +55,7 @@ class Ftdi : public Cable {
       Digilent,
     };
 
-    Ftdi(LogIF* log, FTDIDeviceID id);
+    Ftdi(Log* log, FTDIDeviceID id);
     ~Ftdi();
 
     bool connect(js::config *config);
@@ -105,7 +105,7 @@ class Ftdi : public Cable {
 
     std::map<FTDIDeviceID, std::list<struct device_desc>> m_descriptors;
 
-    LogIF* log;
+    Log* log;
     FTDIDeviceID m_id;
     struct ftdi_param m_params;
     struct ftdi_context m_ftdic;

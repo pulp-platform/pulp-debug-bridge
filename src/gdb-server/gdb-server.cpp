@@ -15,27 +15,37 @@
  */
 
 /* 
- * Authors: Germain Haugou, ETH (germain.haugou@iis.ee.ethz.ch)
+ * Authors: Andreas Traber
  */
 
-#ifndef LOG_H
-#define LOG_H
+#include "cable.hpp"
+#include "gdb-server/gdb-server.hpp"
+#include <stdarg.h>
 
-typedef enum
+
+Gdb_server::Gdb_server(Log *log, Cable *cable, js::config *config, int socket_port)
+: log(log), cable(cable), config(config)
 {
-  LOG_ERROR,
-  LOG_WARNING,
-  LOG_INFO,
-  LOG_DEBUG
-} log_level_e;
+  rsp = new Rsp(this, socket_port);
 
-class Log {
-  public:
-    void print(log_level_e, const char *str, ...);
-    void error(const char *str, ...) ;
-    void warning(const char *str, ...) ;
-    void user(const char *str, ...) ;
-    void debug(const char *str, ...) ;
-};
+  target = new Target(this);
 
-#endif
+  if (!rsp->open()) throw std::logic_error("Unable to open RSP server");
+}
+
+int Gdb_server::stop(bool kill)
+{
+  if (rsp != NULL)
+  {
+    rsp->close(kill);
+    rsp = NULL;
+  }
+}
+
+void Gdb_server::print(const char *format, ...)
+{
+  va_list ap;
+  va_start(ap, format);
+  vprintf(format, ap);
+  va_end(ap);
+}

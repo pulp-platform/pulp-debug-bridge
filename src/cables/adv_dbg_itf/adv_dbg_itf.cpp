@@ -31,7 +31,7 @@
 #define JTAG_SOC_AXIREG  4
 
 
-Adv_dbg_itf::Adv_dbg_itf(LogIF* log, Cable *m_dev) : log(log), m_dev(m_dev)
+Adv_dbg_itf::Adv_dbg_itf(Log* log, Cable *m_dev) : log(log), m_dev(m_dev)
 {
   pthread_mutexattr_t attr;
   pthread_mutexattr_init(&attr);

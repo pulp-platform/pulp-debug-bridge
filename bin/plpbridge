@@ -113,6 +113,13 @@ def ioloop(bridge):
     return bridge.ioloop()
 
 
+def gdb(bridge):
+    if args.verbose:
+        print ('Lauching GDB server')
+
+    return bridge.gdb(int(args.rsp_port))
+
+
 def start(bridge):
     if args.verbose:
         print ('Starting execution')
@@ -156,14 +163,15 @@ def script(bridge):
 
 
 commands = {
-  'read'    : ['Read data from the target',     read],
-  'write'   : ['Write data to the target',      write],
-  'load'    : ['Load a binary into the target', load],
-  'ioloop'  : ['Activate IO loop',              ioloop],
-  'start'   : ['Start execution',               start],
-  'wait'    : ['Wait termination',              wait],
-  'reset'   : ['Chip reset',                    reset],
-  'script'  : ['Execute user scripts',          script],
+  'read'    : ['Read data from the target',         read],
+  'write'   : ['Write data to the target',          write],
+  'load'    : ['Load a binary into the target',     load],
+  'ioloop'  : ['Activate IO loop',                  ioloop],
+  'gdb'     : ['Open RSP server for GDB connection',gdb],
+  'start'   : ['Start execution',                   start],
+  'wait'    : ['Wait termination',                  wait],
+  'reset'   : ['Chip reset',                        reset],
+  'script'  : ['Execute user scripts',              script],
 }
 
 
@@ -200,6 +208,9 @@ if 'read' in args.command or 'write' in args.command:
 
 if 'write' in args.command:
   parser.add_argument("--value", dest="value", default=None, help="Specify the value to be written for write command")
+
+if 'gdb' in args.command:
+  parser.add_argument("--rsp-port", dest="rsp_port", default=1234, help="Specify the port number that the RSP will use to open a socket for GDB connection")
 
 parser.add_argument("--boot-mode", dest="boot_mode", default=None, help="Specify the boot mode")
 

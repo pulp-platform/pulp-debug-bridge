@@ -36,7 +36,7 @@ struct jtag_device {
 
 class Adv_dbg_itf : public Cable  {
   public:
-    Adv_dbg_itf(LogIF* log, Cable *itf);
+    Adv_dbg_itf(Log* log, Cable *itf);
     virtual ~Adv_dbg_itf();
 
     bool connect(js::config *config);
@@ -74,7 +74,7 @@ class Adv_dbg_itf : public Cable  {
     };
 
     Cable* m_dev;
-    LogIF* log;
+    Log* log;
 
     pthread_mutex_t mutex;
 

@@ -29,6 +29,7 @@ class Ctype_cable(object):
     def __init__(self, module, config):
 
         self.module = module
+        self.gdb_handle = None
 
         # Register entry points with appropriate arguments
         self.module.cable_new.argtypes = [ctypes.c_char_p]
@@ -112,7 +113,7 @@ class debug_bridge(object):
         self.module.bridge_ioloop_close.argtypes = [ctypes.c_void_p, ctypes.c_int]
         self.module.bridge_get_error.restype = ctypes.c_char_p
 
-        self.module.bridge_init(verbose)
+        self.module.bridge_init(config.dump_to_string().encode('utf-8'), verbose)
 
         #self.module.jtag_shift.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.POINTER(ctypes.c_char_p), ctypes.POINTER(ctypes.c_char_p)]
 
@@ -259,7 +260,14 @@ class debug_bridge(object):
         self.ioloop_handle = self.module.bridge_ioloop_open(self.get_cable().get_instance(), addr)
         return 0
 
+    def gdb(self, port):
+        self.gdb_handle = self.module.gdb_server_open(self.get_cable().get_instance(), port)
+        return 0
+
     def wait(self):
+        if self.gdb_handle is not None:
+            self.module.gdb_server_close(self.gdb_handle, 0)
+
         if self.ioloop_handle is not None:
             return self.module.bridge_ioloop_close(self.ioloop_handle, 0)
         return 0

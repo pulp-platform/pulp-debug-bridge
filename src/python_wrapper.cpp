@@ -30,22 +30,26 @@
 #ifdef __USE_FTDI__
 #include "cables/ftdi/ftdi.hpp"
 #endif
+#include "gdb-server/gdb-server.hpp"
 
 using namespace std;
 
 
 static int bridge_verbose = 0;
 static const char *bridge_error = NULL;
+static js::config *system_config = NULL;
 
-class MyLogIF : public LogIF {
-  public:
-    void error(const char *str, ...) ;
-    void warning(const char *str, ...) ;
-    void user(const char *str, ...) ;
-    void debug(const char *str, ...) ;
-};
+void Log::print(log_level_e level, const char *str, ...)
+{
+  if (!bridge_verbose && level > LOG_INFO) return;
+  va_list va;
+  va_start(va, str);
+  vprintf(str, va);
+  va_end(va);
+}
 
-void MyLogIF::user(const char *str, ...)
+
+void Log::user(const char *str, ...)
 {
   if (!bridge_verbose) return;
   va_list va;
@@ -54,7 +58,7 @@ void MyLogIF::user(const char *str, ...)
   va_end(va);
 }
 
-void MyLogIF::debug(const char *str, ...)
+void Log::debug(const char *str, ...)
 {
   if (!bridge_verbose) return;
   va_list va;
@@ -63,7 +67,7 @@ void MyLogIF::debug(const char *str, ...)
   va_end(va);
 }
 
-void MyLogIF::warning(const char *str, ...)
+void Log::warning(const char *str, ...)
 {
   if (!bridge_verbose) return;
   va_list va;
@@ -72,7 +76,7 @@ void MyLogIF::warning(const char *str, ...)
   va_end(va);
 }
 
-void MyLogIF::error(const char *str, ...)
+void Log::error(const char *str, ...)
 {
   char buff[1024];
   va_list va;
@@ -110,7 +114,7 @@ extern "C" void *cable_new(const char *config_string)
   if (strncmp(cable_name, "ftdi", 4) == 0)
   {
 #ifdef __USE_FTDI__
-    MyLogIF *log = new MyLogIF();
+    Log *log = new Log();
     Ftdi::FTDIDeviceID id = Ftdi::Olimex;
     if (strcmp(cable_name, "ftdi@digilent") == 0) id = Ftdi::Digilent;
     Adv_dbg_itf *adu = new Adv_dbg_itf(log, new Ftdi(log, id));
@@ -126,7 +130,7 @@ extern "C" void *cable_new(const char *config_string)
   }
   else if (strcmp(cable_name, "jtag-proxy") == 0)
   {
-    MyLogIF *log = new MyLogIF();
+    Log *log = new Log();
     Adv_dbg_itf *adu = new Adv_dbg_itf(log, new Jtag_proxy(log));
     if (!adu->connect(config)) return NULL;
     int tap = 0;
@@ -211,8 +215,9 @@ extern "C" char * bridge_get_error()
   return strdup(bridge_error);
 }
 
-extern "C" void bridge_init(int verbose)
+extern "C" void bridge_init(const char *config_string, int verbose)
 {
+  system_config = js::import_config_from_string(std::string(config_string));
   bridge_verbose = verbose;
 
   // This should be the first C method called by python.
@@ -221,6 +226,21 @@ extern "C" void bridge_init(int verbose)
   signal (SIGINT, init_sigint_handler);
 
 }
+
+
+extern "C" void *gdb_server_open(void *cable, int socket_port)
+{
+  return (void *)new Gdb_server(new Log(), (Cable *)cable, system_config, socket_port);
+}
+
+extern "C" void gdb_server_close(void *arg, int kill)
+{
+  Gdb_server *server = (Gdb_server *)arg;
+  server->stop(kill);
+}
+
+
+
 
 #if 0
 

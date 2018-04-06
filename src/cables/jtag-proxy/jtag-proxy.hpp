@@ -27,7 +27,7 @@
 class Jtag_proxy : public Cable {
   public:
 
-    Jtag_proxy(LogIF* log);
+    Jtag_proxy(Log* log);
 
     bool connect(js::config *config);
 
