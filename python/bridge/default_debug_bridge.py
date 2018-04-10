@@ -102,6 +102,7 @@ class debug_bridge(object):
         self.binaries = binaries
         self.ioloop_handle = None
         self.verbose = verbose
+        self.gdb_handle = None
         self.cable_config = config.get('**/debug-bridge/cable')
 
 
