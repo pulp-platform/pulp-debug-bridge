@@ -60,7 +60,10 @@ enum target_signal {
 
 Rsp::Rsp(Gdb_server *top, int socket_port) : top(top), socket_port(socket_port)
 {
+  main_core = top->target->get_threads().front();
 
+  m_thread_init = main_core->get_thread_id();
+  thread_sel = m_thread_init;
 }
 
 bool Rsp::v_packet(int socket_client, char* data, size_t len)
@@ -72,19 +75,15 @@ bool Rsp::v_packet(int socket_client, char* data, size_t len)
   }
   else if (strncmp ("vCont?", data, strlen ("vCont?")) == 0)
   {
-    return this->send_str(socket_client,  "");
+    return this->send_str(socket_client,  "vCont;c;s;C;S");
   }
   else if (strncmp ("vCont", data, strlen ("vCont")) == 0)
   {
     int nb_threads = top->target->get_nb_threads();
-    bool threads_step[nb_threads];
-    bool threads_cont[nb_threads];
-    bool global_cont = false;
-    bool global_step = false;
+    bool thread_done[nb_threads];
     for (int i=0; i<nb_threads; i++)
     {
-      threads_step[i] = false;
-      threads_cont[i] = false;
+      thread_done[i] = false;
     }
     // vCont can contains several commands, handle them in sequence
       char *str = strtok(&data[6], ";");
@@ -113,20 +112,29 @@ bool Rsp::v_packet(int socket_client, char* data, size_t len)
 
       if (cont) {
         if (tid == -1) {
-          global_cont = true;
-          global_step = step;
+          for (int i=0; i<nb_threads; i++)
+          {
+            if (!thread_done[i])
+            {
+              thread_done[i] = true;
+              this->top->target->get_thread(i)->prepare_resume(step);
+            }
+          }
         } else {
-          threads_cont[tid] = true;
-          threads_step[tid] = false;
+          if (!thread_done[tid])
+          {
+            thread_done[tid] = true;
+            this->top->target->get_thread(tid)->prepare_resume(step);
+          }
         }
       }
 
       str = strtok(NULL, ";");
     }
 
-    //top->target->resume();
+    this->top->target->resume_all();
 
-    return top->target->wait(socket_client);
+    return this->wait(socket_client);
   }
 
   return this->send_str(socket_client,  "");
@@ -235,11 +243,11 @@ bool Rsp::pc_read(int socket_client, unsigned int* pc)
     *pc = npc;
   else if(cause & (1 << 31)) // interrupt
     *pc = npc;
-  else if(cause == 3)  // breakpoint
+  else if ((cause & 0x1f) == 3)  // breakpoint
     *pc = ppc;
-  else if(cause == 2)
+  else if ((cause & 0x1f) == 2)
     *pc = ppc;
-  else if(cause == 5)
+  else if ((cause & 0x1f) == 5)
     *pc = ppc;
   else
     *pc = npc;
@@ -471,11 +479,11 @@ bool Rsp::signal(int socket_client)
       signal = TARGET_SIGNAL_TRAP;
     else if(cause & (1 << 31))
       signal = TARGET_SIGNAL_INT;
-    else if(cause & (1 << 3))
+    else if ((cause & 0x1f) == 3)
       signal = TARGET_SIGNAL_TRAP;
-    else if(cause & (1 << 2))
+    else if ((cause & 0x1f) == 2)
       signal = TARGET_SIGNAL_ILL;
-    else if(cause & (1 << 5))
+    else if ((cause & 0x1f) == 5)
       signal = TARGET_SIGNAL_BUS;
     else
       signal = TARGET_SIGNAL_STOP;
@@ -533,16 +541,41 @@ bool Rsp::resume(int socket_client, bool step)
 
 bool Rsp::resume(int socket_client, int tid, bool step)
 {
-#if 0
-  int ret;
-  char pkt;
-  DbgIF *dbgif = this->get_dbgif(tid);
-  resumeCoresPrepare(dbgif, step);
-  dbgif->resume();
+  this->top->target->resume(step, tid);
+  return this->wait(socket_client);
+}
 
-  return waitStop(dbgif);
-#endif
-  return true;
+
+
+bool Rsp::step(int socket_client, char* data, size_t len)
+{
+  uint32_t addr;
+  uint32_t npc;
+  int i;
+  Target_core *core;
+
+  // strip signal first
+  if (data[0] == 'S') {
+    for (i = 0; i < len; i++) {
+      if (data[i] == ';') {
+        data = &data[i+1];
+        break;
+      }
+    }
+  }
+
+  if (sscanf(data, "%x", &addr) == 1) {
+    core = this->top->target->get_thread(thread_sel);
+    // only when we have received an address
+    core->read(DBG_NPC_REG, &npc);
+
+    if (npc != addr)
+      core->write(DBG_NPC_REG, addr);
+  }
+
+  thread_sel = m_thread_init;
+
+  return this->resume(socket_client, true);
 }
 
 
@@ -587,10 +620,8 @@ bool Rsp::wait(int socket_client, Target_core *core)
         if (core) {
           core->halt();
           return this->signal(socket_client);
-        } else {    
-          for (auto &core: this->top->target->get_threads()) {    
-            core->halt();
-          }
+        } else {
+          top->target->halt();
         }
       }
     }
@@ -654,7 +685,7 @@ bool Rsp::decode(int socket_client, char* data, size_t len)
 
   case 's':
   case 'S':
-    //return this->step(&data[0], len);
+    return this->step(socket_client, &data[0], len);
 
   case 'H':
     return this->multithread(socket_client, &data[1], len-1);
@@ -675,10 +706,10 @@ bool Rsp::decode(int socket_client, char* data, size_t len)
     return this->mem_write(socket_client, &data[1], len-1);
 
   case 'z':
-    //return this->bp_remove(&data[0], len);
+    return this->bp_remove(socket_client, &data[0], len);
 
   case 'Z':
-    //return this->bp_insert(&data[0], len);
+    return this->bp_insert(socket_client, &data[0], len);
 
   case 'T':
     return this->send_str(socket_client,  "OK"); // threads are always alive
@@ -971,6 +1002,67 @@ Rsp::open() {
   return true;
 }
 
+
+
+bool Rsp::bp_insert(int socket_client, char* data, size_t len)
+{
+  enum mp_type type;
+  uint32_t addr;
+  uint32_t data_bp;
+  int bp_len;
+
+  if (3 != sscanf(data, "Z%1d,%x,%1d", (int *)&type, &addr, &bp_len)) {
+    top->log->print(LOG_ERROR, "Could not get three arguments\n");
+    return false;
+  }
+
+  if (type != BP_MEMORY) {
+    top->log->print(LOG_ERROR, "ERROR: Not a memory bp\n");
+    this->send_str(socket_client,  "");
+    return false;
+  }
+
+  top->bkp->insert(addr);
+
+  return this->send_str(socket_client,  "OK");
+}
+
+
+
+bool Rsp::bp_remove(int socket_client, char* data, size_t len)
+{
+  enum mp_type type;
+  uint32_t addr;
+  uint32_t ppc;
+  int bp_len;
+  Target_core *core;
+
+  core = this->top->target->get_thread(thread_sel);
+
+  if (3 != sscanf(data, "z%1d,%x,%1d", (int *)&type, &addr, &bp_len)) {
+    top->log->print(LOG_ERROR, "Could not get three arguments\n");
+    return false;
+  }
+
+  if (type != BP_MEMORY) {
+    top->log->print(LOG_ERROR, "Not a memory bp\n");
+    return false;
+  }
+
+  top->bkp->remove(addr);
+
+  // check if we are currently on this bp that is removed
+  core->read_ppc(&ppc);
+
+  if (addr == ppc) {
+    core->write(DBG_NPC_REG, ppc); // re-execute this instruction
+  }
+
+  return this->send_str(socket_client,  "OK");
+}
+
+
+
 #if 0
 
 Rsp::Rsp(int socket_port, MemIF* mem, LogIF *log, std::list<DbgIF*> list_dbgif, std::list<DbgIF*> list_dbg_cluster_ifs, BreakPoints* bp, DbgIF *main_if) {
@@ -997,99 +1089,6 @@ void
 Rsp::close() {
   m_bp->clear();
   ::close(socket_in);
-}
-
-bool
-Rsp::step(char* data, size_t len) {
-  uint32_t addr;
-  uint32_t npc;
-  int i;
-  DbgIF* dbgif;
-
-  // strip signal first
-  if (data[0] == 'S') {
-    for (i = 0; i < len; i++) {
-      if (data[i] == ';') {
-        data = &data[i+1];
-        break;
-      }
-    }
-  }
-
-  if (sscanf(data, "%x", &addr) == 1) {
-    dbgif = this->get_dbgif(thread_sel);
-    // only when we have received an address
-    dbgif->read(DBG_NPC_REG, &npc);
-
-    if (npc != addr)
-      dbgif->write(DBG_NPC_REG, addr);
-  }
-
-  thread_sel = m_thread_init;
-
-  return this->resume(true);
-}
-
-bool 
-Rsp::v_packet(char* data, size_t len) {
-  if (strncmp ("vKill", data, strlen ("vKill")) == 0)
-  {
-    this->send_str(socket_client,  "OK");
-    return false;
-  }
-  else if (strncmp ("vCont?", data, strlen ("vCont?")) == 0)
-  {
-    return this->send_str(socket_client,  "");
-  }
-  else if (strncmp ("vCont", data, strlen ("vCont")) == 0)
-  {
-    bool threadsCmd[m_dbgifs.size()];
-    for (int i=0; i<m_dbgifs.size(); i++) threadsCmd[i] = false;
-    // vCont can contains several commands, handle them in sequence
-      char *str = strtok(&data[6], ";");
-    while(str != NULL) {
-      // Extract command and thread ID
-      char *delim = index(str, ':');
-      int tid = -1;
-      if (delim != NULL) {
-        tid = atoi(delim+1);
-        *delim = 0;
-      }
-
-      bool cont = false;
-      bool step = false;
-
-      if (str[0] == 'C' || str[0] == 'c') {
-        cont = true;
-        step = false;
-      } else if (str[0] == 'S' || str[0] == 's') {
-        cont = true;
-        step = true;
-      } else {
-        top->log->print(LOG_ERROR, "Unsupported command in vCont packet: %s\n", str);
-        exit(-1);
-      }
-
-      if (cont) {
-        if (tid == -1) {
-          for (int i=0; i<m_dbgifs.size(); i++) {
-            if (!threadsCmd[i]) resumeCoresPrepare(this->get_dbgif(i), step);
-          }
-        } else {
-          if (!threadsCmd[tid]) this->resumeCoresPrepare(this->get_dbgif(tid), step);
-          threadsCmd[tid] = true;
-        }
-      }
-
-      str = strtok(NULL, ";");
-    }
-
-    this->resumeCores();
-
-    return this->waitStop(NULL);
-  }
-
-  return this->send_str(socket_client,  "");
 }
 
 void
@@ -1129,61 +1128,6 @@ Rsp::resumeCores() {
     DbgIF_cluster *cluster = (DbgIF_cluster *)*it;
     cluster->resume();
   }
-}
-
-bool
-Rsp::bp_insert(char* data, size_t len) {
-  enum mp_type type;
-  uint32_t addr;
-  uint32_t data_bp;
-  int bp_len;
-
-  if (3 != sscanf(data, "Z%1d,%x,%1d", (int *)&type, &addr, &bp_len)) {
-    top->log->print(LOG_ERROR, "Could not get three arguments\n");
-    return false;
-  }
-
-  if (type != BP_MEMORY) {
-    top->log->print(LOG_ERROR, "ERROR: Not a memory bp\n");
-    this->send_str(socket_client,  "");
-    return false;
-  }
-
-  m_bp->insert(addr);
-
-  return this->send_str(socket_client,  "OK");
-}
-
-bool
-Rsp::bp_remove(char* data, size_t len) {
-  enum mp_type type;
-  uint32_t addr;
-  uint32_t ppc;
-  int bp_len;
-  DbgIF* dbgif;
-
-  dbgif = this->get_dbgif(thread_sel);
-
-  if (3 != sscanf(data, "z%1d,%x,%1d", (int *)&type, &addr, &bp_len)) {
-    top->log->print(LOG_ERROR, "Could not get three arguments\n");
-    return false;
-  }
-
-  if (type != BP_MEMORY) {
-    top->log->print(LOG_ERROR, "Not a memory bp\n");
-    return false;
-  }
-
-  m_bp->remove(addr);
-
-  // check if we are currently on this bp that is removed
-  dbgif->read_ppc(&ppc);
-
-  if (addr == ppc) {
-    dbgif->write(DBG_NPC_REG, ppc); // re-execute this instruction
-  }
-
-  return this->send_str(socket_client,  "OK");
 }
 
 DbgIF*

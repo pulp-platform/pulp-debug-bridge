@@ -26,9 +26,11 @@
 Gdb_server::Gdb_server(Log *log, Cable *cable, js::config *config, int socket_port)
 : log(log), cable(cable), config(config)
 {
-  rsp = new Rsp(this, socket_port);
-
   target = new Target(this);
+
+  bkp = new Breakpoints(this);
+
+  rsp = new Rsp(this, socket_port);
 
   if (!rsp->open()) throw std::logic_error("Unable to open RSP server");
 }

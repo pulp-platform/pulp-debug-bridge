@@ -23,10 +23,10 @@
 
 typedef enum
 {
-  LOG_ERROR,
-  LOG_WARNING,
-  LOG_INFO,
-  LOG_DEBUG
+  LOG_ERROR = 0,
+  LOG_WARNING = 1,
+  LOG_INFO = 2,
+  LOG_DEBUG = 3
 } log_level_e;
 
 class Log {

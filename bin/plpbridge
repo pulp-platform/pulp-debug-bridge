@@ -61,7 +61,7 @@ def read(bridge):
     addr = int(args.addr, 0)
     size = int(args.size, 0)
 
-    if args.verbose:
+    if args.verbose >= 4:
         print ('Read access command (addr: 0x%x, size: 0x%x)' % (addr, size))
 
     data = bridge.read(addr=addr, size=size)
@@ -91,7 +91,7 @@ def write(bridge):
     size = int(args.size, 0)
     value = int(args.value, 0)
 
-    if args.verbose:
+    if args.verbose >= 4:
         print ('Write access command (addr: 0x%x, size: 0x%x, value: 0x%x)' % (addr, size, value))
 
     bridge.write(addr=addr, size=size, buffer=value.to_bytes(size, byteorder='little'))
@@ -100,42 +100,42 @@ def write(bridge):
 
 
 def load(bridge):
-    if args.verbose:
+    if args.verbose >= 4:
         print ('Loading ELF binaries (path: %s)' % ' '.join(args.binaries))
 
     return bridge.load()
 
 
 def ioloop(bridge):
-    if args.verbose:
+    if args.verbose >= 4:
         print ('Lauching IO loop')
 
     return bridge.ioloop()
 
 
 def gdb(bridge):
-    if args.verbose:
+    if args.verbose >= 4:
         print ('Lauching GDB server')
 
     return bridge.gdb(int(args.rsp_port))
 
 
 def start(bridge):
-    if args.verbose:
+    if args.verbose >= 4:
         print ('Starting execution')
 
     return bridge.start()
 
 
 def wait(bridge):
-    if args.verbose:
+    if args.verbose >= 4:
         print ('Waiting termination')
 
     return bridge.wait()
 
 
 def reset(bridge):
-    if args.verbose:
+    if args.verbose >= 4:
         print ('Chip reset')
 
     return bridge.reset()
@@ -144,7 +144,7 @@ def reset(bridge):
 def script(bridge):
 
     for script in args.scripts:
-        if args.verbose:
+        if args.verbose >= 4:
             print ('Executing script: ' + script)
 
         if script.find('@') == -1:
@@ -194,7 +194,7 @@ parser.add_argument("--ipython", dest="ipython", action="store_true", help="Ente
 parser.add_argument("--shell", dest="shell", action="store_true", help="Enter python shell")
 parser.add_argument("--port", dest="port", type=int, default=-1, help="Specify port for proxy mode")
 parser.add_argument("--debug", dest="debug", action='store_true', default=False, help="Activate debug mode for this script")
-parser.add_argument("--verbose", dest="verbose", action='store_true', default=False, help="Verbose mode")
+parser.add_argument("--verbose", dest="verbose", type=int, default=3, help="Verbose mode")
 parser.add_argument("--help", dest="help", action='store_true', default=False, help="Dump help")
 parser.add_argument("--cable", dest="cable", default=None, help="Specify cable")
 parser.add_argument("--chip", dest="chip", default=None, help="Specify target chip")

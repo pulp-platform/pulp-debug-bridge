@@ -48,7 +48,9 @@
 
 
 class Rsp;
+class Breakpoints;
 class Target;
+class Target_cluster_common;
 class Target_cluster;
 class Target_core;
 
@@ -63,6 +65,7 @@ public:
   Log *log;
   Cable *cable;
   Target *target;
+  Breakpoints *bkp;
 
   js::config *config;
 };
@@ -82,7 +85,7 @@ public:
   void get_name(char* str, size_t len) {
     snprintf(str, len, "Core %08X", this->core_id);
   }
-  bool is_stopped() { return false; }
+  bool is_stopped();
   void read_ppc(uint32_t *ppc);
 
   bool stop();
@@ -92,6 +95,7 @@ public:
   void set_step_mode(bool new_step);
   void commit_step_mode();
   void resume();
+  void flush();
 
   bool gpr_read_all(uint32_t *data);
   bool gpr_read(unsigned int i, uint32_t *data);
@@ -117,13 +121,14 @@ class Target {
 public:
   Target(Gdb_server *top);
 
-  inline int get_nb_threads() { return nb_threads; }
+  inline int get_nb_threads() { return cores.size(); }
 
 
   void halt();
-  void resume(bool step=false);
+  void resume(bool step=false, int tid=-1);
   void resume_all();
   bool wait(int socket_client);
+  void flush();
 
   void update_power();
 
@@ -133,12 +138,42 @@ public:
 
 private:
   Gdb_server *top;
-  int nb_threads;
-  std::vector<Target_cluster *> clusters;
+  std::vector<Target_cluster_common *> clusters;
   std::vector<Target_core *> cores;
   std::map<int, Target_core *> cores_from_threadid;
 };
 
+
+
+struct bp_insn {
+  uint32_t addr;
+  uint32_t insn_orig;
+  bool is_compressed;
+};
+
+
+
+class Breakpoints {
+  public:
+    Breakpoints(Gdb_server *top);
+
+    bool insert(unsigned int addr);
+    bool remove(unsigned int addr);
+
+    bool clear();
+
+    bool at_addr(unsigned int addr);
+
+    bool enable_all();
+    bool disable_all();
+
+    bool disable(unsigned int addr);
+    bool enable(unsigned int addr);
+
+  private:
+    std::list<struct bp_insn> breakpoints;
+    Gdb_server *top;
+};
 
 class Rsp {
   public:
@@ -174,6 +209,7 @@ class Rsp {
     bool resume(int socket_client, bool step);
     bool resume(int socket_client, int tid, bool step);
     bool wait(int socket_client, Target_core *core=NULL);
+    bool step(int socket_client, char* data, size_t len);
 
     // internal helper functions
     bool pc_read(int socket_client, unsigned int* pc);
@@ -185,6 +221,8 @@ class Rsp {
     bool mem_write_ascii(int socket_client, char* data, size_t len);
     bool mem_write(int socket_client, char* data, size_t len);
 
+    bool bp_insert(int socket_client, char* data, size_t len);
+    bool bp_remove(int socket_client, char* data, size_t len);
 
     Gdb_server *top;
     int socket_port;
@@ -192,6 +230,7 @@ class Rsp {
     std::thread *listener_thread;
 
     int thread_sel;
+    Target_core *main_core = NULL;
 
 
 
@@ -199,14 +238,9 @@ class Rsp {
     bool loop();
 
 
-    bool step(char* data, size_t len);
-
 
     //void resumeCoresPrepare(DbgIF *dbgif, bool step);
     void resumeCores();
-
-    bool bp_insert(char* data, size_t len);
-    bool bp_remove(char* data, size_t len);
 
     //DbgIF* get_dbgif(int thread_id);
 

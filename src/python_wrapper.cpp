@@ -41,7 +41,7 @@ static js::config *system_config = NULL;
 
 void Log::print(log_level_e level, const char *str, ...)
 {
-  if (!bridge_verbose && level > LOG_INFO) return;
+  if (bridge_verbose <= level) return;
   va_list va;
   va_start(va, str);
   vprintf(str, va);
@@ -51,7 +51,7 @@ void Log::print(log_level_e level, const char *str, ...)
 
 void Log::user(const char *str, ...)
 {
-  if (!bridge_verbose) return;
+  if (bridge_verbose <= LOG_INFO) return;
   va_list va;
   va_start(va, str);
   vprintf(str, va);
@@ -60,7 +60,7 @@ void Log::user(const char *str, ...)
 
 void Log::debug(const char *str, ...)
 {
-  if (!bridge_verbose) return;
+  if (bridge_verbose <= LOG_DEBUG) return;
   va_list va;
   va_start(va, str);
   vprintf(str, va);
@@ -69,7 +69,7 @@ void Log::debug(const char *str, ...)
 
 void Log::warning(const char *str, ...)
 {
-  if (!bridge_verbose) return;
+  if (bridge_verbose <= LOG_DEBUG) return;
   va_list va;
   va_start(va, str);
   vprintf(str, va);
@@ -85,7 +85,7 @@ void Log::error(const char *str, ...)
   va_end(va);
   bridge_error = strdup(buff);
 
-  if (!bridge_verbose) return;
+  if (bridge_verbose <= LOG_ERROR) return;
   va_start(va, str);
   vprintf(str, va);
   va_end(va);

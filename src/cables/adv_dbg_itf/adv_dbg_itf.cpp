@@ -774,7 +774,7 @@ bool Adv_dbg_itf::jtag_auto_discovery()
     device.is_in_debug = false;
     device.ir_len = ir_len;
 
-    log->user("Device %d ID: %08X\n", i, device.id);
+    log->debug("Device %d ID: %08X\n", i, device.id);
 
     m_jtag_devices.push_back(device);
   }
