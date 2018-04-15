@@ -94,6 +94,7 @@ bool Rsp::v_packet(int socket_client, char* data, size_t len)
       if (delim != NULL) {
         tid = atoi(delim+1);
         *delim = 0;
+        thread_sel = tid;
       }
 
       bool cont = false;
@@ -117,7 +118,7 @@ bool Rsp::v_packet(int socket_client, char* data, size_t len)
             if (!thread_done[i])
             {
               thread_done[i] = true;
-              this->top->target->get_thread(i)->prepare_resume(step);
+              this->top->target->get_thread_from_id(i)->prepare_resume(step);
             }
           }
         } else {
@@ -596,11 +597,13 @@ bool Rsp::wait(int socket_client, Target_core *core)
     //First check if one core has stopped
     if (core) {
       if (core->is_stopped()) {
+        this->top->target->halt();
         return this->signal(socket_client);
       }
     } else {
       for (auto &core: this->top->target->get_threads()) {
         if (core->is_stopped()) {
+          this->top->target->halt();
           return this->signal(socket_client);
         }
       }

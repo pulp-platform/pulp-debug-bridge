@@ -185,13 +185,13 @@ protected:
   int cluster_id;
   uint32_t cluster_addr;
   uint32_t xtrigger_addr;
-  Target_cache *cache;
+  Target_cache *cache = NULL;
 };
 
 class Target_cluster : public Target_cluster_common
 {
 public:
-  Target_cluster(js::config *config, Gdb_server *top, uint32_t cluster_base, uint32_t xtrigger_base, int cluster_id);
+  Target_cluster(js::config *system_config, js::config *config, Gdb_server *top, uint32_t cluster_base, uint32_t xtrigger_base, int cluster_id);
 };
 
 class Target_fc : public Target_cluster_common
@@ -202,10 +202,11 @@ public:
 
 
 
-Target_core::Target_core(Gdb_server *top, uint32_t dbg_unit_addr)
-: top(top), dbg_unit_addr(dbg_unit_addr)
+Target_core::Target_core(Gdb_server *top, uint32_t dbg_unit_addr, int cluster_id, int core_id)
+: top(top), dbg_unit_addr(dbg_unit_addr), cluster_id(cluster_id), core_id(core_id)
 {
   top->log->print(LOG_DEBUG, "Instantiated core\n");
+  this->thread_id = first_free_thread_id++;
 }
 
 
@@ -236,6 +237,9 @@ void Target_core::read_ppc(uint32_t *ppc)
 bool Target_core::gpr_read_all(uint32_t *data)
 {
   if (!is_on) return false;
+  this->top->log->debug("Reading all registers (cluster: %d, core: %d)\n", cluster_id, core_id);
+
+  // Write back the valu
   return top->cable->access(false, dbg_unit_addr + 0x0400, 32 * 4, (char*)data);
 }
 
@@ -298,6 +302,7 @@ void Target_core::set_power(bool is_on)
 bool Target_core::read(uint32_t addr, uint32_t* rdata)
 {
   if (!is_on) return false;
+  top->log->print(LOG_DEBUG, "Reading register (addr: 0x%x)\n", dbg_unit_addr + addr);
   return top->cable->access(false, dbg_unit_addr + addr, 4, (char*)rdata);
 }
 
@@ -306,6 +311,7 @@ bool Target_core::read(uint32_t addr, uint32_t* rdata)
 bool Target_core::write(uint32_t addr, uint32_t wdata)
 {
   if (!is_on) return false;
+  top->log->print(LOG_DEBUG, "Writing register (addr: 0x%x, value: 0x%x)\n", dbg_unit_addr + addr, wdata);
   return top->cable->access(true, dbg_unit_addr + addr, 4, (char*)&wdata);
 }
 
@@ -328,19 +334,20 @@ bool Target_core::is_stopped() {
     return false;
   }
 
-  top->log->debug("Checking core status (cluster: %d, core: %d, stopped: %d)\n", cluster_id, core_id, data & 0x10000);
-  if (data & 0x10000)
-    return true;
-  else
-    return false;
+  this->stopped = data & 0x10000;
+
+  top->log->debug("Checking core status (cluster: %d, core: %d, stopped: %d)\n", cluster_id, core_id, this->stopped);
+
+  return this->stopped;
 }
 
 
 bool Target_core::stop()
 {
   if (!is_on) return false;
+  if (this->stopped) return false;
 
-  this->top->log->debug("Halting core (cluster: %d, core: %d)\n", cluster_id, core_id);
+  this->top->log->debug("Halting core (cluster: %d, core: %d, is_on: %d)\n", cluster_id, core_id, is_on);
   uint32_t data;
   if (!this->read(DBG_CTRL_REG, &data)) {
     fprintf(stderr, "debug_is_stopped: Reading from CTRL reg failed\n");
@@ -355,7 +362,7 @@ bool Target_core::stop()
 
 bool Target_core::halt()
 {
-  stopped = true;
+  //stopped = true;
   return stop();
 }
 
@@ -388,6 +395,8 @@ void Target_core::commit_step_mode()
 void Target_core::prepare_resume(bool step)
 {
 
+  if (!is_on) return;
+
   top->log->debug("Preparing core to resume (step: %d)\n", step);
 
   // now let's handle software breakpoints
@@ -414,7 +423,6 @@ void Target_core::prepare_resume(bool step)
   }
 
   this->set_step_mode(step && !has_stepped);
-
 }
 
 
@@ -445,22 +453,22 @@ Target_cluster_common::Target_cluster_common(js::config *config, Gdb_server *top
 
 
 
-Target_cluster::Target_cluster(js::config *config, Gdb_server *top, uint32_t cluster_base, uint32_t xtrigger_addr, int cluster_id)
+Target_cluster::Target_cluster(js::config *system_config, js::config *config, Gdb_server *top, uint32_t cluster_base, uint32_t xtrigger_addr, int cluster_id)
 : Target_cluster_common(config, top, cluster_base, xtrigger_addr, cluster_id)
 {
   int nb_pe = config->get("nb_pe")->get_int();
   for (int i=0; i<nb_pe; i++)
   {
-    Target_core *core = new Target_core(top, cluster_base + 0x300000 + i * 0x8000);
+    Target_core *core = new Target_core(top, cluster_base + 0x300000 + i * 0x8000, cluster_id, i);
     cores.push_back(core);
     nb_core++;
   }
 
   // Figure out if the cluster can be powered down
-  js::config *bypass_config = config->get("**/apb_soc_ctrl/regmap/power/bypass");
+  js::config *bypass_config = system_config->get("**/apb_soc_ctrl/regmap/power/bypass");
   if (bypass_config)
   {
-    uint32_t addr = config->get("**/apb_soc_ctrl/base")->get_int() +
+    uint32_t addr = system_config->get("**/apb_soc_ctrl/base")->get_int() +
       bypass_config->get("offset")->get_int();
     int bit = bypass_config->get("content/dbg1/bit")->get_int();
 
@@ -485,7 +493,7 @@ Target_cluster::Target_cluster(js::config *config, Gdb_server *top, uint32_t clu
 Target_fc::Target_fc(js::config *config, Gdb_server *top, uint32_t fc_dbg_base, uint32_t fc_cache_base, int cluster_id)
 : Target_cluster_common(config, top, fc_dbg_base, -1, cluster_id)
 {
-  Target_core *core = new Target_core(top, fc_dbg_base);
+  Target_core *core = new Target_core(top, fc_dbg_base, cluster_id, 0);
   cores.push_back(core);
   nb_core++;
 
@@ -504,9 +512,12 @@ Target_fc::Target_fc(js::config *config, Gdb_server *top, uint32_t fc_dbg_base, 
 
 void Target_cluster_common::flush()
 {
+  if (!is_on) return;
+
   this->top->log->debug("Flushing cluster caches (cluster: %d)\n", cluster_id);
 
-  this->cache->flush();
+  if (this->cache)
+    this->cache->flush();
 
   for (auto &core: cores)
   {
@@ -624,8 +635,13 @@ Target::Target(Gdb_server *top)
   js::config *fc_config = config->get("**/soc/fc");
   if (fc_config != NULL)
   {
-    //Target_fc *cluster = new Target_fc(fc_config, top, 0x1B300000, 0x1B201400, fc_config->get("cluster_id")->get_int());
-    Target_fc *cluster = new Target_fc(fc_config, top, 0x1A110000, -1, fc_config->get("cluster_id")->get_int());
+    unsigned int fc_dbg_addr = config->get("**/fc_dbg_unit/base")->get_int();
+    js::config *cache_config = config->get("**/fc_icache/base");
+    unsigned int fc_icache_addr = -1;
+    if (cache_config)
+      fc_icache_addr = cache_config->get_int();
+
+    Target_fc *cluster = new Target_fc(fc_config, top, fc_dbg_addr, fc_icache_addr, fc_config->get("cluster_id")->get_int());
 
     clusters.push_back(cluster);
     Target_core *core = cluster->get_core(0);
@@ -633,15 +649,13 @@ Target::Target(Gdb_server *top)
     cores_from_threadid[core->get_thread_id()] = core;
   }
 
-  return;
-
   js::config *cluster_config = config->get("**/soc/cluster");
   if (cluster_config != NULL)
   {
     int nb_clusters = config->get("**/nb_cluster")->get_int();
     for (int i=0; i<nb_clusters; i++)
     {
-      Target_cluster *cluster = new Target_cluster(cluster_config, top, 0x10000000 + 0x400000 * i, 0x10000000 + 0x400000 * i, i);
+      Target_cluster *cluster = new Target_cluster(config, cluster_config, top, 0x10000000 + 0x400000 * i, 0x10000000 + 0x400000 * i, i);
 
       clusters.push_back(cluster);
       for (int j=0; j<cluster->get_nb_core(); j++)

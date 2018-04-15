@@ -54,6 +54,8 @@ class Target_cluster_common;
 class Target_cluster;
 class Target_core;
 
+static int first_free_thread_id = 0;
+
 class Gdb_server
 {
 public:
@@ -76,14 +78,14 @@ public:
 class Target_core
 {
 public:
-  Target_core(Gdb_server *top, uint32_t dbg_unit_addr);
+  Target_core(Gdb_server *top, uint32_t dbg_unit_addr, int cluster_id, int core_id);
   void set_power(bool is_on);
   bool read(uint32_t addr, uint32_t* rdata);
   bool write(uint32_t addr, uint32_t wdata);
   bool csr_read(unsigned int i, uint32_t *data);
-  int get_thread_id() { return core_id; }
+  int get_thread_id() { return thread_id; }
   void get_name(char* str, size_t len) {
-    snprintf(str, len, "Core %08X", this->core_id);
+    snprintf(str, len, "Cluster %02d - Core %01d", this->cluster_id, this->core_id);
   }
   bool is_stopped();
   void read_ppc(uint32_t *ppc);
@@ -108,6 +110,7 @@ private:
   uint32_t hartid;
   int cluster_id;
   int core_id;
+  int thread_id;
   bool ppc_is_cached = false;
   uint32_t ppc_cached;
   bool stopped = false;
@@ -134,6 +137,7 @@ public:
 
   std::vector<Target_core *> get_threads() { return cores; }
   Target_core *get_thread(int thread_id) { return cores_from_threadid[thread_id]; }
+  Target_core *get_thread_from_id(int id) { return cores[id]; }
 
 
 private:
