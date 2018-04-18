@@ -176,7 +176,7 @@ class debug_bridge(object):
 
     def load(self):
         mode = self.config.get('**/debug-bridge/boot-mode').get()
-        if mode == 'jtag2':
+        if mode == 'jtag':
             return self.load_jtag()
         else:
             return self.load_default()

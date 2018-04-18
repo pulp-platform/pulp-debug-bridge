@@ -90,6 +90,7 @@ void Reqloop::reply_req(hal_debug_struct_t *debug_struct, hal_bridge_req_t *targ
   uint32_t notif_req_value;
   cable->access(false, (unsigned int)(long)&debug_struct->notif_req_addr, 4, (char*)&notif_req_addr);
   cable->access(false, (unsigned int)(long)&debug_struct->notif_req_value, 4, (char*)&notif_req_value);
+
   cable->access(true, (unsigned int)(long)notif_req_addr, 4, (char*)&notif_req_value);
 }
 
