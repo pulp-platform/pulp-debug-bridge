@@ -146,6 +146,9 @@ class debug_bridge(object):
     def load_jtag(self):
         raise Exception('JTAG boot is not supported on this target')
 
+    def load_jtag_hyper(self):
+        raise Exception('JTAG boot is not supported on this target')
+
     def load_elf(self, binary):
         with open(binary, 'rb') as file:
             elffile = ELFFile(file)
@@ -178,6 +181,8 @@ class debug_bridge(object):
         mode = self.config.get('**/debug-bridge/boot-mode').get()
         if mode == 'jtag':
             return self.load_jtag()
+        elif mode == 'jtag_hyper':
+            return self.load_jtag_hyper()
         else:
             return self.load_default()
 

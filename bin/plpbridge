@@ -250,6 +250,9 @@ elif args.chip is not None:
     except:
         config = js.import_config({"debug-bridge": {}, "pulp_chip": { args.chip: { "name": args.chip } } })
 
+    with open('myconfig.json', 'w') as file:
+        file.write(config.dump_to_string())
+
     # And overloads it with the specified options
     if args.boot_mode is not None:
         config.get('**/debug-bridge').set('boot-mode', args.boot_mode)

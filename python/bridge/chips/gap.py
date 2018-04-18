@@ -25,6 +25,7 @@ JTAG_SOC_CONFREG = 7
 JTAG_SOC_CONFREG_WIDTH = 4
 
 BOOT_MODE_JTAG = 4
+BOOT_MODE_JTAG_HYPER = 11
 CONFREG_BOOT_WAIT = 1
 CONFREG_PGM_LOADED = 1
 CONFREG_INIT = 0
@@ -33,6 +34,8 @@ class gap_debug_bridge(debug_bridge):
 
     def __init__(self, config, binaries=[], verbose=False):
         super(gap_debug_bridge, self).__init__(config=config, binaries=binaries, verbose=verbose)
+
+        self.start_cores = False
 
 
     def load_jtag(self):
@@ -72,13 +75,33 @@ class gap_debug_bridge(debug_bridge):
         # buffer is immediately fetching instructions and would get wrong instructions
         self.write(0x1B302000, 4, [0x80, 0x00, 0x00, 0x1c])
 
+        self.start_cores = True
+
         return 0
 
 
     def start(self):
 
-        # Unstall the FC so that it starts fetching instructions from the loaded binary
-        self.write(0x1B300000, 4, [0, 0, 0, 0])
+        if self.start_cores:
+            # Unstall the FC so that it starts fetching instructions from the loaded binary
+            self.write(0x1B300000, 4, [0, 0, 0, 0])
+
+        return 0
+
+
+    def load_jtag_hyper(self):
+
+        if self.verbose:
+            print ('Loading binary through jtag_hyper')
+
+        # Reset the chip and tell him we want to load from hyper
+        # We keep the reset active until the end so that it sees
+        # the boot mode as soon as it boots from rom
+        if self.verbose:
+            print ("Notifying to boot code that we are doing a JTAG boot from hyperflash")
+        self.get_cable().chip_reset(True)
+        self.get_cable().jtag_set_reg(JTAG_SOC_CONFREG, JTAG_SOC_CONFREG_WIDTH, BOOT_MODE_JTAG_HYPER)
+        self.get_cable().chip_reset(False)
 
         return 0
 
