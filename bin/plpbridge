@@ -113,6 +113,13 @@ def ioloop(bridge):
     return bridge.ioloop()
 
 
+def reqloop(bridge):
+    if args.verbose >= 4:
+        print ('Lauching req loop')
+
+    return bridge.reqloop()
+
+
 def gdb(bridge):
     if args.verbose >= 4:
         print ('Lauching GDB server')
@@ -167,6 +174,7 @@ commands = {
   'write'   : ['Write data to the target',          write],
   'load'    : ['Load a binary into the target',     load],
   'ioloop'  : ['Activate IO loop',                  ioloop],
+  'reqloop' : ['Activate request loop',             reqloop],
   'gdb'     : ['Open RSP server for GDB connection',gdb],
   'start'   : ['Start execution',                   start],
   'wait'    : ['Wait termination',                  wait],

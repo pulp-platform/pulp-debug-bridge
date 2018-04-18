@@ -101,6 +101,7 @@ class debug_bridge(object):
         self.cable_name = config.get('**/debug-bridge/cable/type').get()
         self.binaries = binaries
         self.ioloop_handle = None
+        self.reqloop_handle = None
         self.verbose = verbose
         self.gdb_handle = None
         self.cable_config = config.get('**/debug-bridge/cable')
@@ -112,6 +113,7 @@ class debug_bridge(object):
         lib_path=os.path.join('libpulpdebugbridge.so')
         self.module = ctypes.CDLL(lib_path)
         self.module.bridge_ioloop_close.argtypes = [ctypes.c_void_p, ctypes.c_int]
+        self.module.bridge_reqloop_close.argtypes = [ctypes.c_void_p, ctypes.c_int]
         self.module.bridge_get_error.restype = ctypes.c_char_p
 
         self.module.bridge_init(config.dump_to_string().encode('utf-8'), verbose)
@@ -174,7 +176,7 @@ class debug_bridge(object):
 
     def load(self):
         mode = self.config.get('**/debug-bridge/boot-mode').get()
-        if mode == 'jtag':
+        if mode == 'jtag2':
             return self.load_jtag()
         else:
             return self.load_default()
@@ -247,8 +249,6 @@ class debug_bridge(object):
         self.get_cable().chip_reset(False)
         return 0
 
-
-
     def ioloop(self):
 
         # First get address of the structure used to communicate between
@@ -257,9 +257,25 @@ class debug_bridge(object):
         if addr == 0:
             addr = self.__get_binary_symbol_addr('debugStruct_ptr')
 
+        self.ioloop_handle = self.module.bridge_ioloop_open(
+            self.get_cable().get_instance(), addr)
 
-        self.ioloop_handle = self.module.bridge_ioloop_open(self.get_cable().get_instance(), addr)
         return 0
+
+    def reqloop(self):
+
+        # First get address of the structure used to communicate between
+        # the bridge and the runtime
+        addr = self.__get_binary_symbol_addr('__rt_debug_struct_ptr')
+        if addr == 0:
+            addr = self.__get_binary_symbol_addr('debugStruct_ptr')
+
+        self.reqloop_handle = self.module.bridge_reqloop_open(
+            self.get_cable().get_instance(), addr)
+
+        return 0
+
+
 
     def gdb(self, port):
         self.gdb_handle = self.module.gdb_server_open(self.get_cable().get_instance(), port)
@@ -271,6 +287,10 @@ class debug_bridge(object):
 
         if self.ioloop_handle is not None:
             return self.module.bridge_ioloop_close(self.ioloop_handle, 0)
+
+        if self.reqloop_handle is not None:
+            return self.module.bridge_reqloop_close(self.reqloop_handle, 0)
+
         return 0
 
     def lock(self):
