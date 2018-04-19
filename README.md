@@ -1,7 +1,7 @@
 # Pulp debug bridge
 
 This is a tool which can be used to interact with a pulp target, like doing read and write or loading a binary.
-It will also soon provides an RSP server so that it can be used to interface GDB with pulp targets.
+It also provide an RSP server so that it can be used to interface GDB with pulp targets.
 
 ###  Getting the sources
 
@@ -57,7 +57,10 @@ Or write:
 A binary can also be loaded with this command:
 
     # plpbridge --chip=pulpissimo --cable=ftdi load --binary=<binary path>
-    
+
+The RSP server for the GDB connection can be started with this command:
+
+    # plpbridge --chip=pulpissimo --cable=ftdi gdb wait --rsp-port=1234
     
 ### Supported cables
 
