@@ -21,7 +21,7 @@
 #include <stdio.h>
 #include <thread>
 #include "cable.hpp"
-#include "hal/debug_bridge/debug_bridge.h"
+#include "debug_bridge/debug_bridge.h"
 #include <unistd.h>
 
 

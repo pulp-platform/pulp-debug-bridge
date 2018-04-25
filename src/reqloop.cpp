@@ -22,7 +22,7 @@
 #include <thread>
 #include "cable.hpp"
 #include "cables/log.h"
-#include "hal/debug_bridge/debug_bridge.h"
+#include "debug_bridge/debug_bridge.h"
 #include <unistd.h>
 #include <sys/types.h>
 #include <sys/stat.h>
