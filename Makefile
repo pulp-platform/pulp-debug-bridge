@@ -12,6 +12,7 @@ DEP_SRC_DIR ?= $(BUILD_DIR)/dep_src
 
 HEADER_FILES += $(shell find include -name *.hpp)
 TARGET_HEADER_FILES += $(shell find include -name *.h)
+HEADER_FILES += $(shell find include -name *.h)
 HEADER_FILES += $(shell find bin -type f)
 
 define declareInstallFile
@@ -36,6 +37,11 @@ HEADER_FILES += $(shell find python -name *.py)
 
 FTDI_CFLAGS = $(shell libftdi1-config --cflags)
 FTDI_LDFLAGS = $(shell libftdi1-config --libs)
+
+ifeq '$(FTDI_CFLAGS)$(FTDI_LDFLAGS)' ''
+FTDI_CFLAGS = $(shell libftdi-config --cflags)
+FTDI_LDFLAGS = $(shell libftdi-config --libs)
+endif
 
 ifneq '$(FTDI_CFLAGS)$(FTDI_LDFLAGS)' ''
 USE_FTDI=1
