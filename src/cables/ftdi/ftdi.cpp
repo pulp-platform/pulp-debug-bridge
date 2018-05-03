@@ -153,7 +153,7 @@ Ftdi::connect(js::config *config)
 
   if (m_id == Olimex)
   {
-    bits_value = 0x3 << 8;
+    bits_value = 0x1 << 8;
     set_bit_direction(8, 1);
     set_bit_direction(9, 1);
 
@@ -205,7 +205,7 @@ bool Ftdi::chip_reset(bool active)
 {
   if (m_id == Olimex) {
     // Bit 9 is chip reset and active high.
-    return set_bit_value(9, !active);
+    return set_bit_value(9, active);
   } else if (m_id == Digilent) { // ftdi2232 Gapuino
     // Bit 4 is chip reset and active high.
     return set_bit_value(4, !active);

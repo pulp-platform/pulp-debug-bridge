@@ -772,7 +772,8 @@ bool Adv_dbg_itf::jtag_auto_discovery()
     device.id |= (recv_buf[i*4 + 0] & 0xFF) <<  0;
     device.index  = i;
     device.is_in_debug = false;
-    device.ir_len = ir_len;
+    // TODO the detacted IR length is wrong when there are several taps
+    device.ir_len = 4;
 
     log->debug("Device %d ID: %08X\n", i, device.id);
 
