@@ -55,10 +55,11 @@ src/cables/adv_dbg_itf/adv_dbg_itf.cpp src/gdb-server/gdb-server.cpp \
 src/gdb-server/rsp.cpp src/gdb-server/target.cpp src/gdb-server/breakpoints.cpp
 
 ifdef STAND_ALONE_INSTALL
+LDFLAGS += -L$(INSTALL_DIR)/lib
 else
 LDFLAGS += $(foreach dir,$(DEP_DIRS),-L$(dir)/lib)
-LDFLAGS += -ljson 
 endif
+LDFLAGS += -ljson
 
 ifneq '$(USE_FTDI)' ''
 CFLAGS += -D__USE_FTDI__
