@@ -107,6 +107,7 @@ end:
 
 void Adv_dbg_itf::device_select(unsigned int i)
 {
+  printf("SELECTING %d\n", i);
   pthread_mutex_lock(&mutex);
 
   m_jtag_device_sel = i;

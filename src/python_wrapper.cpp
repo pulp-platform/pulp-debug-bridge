@@ -121,6 +121,7 @@ extern "C" void *cable_new(const char *config_string)
     if (!adu->connect(config)) return NULL;
     int tap = 0;
     if (config->get("tap")) tap = config->get("tap")->get_int();
+    tap = 1;
     adu->device_select(tap);
     return (void *)static_cast<Cable *>(adu);
 #else

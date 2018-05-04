@@ -54,7 +54,7 @@ Ftdi::~Ftdi()
 bool
 Ftdi::connect(js::config *config)
 {
-  char buf[10];
+  char buf[256];
   std::list<struct device_desc> dev_desc = m_descriptors[m_id];
   int error;
   bool result;
@@ -161,9 +161,16 @@ Ftdi::connect(js::config *config)
     buf[1] = 0x00;          // values
     buf[2] = 0x1b;          // direction (1 == output)
     buf[3] = TCK_DIVISOR;
-    buf[4] = 0x02;
+    buf[4] = 0x01;
     buf[5] = 0x00;
-    buf[6] = SEND_IMMEDIATE;
+    buf[6] = SET_BITS_HIGH;
+    buf[7] = ~0x01;
+    //buf[7] = ~0x03;
+    buf[8] = 0x3;
+    buf[9] = SET_BITS_HIGH;
+    buf[10] = ~0x02;
+    buf[11] = 0x3;
+    buf[12] = SEND_IMMEDIATE;
   }
   else if (m_id == Digilent)
   {
@@ -184,7 +191,7 @@ Ftdi::connect(js::config *config)
     goto fail;
   }
 
-  if(ft2232_write(buf, 7, 0) != 7) {
+  if(ft2232_write(buf, 13, 0) != 13) {
     log->error("ft2232: Initial write failed\n");
     goto fail;
   }
@@ -205,6 +212,7 @@ bool Ftdi::chip_reset(bool active)
 {
   if (m_id == Olimex) {
     // Bit 9 is chip reset and active high.
+    return true;
     return set_bit_value(9, active);
   } else if (m_id == Digilent) { // ftdi2232 Gapuino
     // Bit 4 is chip reset and active high.
@@ -803,7 +811,7 @@ bool
 Ftdi::set_bit_value(int bit, int value)
 {
 
-  char buf[3];
+  char buf[4];
 
   bits_value = (bits_value & ~(1<<bit)) | (value << bit);
   if (bit >= 8)
@@ -836,6 +844,22 @@ bool
 Ftdi::jtag_reset(bool active)
 {
   if (m_id == Olimex) {
+    return true;
+    printf("JTAG RESET %d\n", active);
+
+    char buf[8];
+
+    buf[0] = SET_BITS_HIGH;
+    buf[1] = ~0x00;
+    buf[2] = 0x3;
+    buf[3] = SET_BITS_HIGH;
+    buf[4] = ~0x02;
+    buf[5] = 0x3;
+    buf[6] = SEND_IMMEDIATE;
+  ft2232_write(buf, 7, 0);
+  flush();
+  return true;
+
     bool result = set_bit_value(8, !active);
     return result;
   } else if (m_id == Digilent) {
