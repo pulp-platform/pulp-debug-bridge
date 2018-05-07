@@ -29,7 +29,7 @@ def get_bridge(config, binaries=[], verbose=False):
 
     if chip == 'gap':
         bridge_class = gap.gap_debug_bridge
-    elif chip == 'fulmine':
+    elif chip == 'fulmine' or chip == 'vivosoc2' or chip == 'vivosoc2_1':
         bridge_class = fulmine.fulmine_debug_bridge
     else:
         bridge_class = debug_bridge
