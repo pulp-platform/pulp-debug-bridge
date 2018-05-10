@@ -35,6 +35,8 @@ endef
 
 HEADER_FILES += $(shell find python -name *.py)
 
+
+
 FTDI_CFLAGS = $(shell libftdi1-config --cflags)
 FTDI_LDFLAGS = $(shell libftdi1-config --libs)
 
@@ -47,8 +49,19 @@ ifneq '$(FTDI_CFLAGS)$(FTDI_LDFLAGS)' ''
 USE_FTDI=1
 endif
 
-CFLAGS += -O3 -g -fPIC -std=gnu++11 -MMD -MP -Isrc -Iinclude -I$(INSTALL_DIR)/include $(FTDI_CFLAGS)
-LDFLAGS += -O3 -g -shared $(FTDI_LDFLAGS)
+
+
+SDL_CFLAGS = $(shell sdl2-config --cflags)
+SDL_LDFLAGS = $(shell sdl2-config --libs)
+
+ifneq '$(SDL_CFLAGS)$(SDL_LDFLAGS)' ''
+USE_SDL=1
+endif
+
+
+
+CFLAGS += -O3 -g -fPIC -std=gnu++11 -MMD -MP -Isrc -Iinclude -I$(INSTALL_DIR)/include $(FTDI_CFLAGS) $(SDL_CFLAGS)
+LDFLAGS += -O3 -g -shared $(FTDI_LDFLAGS) $(SDL_LDFLAGS)
 
 SRCS = src/python_wrapper.cpp src/ioloop.cpp src/cables/jtag.cpp src/reqloop.cpp \
 src/cables/adv_dbg_itf/adv_dbg_itf.cpp src/gdb-server/gdb-server.cpp \
@@ -64,6 +77,10 @@ LDFLAGS += -ljson
 ifneq '$(USE_FTDI)' ''
 CFLAGS += -D__USE_FTDI__
 SRCS += src/cables/ftdi/ftdi.cpp
+endif
+
+ifneq '$(USE_SDL)' ''
+CFLAGS += -D__USE_SDL__
 endif
 
 SRCS += src/cables/jtag-proxy/jtag-proxy.cpp

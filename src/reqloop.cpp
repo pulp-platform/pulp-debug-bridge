@@ -28,6 +28,9 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 
+#if defined(__USE_SDL__)
+#include <SDL.h>
+#endif
 
 class Reqloop
 {
@@ -44,6 +47,8 @@ private:
   bool handle_req_read(hal_debug_struct_t *debug_struct, hal_bridge_req_t *target_req, hal_bridge_req_t *req);
   bool handle_req_write(hal_debug_struct_t *debug_struct, hal_bridge_req_t *target_req, hal_bridge_req_t *req);
   bool handle_req_close(hal_debug_struct_t *debug_struct, hal_bridge_req_t *target_req, hal_bridge_req_t *req);
+  bool handle_req_fb_open(hal_debug_struct_t *debug_struct, hal_bridge_req_t *req, hal_bridge_req_t *target_req);
+  bool handle_req_fb_update(hal_debug_struct_t *debug_struct, hal_bridge_req_t *req, hal_bridge_req_t *target_req);
   bool handle_req_disconnect(hal_debug_struct_t *debug_struct, hal_bridge_req_t *target_req, hal_bridge_req_t *req);
   bool handle_req(hal_debug_struct_t *debug_struct, hal_bridge_req_t *target_req, hal_bridge_req_t *req);
 
@@ -54,6 +59,135 @@ private:
   unsigned int debug_struct_addr;
   int status = 0;
 };
+
+class Framebuffer
+{
+public:
+  Framebuffer(Cable *cable, std::string name, int width, int height, int format);
+  void update(uint32_t addr, int posx, int posy, int width, int height);
+  bool open();
+
+private:
+  void fb_routine();
+
+  std::string name;
+  int width;
+  int height;
+  int format;
+  int pixel_size = 1;
+  Cable *cable;
+  std::thread *thread;
+  uint32_t *pixels;
+#if defined(__USE_SDL__)
+  SDL_Surface *screen;
+  SDL_Texture * texture;
+  SDL_Renderer *renderer;
+  SDL_Window *window;
+#endif
+};
+
+Framebuffer::Framebuffer(Cable *cable, std::string name, int width, int height, int format)
+: name(name), width(width), height(height), format(format), cable(cable)
+{
+}
+
+void Framebuffer::fb_routine()
+{
+#if defined(__USE_SDL__)
+  bool quit = false;
+  SDL_Event event;
+
+  while (!quit)
+  {
+    SDL_WaitEvent(&event);
+    switch (event.type)
+    {
+      case SDL_QUIT:
+      quit = true;
+      break;
+    }
+  }
+
+  SDL_DestroyWindow(window);
+  SDL_Quit();
+#endif
+}
+
+
+bool Framebuffer::open()
+{
+#if defined(__USE_SDL__)
+
+  if (format == HAL_BRIDGE_REQ_FB_FORMAT_GRAY)
+  {
+
+  }
+  else
+  {
+    printf("Unsupported format: %d\n", format);
+  }
+
+  pixels = new uint32_t[width*height];
+  SDL_Init(SDL_INIT_VIDEO);
+
+  window = SDL_CreateWindow(name.c_str(),
+      SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, width, height, 0);
+
+  renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
+
+  texture = SDL_CreateTexture(renderer,
+      SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STATIC, width, height);
+
+  memset(pixels, 255, width * height * sizeof(Uint32));
+
+  SDL_UpdateTexture(texture, NULL, pixels, width * sizeof(Uint32));
+
+  SDL_RenderClear(renderer);
+  SDL_RenderCopy(renderer, texture, NULL, NULL);
+  SDL_RenderPresent(renderer);
+
+  thread = new std::thread(&Framebuffer::fb_routine, this);
+  return true;
+
+#else
+  printf("Trying to open framebuffer while bridge has not been compiled with SDL support\n");
+  return false;
+#endif
+}
+
+void Framebuffer::update(uint32_t addr, int posx, int posy, int width, int height)
+{
+#if defined(__USE_SDL__)
+
+  if (posx == -1)
+  {
+    posx = posy = 0;
+    width = this->width;
+    height = this->height;
+  }
+
+  int size = width*height*pixel_size;
+  uint8_t buffer[size];
+  this->cable->access(false, addr, size, (char*)buffer);
+
+  for (int j=0; j<height; j++)
+  {
+    for (int i=0; i<width; i++)
+    {
+      unsigned int value = buffer[j*width+i];
+      pixels[(j+posy)*this->width + i + posx] = (0xff << 24) | (value << 16) | (value << 8) | value;
+    }
+  }
+
+  SDL_UpdateTexture(texture, NULL, pixels, this->width * sizeof(Uint32));
+
+  SDL_RenderClear(renderer);
+  SDL_RenderCopy(renderer, texture, NULL, NULL);
+  SDL_RenderPresent(renderer);
+#endif
+}
+
+
 
 int Reqloop::stop(bool kill)
 {
@@ -210,6 +344,43 @@ bool Reqloop::handle_req_close(hal_debug_struct_t *debug_struct, hal_bridge_req_
   return false;
 }
 
+bool Reqloop::handle_req_fb_open(hal_debug_struct_t *debug_struct, hal_bridge_req_t *req, hal_bridge_req_t *target_req)
+{
+  char name[req->fb_open.name_len+1];
+  cable->access(false, (unsigned int)(long)req->fb_open.name, req->fb_open.name_len+1, (char*)name);
+
+  int res = 0;
+  Framebuffer *fb = new Framebuffer(cable, name, req->fb_open.width, req->fb_open.height, req->fb_open.format);
+
+
+
+  if (!fb->open()) 
+  {
+    res = -1;
+    delete fb;
+    fb = NULL;
+  }
+
+  cable->access(true, (unsigned int)(long)&target_req->fb_open.screen, 8, (char*)&fb);
+
+  this->reply_req(debug_struct, target_req, req);
+  return false;
+}
+
+bool Reqloop::handle_req_fb_update(hal_debug_struct_t *debug_struct, hal_bridge_req_t *req, hal_bridge_req_t *target_req)
+{
+#if defined(__USE_SDL__)
+  Framebuffer *fb = (Framebuffer *)req->fb_update.screen;
+
+  fb->update(
+    req->fb_update.addr, req->fb_update.posx, req->fb_update.posy, req->fb_update.width, req->fb_update.height
+  );
+#endif
+
+  this->reply_req(debug_struct, target_req, req);
+  return false;
+}
+
 bool Reqloop::handle_req(hal_debug_struct_t *debug_struct, hal_bridge_req_t *req, hal_bridge_req_t *target_req)
 {
   switch (req->type)
@@ -220,6 +391,8 @@ bool Reqloop::handle_req(hal_debug_struct_t *debug_struct, hal_bridge_req_t *req
     case HAL_BRIDGE_REQ_READ:       return this->handle_req_read(debug_struct, req, target_req);
     case HAL_BRIDGE_REQ_WRITE:      return this->handle_req_write(debug_struct, req, target_req);
     case HAL_BRIDGE_REQ_CLOSE:      return this->handle_req_close(debug_struct, req, target_req);
+    case HAL_BRIDGE_REQ_FB_OPEN:    return this->handle_req_fb_open(debug_struct, req, target_req);
+    case HAL_BRIDGE_REQ_FB_UPDATE:  return this->handle_req_fb_update(debug_struct, req, target_req);
     default:
       this->log->print(LOG_ERROR, "Received unknown request from target (type: %d)\n", req->type);
   }
@@ -275,9 +448,8 @@ void Reqloop::reqloop_routine()
       }
 
       // Small sleep to not poll too often
-      usleep(50000);
+      usleep(500);
     }
-
   }
 }
 

@@ -270,7 +270,7 @@ bool Adv_dbg_itf::read(unsigned int addr, int size, char* buffer)
     while (local_size)
     {
       int iter_size = local_size;
-      if (iter_size > 1024) iter_size = 1024;
+      if (iter_size > 2048) iter_size = 2048  ;
 
       retval = retval && read_internal(AXI_READ32, addr, iter_size, buffer);
       local_size   -= iter_size;
@@ -425,8 +425,8 @@ bool Adv_dbg_itf::write_internal(ADBG_OPCODES opcode, unsigned int addr, int siz
 
 bool Adv_dbg_itf::read_internal(ADBG_OPCODES opcode, unsigned int addr, int size, char* buffer)
 {
-  char recv[8];
-  char buf[8];
+  char recv[size];
+  char buf[size];
   int bytewidth;
   int nwords;
   uint32_t crc = 0xFFFFFFFF;
@@ -453,6 +453,15 @@ bool Adv_dbg_itf::read_internal(ADBG_OPCODES opcode, unsigned int addr, int size
       return false;
   }
 
+  int factor = 1;
+
+  // Increase the word size in case we have big burst with good multiple
+  if (size >= 256 && size % 256 == 0)
+  {
+    bytewidth = 256;
+    factor = bytewidth / 4;
+  }
+
   if (size % bytewidth != 0) {
     log->warning("Size is not aligned to selected bitwidth\n");
     return false;
@@ -474,8 +483,8 @@ bool Adv_dbg_itf::read_internal(ADBG_OPCODES opcode, unsigned int addr, int size
   buf[4] = addr >> 16;
   buf[3] = addr >>  8;
   buf[2] = addr >>  0;
-  buf[1] = nwords >> 8;
-  buf[0] = nwords >> 0;
+  buf[1] = (nwords * factor) >> 8;
+  buf[0] = (nwords * factor) >> 0;
 
   if (!m_dev->stream_inout(NULL, buf, 53, m_tms_on_last)) {
     log->warning("ft2232: failed to write opcode stream to device\n");
@@ -517,7 +526,7 @@ bool Adv_dbg_itf::read_internal(ADBG_OPCODES opcode, unsigned int addr, int size
   }
 
   // make sure we only send 0's to the device
-  memset(buf, 0, sizeof(buf));
+  memset(buf, 0, size);
 
   // receive data
   crc = 0xFFFFFFFF;
@@ -527,9 +536,9 @@ bool Adv_dbg_itf::read_internal(ADBG_OPCODES opcode, unsigned int addr, int size
       return false;
     }
 
+    memcpy(buffer, recv, bytewidth);
     crc = crc_compute(crc, recv, bytewidth*8);
 
-    memcpy(buffer, recv, bytewidth);
     buffer = buffer + bytewidth;
   }
 

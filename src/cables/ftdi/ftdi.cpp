@@ -58,7 +58,7 @@ Ftdi::connect(js::config *config)
   std::list<struct device_desc> dev_desc = m_descriptors[m_id];
   int error;
   bool result;
-
+  int err;
   const char *description = NULL;
 
   if (config)
@@ -765,36 +765,46 @@ Ftdi::ft2232_read_packed_bits(char *buf, int packet_len, int bits_per_packet, in
   if(packet_len == 0 || bits_per_packet == 0)
     return 0;
 
-  mybuf = (char*) malloc(packet_len);
-  if(ft2232_read(mybuf, packet_len) < 0) {
-    log->warning("Read failed\n");
-    free(mybuf);
-    return -1;
+  if (offset == 0 && bits_per_packet == 8)
+  {
+    if(ft2232_read(buf, packet_len) < 0) {
+      log->warning("Read failed\n");
+      return -1;
+    }
   }
-
-  if(bits_per_packet < 8) {
-    for(i=0; i < packet_len; i++) { // rotate bits to the left side
-      mybuf[i] = (mybuf[i] >> (8-bits_per_packet));
+  else
+  {
+    mybuf = (char*) malloc(packet_len);
+    if(ft2232_read(mybuf, packet_len) < 0) {
+      log->warning("Read failed\n");
+      free(mybuf);
+      return -1;
     }
 
-    for(i = offset; i < (packet_len*bits_per_packet+offset); i++) {
-      dst_row = i / 8;
-      dst_col = i % 8;
-      src_row = (i-offset) / bits_per_packet;
-      src_col = (i-offset) % bits_per_packet;
-      dst_mask = ~(1 << dst_col);
-      src_mask = (1 << src_col);
-      buf[dst_row] = (buf[dst_row] & dst_mask) | ((mybuf[src_row] & src_mask) >> (dst_col - src_col));
-    }
-  } else if(bits_per_packet == 8) {
-    row_offset = offset / 8;
-    memcpy( &(buf[row_offset]), mybuf, packet_len);
-  } else {
-    free(mybuf);
-    return -1;
-  }
+    if(bits_per_packet < 8) {
+      for(i=0; i < packet_len; i++) { // rotate bits to the left side
+        mybuf[i] = (mybuf[i] >> (8-bits_per_packet));
+      }
 
-  free(mybuf);
+      for(i = offset; i < (packet_len*bits_per_packet+offset); i++) {
+        dst_row = i / 8;
+        dst_col = i % 8;
+        src_row = (i-offset) / bits_per_packet;
+        src_col = (i-offset) % bits_per_packet;
+        dst_mask = ~(1 << dst_col);
+        src_mask = (1 << src_col);
+        buf[dst_row] = (buf[dst_row] & dst_mask) | ((mybuf[src_row] & src_mask) >> (dst_col - src_col));
+      }
+    } else if(bits_per_packet == 8) {
+      row_offset = offset / 8;
+      memcpy( &(buf[row_offset]), mybuf, packet_len);
+    } else {
+      free(mybuf);
+      return -1;
+    }
+
+    free(mybuf);
+  }
 
   return 0;
 }
