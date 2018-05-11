@@ -26,13 +26,13 @@ import time
 
 class Ctype_cable(object):
 
-    def __init__(self, module, config):
+    def __init__(self, module, config, system_config):
 
         self.module = module
         self.gdb_handle = None
 
         # Register entry points with appropriate arguments
-        self.module.cable_new.argtypes = [ctypes.c_char_p]
+        self.module.cable_new.argtypes = [ctypes.c_char_p, ctypes.c_char_p]
         self.module.cable_write.argtypes = \
             [ctypes.c_void_p, ctypes.c_int, ctypes.c_int, ctypes.c_char_p]
         self.module.cable_read.argtypes = \
@@ -45,7 +45,7 @@ class Ctype_cable(object):
         if config is not None:
             config_string = config.dump_to_string().encode('utf-8')
 
-        self.instance = self.module.cable_new(config_string)
+        self.instance = self.module.cable_new(config_string, system_config.dump_to_string().encode('utf-8'))
 
         if self.instance == 0:
             raise Exception('Failed to initialize cable with error: ' + self.module.bridge_get_error().decode('utf-8'))
@@ -134,7 +134,8 @@ class debug_bridge(object):
 
         self.cable = Ctype_cable(
             module = self.module,
-            config = self.cable_config
+            config = self.cable_config,
+            system_config = self.config
         )
 
     def get_cable(self):

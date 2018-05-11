@@ -31,7 +31,7 @@
 #define JTAG_SOC_AXIREG  4
 
 
-Adv_dbg_itf::Adv_dbg_itf(Log* log, Cable *m_dev) : log(log), m_dev(m_dev)
+Adv_dbg_itf::Adv_dbg_itf(js::config *system_config, Log* log, Cable *m_dev) : config(system_config), log(log), m_dev(m_dev)
 {
   pthread_mutexattr_t attr;
   pthread_mutexattr_init(&attr);
@@ -757,9 +757,19 @@ bool Adv_dbg_itf::jtag_auto_discovery()
 
   log->debug("JTAG IR len is %d, DR len is %d\n", ir_len, dr_len);
 
-  if (dr_len <= 0 || ir_len <= 0) {
-    log->error("JTAG sanity check failed\n");
-    return false;
+  std::string chip = this->config->get("**/pulp_chip/*/name")->get_str();
+
+  if (chip != "wolfe")
+  {
+    if (dr_len <= 0 || ir_len <= 0) {
+      log->error("JTAG sanity check failed\n");
+      return false;
+    }
+  }
+  else
+  {
+    // On wolfe, due to a HW bug, it is not possible to guess the dr len
+    dr_len = 32;
   }
 
   // since we now know how long the chain is, we can shift out the IDs

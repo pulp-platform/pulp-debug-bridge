@@ -91,10 +91,11 @@ void Log::error(const char *str, ...)
   va_end(va);
 }
 
-extern "C" void *cable_new(const char *config_string)
+extern "C" void *cable_new(const char *config_string, const char *system_config_string)
 {
   const char *cable_name = NULL;
   js::config *config = NULL;
+  js::config *system_config = js::import_config_from_string(std::string(system_config_string));
 
   if (config_string != NULL)
   {
@@ -117,7 +118,7 @@ extern "C" void *cable_new(const char *config_string)
     Log *log = new Log();
     Ftdi::FTDIDeviceID id = Ftdi::Olimex;
     if (strcmp(cable_name, "ftdi@digilent") == 0) id = Ftdi::Digilent;
-    Adv_dbg_itf *adu = new Adv_dbg_itf(log, new Ftdi(log, id));
+    Adv_dbg_itf *adu = new Adv_dbg_itf(system_config, log, new Ftdi(log, id));
     if (!adu->connect(config)) return NULL;
     int tap = 0;
     if (config->get("tap")) tap = config->get("tap")->get_int();
@@ -131,7 +132,7 @@ extern "C" void *cable_new(const char *config_string)
   else if (strcmp(cable_name, "jtag-proxy") == 0)
   {
     Log *log = new Log();
-    Adv_dbg_itf *adu = new Adv_dbg_itf(log, new Jtag_proxy(log));
+    Adv_dbg_itf *adu = new Adv_dbg_itf(system_config, log, new Jtag_proxy(log));
     if (!adu->connect(config)) return NULL;
     int tap = 0;
     if (config->get("tap")) tap = config->get("tap")->get_int();
