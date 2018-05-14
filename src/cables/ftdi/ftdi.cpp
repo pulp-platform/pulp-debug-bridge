@@ -407,7 +407,7 @@ Ftdi::ft2232_mpsse_open() {
     goto fail;
   }
 
-  ret = ftdi_read_data_set_chunksize(&m_ftdic, 64);
+  ret = ftdi_read_data_set_chunksize(&m_ftdic, FTDX_MAXSEND_MPSSE);
   if (ret < 0) {
     log->warning("ft2232: Got error %s\n", ftdi_get_error_string(&m_ftdic));
     goto fail;
