@@ -30,9 +30,14 @@ typedef enum {
   HAL_BRIDGE_REQ_READ = 3,
   HAL_BRIDGE_REQ_WRITE = 4,
   HAL_BRIDGE_REQ_CLOSE = 5,
-  HAL_BRIDGE_REQ_FIRST_USER = 5
+  HAL_BRIDGE_REQ_FB_OPEN = 6,
+  HAL_BRIDGE_REQ_FB_UPDATE = 7,
+  HAL_BRIDGE_REQ_FIRST_USER = 8
 } hal_bridge_req_e;
 
+typedef enum {
+  HAL_BRIDGE_REQ_FB_FORMAT_GRAY = 1
+} hal_bridge_fb_format_e;
 
 typedef struct hal_bridge_req_s {
   uint32_t next;
@@ -40,6 +45,7 @@ typedef struct hal_bridge_req_s {
   uint32_t type;
   uint32_t done;
   uint32_t popped;
+  uint32_t padding;
   union {
     struct {
       uint32_t name_len;
@@ -64,6 +70,22 @@ typedef struct hal_bridge_req_s {
       uint32_t len;
       uint32_t retval;
     } write;
+    struct {
+      uint64_t screen;
+      uint32_t name_len;
+      uint32_t name;
+      uint32_t width;
+      uint32_t height;
+      uint32_t format;
+    } fb_open;
+    struct {
+      uint64_t screen;
+      uint32_t addr;
+      uint32_t posx;
+      uint32_t posy;
+      uint32_t width;
+      uint32_t height;
+    } fb_update;
   };
 } hal_bridge_req_t;
 

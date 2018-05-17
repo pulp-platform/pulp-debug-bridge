@@ -69,3 +69,7 @@ However the bridge may need few modifications depending on the ftdi chip which i
 
 It is also possible to connect the bridge to a remote server, like an RTL platform (using a DPI model): --cable=jtag-proxy.
 More information for this cable will be provided soon.
+
+### Supported targets
+
+Only pulp and pulpissimo are supported for now.
