@@ -414,8 +414,8 @@ bool Adv_dbg_itf::write_internal(ADBG_OPCODES opcode, unsigned int addr, int siz
 
   if ((recv[0] & 0x1) != 0x1) {
     // TODO some pulp targets like fulmine does not support CRC.
-    //log->warning("ft2232: Match bit was not set. Transfer has probably failed; addr %08X, size %d\n", addr, size);
-    //return false;
+    log->warning("ft2232: Match bit was not set. Transfer has probably failed; addr %08X, size %d\n", addr, size);
+    return false;
   }
 
   return true;

@@ -160,8 +160,9 @@ Ftdi::connect(js::config *config)
     buf[0] = SET_BITS_LOW;  // Set value & direction of ADBUS lines
     buf[1] = 0x00;          // values
     buf[2] = 0x1b;          // direction (1 == output)
+    //buf[3] = 0x8a;   // Activate this command to disabled the default divider by 5, otherwise by default we can just go up to 6MHz instead of 30MHz
     buf[3] = TCK_DIVISOR;
-    buf[4] = 0x01;
+    buf[4] = 0x01;         // We cannot go below that on fulmine
     buf[5] = 0x00;
     buf[6] = SEND_IMMEDIATE;
   }
@@ -173,6 +174,7 @@ Ftdi::connect(js::config *config)
     buf[0] = SET_BITS_LOW;  // Set value & direction of ADBUS lines
     buf[1] = 0x70;          // values                   0111 0000
     buf[2] = 0x7b;          // direction (1 == output)  0111 1011
+    //buf[3] = 0x8a;
     buf[3] = TCK_DIVISOR;
     buf[4] = 0x00;
     buf[5] = 0x00;
