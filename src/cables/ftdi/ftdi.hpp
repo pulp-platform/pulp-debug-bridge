@@ -55,7 +55,7 @@ class Ftdi : public Cable {
       Digilent,
     };
 
-    Ftdi(Log* log, FTDIDeviceID id);
+    Ftdi(js::config *config, Log* log, FTDIDeviceID id);
     ~Ftdi();
 
     bool connect(js::config *config);
@@ -111,6 +111,8 @@ class Ftdi : public Cable {
     struct ftdi_context m_ftdic;
     unsigned int bits_value;
     unsigned int bits_direction;
+    js::config *config;
+
 };
 
 #endif

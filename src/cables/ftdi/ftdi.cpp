@@ -32,7 +32,7 @@
 
 //-----------------------------------------------------------------------------
 
-Ftdi::Ftdi(Log* log, FTDIDeviceID id) : log (log), m_id (id)
+Ftdi::Ftdi(js::config *config, Log* log, FTDIDeviceID id) : log (log), m_id (id), config(config)
 {
   // add all our known devices to the map
   m_descriptors[Olimex].push_back((struct device_desc){0x15ba, 0x002a});
@@ -163,7 +163,7 @@ Ftdi::connect(js::config *config)
     buf[3] = TCK_DIVISOR;
     buf[4] = 0x01;
     buf[5] = 0x00;
-    buf[6] = SEND_IMMEDIATE;  
+    buf[6] = SEND_IMMEDIATE;
   }
   else if (m_id == Digilent)
   {
@@ -203,9 +203,32 @@ fail:
 
 bool Ftdi::chip_reset(bool active)
 {
-  if (m_id == Olimex) {
-    // Bit 9 is chip reset and active high.
-    return set_bit_value(9, active);
+  if (m_id == Olimex)
+  {
+    std::string chip = this->config->get("**/pulp_chip/*/name")->get_str();
+
+    if (chip == "vivosoc2" || chip == "vivosoc2_1")
+    {
+      if (active)
+      {
+        char buf[256];
+        buf[0] = SET_BITS_HIGH;
+        buf[1] = ~0x01;
+        buf[2] = 0x3;
+        buf[3] = SET_BITS_HIGH;
+        buf[4] = ~0x02;
+        buf[5] = 0x3;
+        buf[6] = SEND_IMMEDIATE;
+
+        if(ft2232_write(buf, 7, 0) != 7) return false;
+      }
+      return true;
+    }
+    else
+    {
+      // Bit 9 is chip reset and active high.
+      return set_bit_value(9, active);
+    }
   } else if (m_id == Digilent) { // ftdi2232 Gapuino
     // Bit 4 is chip reset and active high.
     return set_bit_value(4, !active);
@@ -846,8 +869,30 @@ bool
 Ftdi::jtag_reset(bool active)
 {
   if (m_id == Olimex) {
-    bool result = set_bit_value(8, !active);
-    return result;
+    std::string chip = this->config->get("**/pulp_chip/*/name")->get_str();
+
+    if (chip == "vivosoc2" || chip == "vivosoc2_1")
+    {
+      if (active)
+      {
+        char buf[256];
+        buf[0] = SET_BITS_HIGH;
+        buf[1] = ~0x01;
+        buf[2] = 0x3;
+        buf[3] = SET_BITS_HIGH;
+        buf[4] = ~0x02;
+        buf[5] = 0x3;
+        buf[6] = SEND_IMMEDIATE;
+
+        if(ft2232_write(buf, 7, 0) != 7) return false;
+      }
+      return true;
+    }
+    else
+    {
+      bool result = set_bit_value(8, !active);
+      return result;
+    }
   } else if (m_id == Digilent) {
     bool result = set_bit_value(6, !active);
     return result;
