@@ -107,6 +107,7 @@ void Ioloop::ioloop_routine()
         unsigned int zero = 0;
         cable->access(true, (unsigned int)(long)&debug_struct->pending_putchar, 4, (char*)&zero);
         for (int i=0; i<value; i++) putchar(buff[i]);
+        fflush(NULL);
       }
 
       // Small sleep to not poll too often
