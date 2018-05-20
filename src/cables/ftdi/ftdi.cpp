@@ -176,7 +176,9 @@ Ftdi::connect(js::config *config)
     buf[2] = 0x7b;          // direction (1 == output)  0111 1011
     //buf[3] = 0x8a;
     buf[3] = TCK_DIVISOR;
-    buf[4] = 0x00;
+    // THe divisor has been put to 2 as is not reliable on gap board with less
+    // than that
+    buf[4] = 0x02;
     buf[5] = 0x00;
     buf[6] = SEND_IMMEDIATE;
   }

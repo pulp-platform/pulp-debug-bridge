@@ -52,17 +52,24 @@ class gap_debug_bridge(debug_bridge):
         self.get_cable().jtag_set_reg(JTAG_SOC_CONFREG, JTAG_SOC_CONFREG_WIDTH, BOOT_MODE_JTAG)
         self.get_cable().chip_reset(False)
 
-        # Now wait until the boot code tells us we can load the code
-        if self.verbose:
-            print ("Waiting for notification from boot code")
-        while True:
-            reg_value = self.get_cable().jtag_get_reg(JTAG_SOC_CONFREG, JTAG_SOC_CONFREG_WIDTH, BOOT_MODE_JTAG)
-            if reg_value == CONFREG_BOOT_WAIT:
-                break
-        print ("Received for notification from boot code")
+        # Removed synchronization with boot code due to HW bug, it is better
+        # to stop fc as soon as possible
+
+#        # Now wait until the boot code tells us we can load the code
+#        if self.verbose:
+#            print ("Waiting for notification from boot code")
+#        while True:
+#            reg_value = self.get_cable().jtag_get_reg(JTAG_SOC_CONFREG, JTAG_SOC_CONFREG_WIDTH, BOOT_MODE_JTAG)
+#            if reg_value == CONFREG_BOOT_WAIT:
+#                break
+#        print ("Received for notification from boot code")
 
         # Stall the FC
         self.write(0x1B300000, 4, [0, 0, 1, 0])
+
+        # Configure FLL in open loop to avoid the HW bug with fll
+        self.write_32(0x1a100004, 0x840005f5)
+        self.write_32(0x1a100008, 0x8100410b)
 
         # Load the binary through jtag
         if self.verbose:
@@ -83,6 +90,8 @@ class gap_debug_bridge(debug_bridge):
     def start(self):
 
         if self.start_cores:
+            print ('Starting execution')
+
             # Unstall the FC so that it starts fetching instructions from the loaded binary
             self.write(0x1B300000, 4, [0, 0, 0, 0])
 
