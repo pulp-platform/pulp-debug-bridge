@@ -22,6 +22,10 @@ Most of the time a rule like the following must be added under /etc/udev/rules.d
 
 The user should also need to be in the *dialout* group.
 
+The following python package is also needed:
+
+    $ sudo pip3 install pyelftools
+
 
 ### Installation
 
