@@ -20,6 +20,10 @@ Most of the time a rule like the following must be added under /etc/udev/rules.d
 
         ATTR{idVendor}=="15ba", ATTR{idProduct}=="002b", MODE="0666", GROUP="dialout"
 
+The following command can be used to restart udev after the rule has been added: ::
+
+        sudo udevadm control --reload-rules && sudo udevadm trigger
+
 The user should also need to be in the *dialout* group.
 
 The following python package is also needed:
