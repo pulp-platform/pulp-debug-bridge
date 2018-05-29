@@ -451,6 +451,10 @@ void Reqloop::reqloop_routine()
       usleep(500);
     }
   }
+  else
+  {
+    log->warning("Trying to launch request loop (command reqloop) while no binary is provided\n");
+  }
 }
 
 Reqloop::Reqloop(Cable *cable, unsigned int debug_struct_addr) : cable(cable), debug_struct_addr(debug_struct_addr)
