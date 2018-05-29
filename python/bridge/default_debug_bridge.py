@@ -291,8 +291,12 @@ class debug_bridge(object):
         if self.gdb_handle is not None:
             self.module.gdb_server_close(self.gdb_handle, 0)
 
+        # The wait function returns in case ioloop has been launched
+        # as it will check for end of application.
+        # Otherwise it will wait for reqloop for ever
         if self.ioloop_handle is not None:
             self.module.bridge_ioloop_close(self.ioloop_handle, 0)
+            return 0
 
         if self.reqloop_handle is not None:
             self.module.bridge_reqloop_close(self.reqloop_handle, 0)
