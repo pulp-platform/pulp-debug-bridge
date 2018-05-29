@@ -838,7 +838,7 @@ int Adv_dbg_itf::ir_len_detect()
       break;
     }
   }
-  log->warning("ft2232: jtag_chainlen = %d\n", jtag_chainlen);
+  log->debug("ft2232: jtag_chainlen = %d\n", jtag_chainlen);
 
   m_dev->jtag_write_tms(1); // update DR
   m_dev->jtag_write_tms(0); // run test idle
