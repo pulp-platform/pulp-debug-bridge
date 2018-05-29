@@ -69,7 +69,7 @@ void Log::debug(const char *str, ...)
 
 void Log::warning(const char *str, ...)
 {
-  if (bridge_verbose <= LOG_DEBUG) return;
+  if (bridge_verbose <= LOG_WARNING) return;
   va_list va;
   va_start(va, str);
   vprintf(str, va);

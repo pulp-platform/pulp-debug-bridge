@@ -292,10 +292,10 @@ class debug_bridge(object):
             self.module.gdb_server_close(self.gdb_handle, 0)
 
         if self.ioloop_handle is not None:
-            return self.module.bridge_ioloop_close(self.ioloop_handle, 0)
+            self.module.bridge_ioloop_close(self.ioloop_handle, 0)
 
         if self.reqloop_handle is not None:
-            return self.module.bridge_reqloop_close(self.reqloop_handle, 0)
+            self.module.bridge_reqloop_close(self.reqloop_handle, 0)
 
         return 0
 
