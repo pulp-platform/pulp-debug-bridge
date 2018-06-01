@@ -95,11 +95,12 @@ class Ctype_cable(object):
 
 class debug_bridge(object):
 
-    def __init__(self, config, binaries=[], verbose=False):
+    def __init__(self, config, binaries=[], verbose=False, fimages=[]):
         self.config = config
         self.cable = None
         self.cable_name = config.get('**/debug-bridge/cable/type').get()
         self.binaries = binaries
+        self.fimages = fimages
         self.ioloop_handle = None
         self.reqloop_handle = None
         self.verbose = verbose
@@ -252,7 +253,7 @@ class debug_bridge(object):
         self.get_cable().jtag_reset(True)
         self.get_cable().jtag_reset(False)
         self.get_cable().chip_reset(True)
-        self.get_cable().chip_reset(False)
+        self._iet_cable().chip_reset(False)
         return 0
 
     def ioloop(self):
@@ -285,6 +286,50 @@ class debug_bridge(object):
 
     def gdb(self, port):
         self.gdb_handle = self.module.gdb_server_open(self.get_cable().get_instance(), port)
+        return 0
+
+    def flash(self):
+        MAX_BUFF_SIZE = (350*1024)
+        f_path = self.fimages[0]
+        addrHeader = self.__get_binary_symbol_addr('flasherHeader')
+        addrImgRdy = addrHeader
+        addrFlasherRdy = addrHeader + 4
+        addrFlashAddr = addrHeader + 8
+        addrIterTime = addrHeader + 12
+        addrBufSize = addrHeader + 16
+        # open the file in read binary mode
+        f_img = open(f_path, 'rb')
+        f_size = os.path.getsize(f_path)
+        lastSize = f_size % MAX_BUFF_SIZE;
+        if(lastSize):
+            n_iter = f_size // MAX_BUFF_SIZE + 1;
+        else:
+            n_iter = f_size // MAX_BUFF_SIZE
+
+        flasher_ready = self.read_32(addrFlasherRdy)
+        while(flasher_ready == 0):
+            flasher_ready = self.read_32(addrFlasherRdy)
+        flasher_ready = 0;
+        addrBuffer = self.read_32((addrHeader+20))
+        indexAddr = 0
+        self.write_32(addrFlashAddr, 0)
+        self.write_32(addrIterTime, n_iter)
+        for i in range(n_iter):
+            if (lastSize and i == (n_iter-1)):
+                buff_data = f_img.read(lastSize)
+                self.write(addrBuffer, lastSize, buff_data)
+                self.write_32(addrBufSize, ((lastSize + 3) & ~3))
+            else:
+                buff_data = f_img.read(MAX_BUFF_SIZE)
+                self.write(addrBuffer, MAX_BUFF_SIZE, buff_data)
+                self.write_32(addrBufSize, MAX_BUFF_SIZE)
+            self.write_32(addrImgRdy, 1)
+            self.write_32(addrFlasherRdy, 0)
+            if (i!=(n_iter-1)):
+                flasher_ready = self.read_32(addrFlasherRdy)
+                while(flasher_ready == 0):
+                    flasher_ready = self.read_32(addrFlasherRdy)
+        f_img.close()
         return 0
 
     def wait(self):

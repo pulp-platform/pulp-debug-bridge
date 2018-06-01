@@ -32,8 +32,8 @@ CONFREG_INIT = 0
 
 class gap_debug_bridge(debug_bridge):
 
-    def __init__(self, config, binaries=[], verbose=False):
-        super(gap_debug_bridge, self).__init__(config=config, binaries=binaries, verbose=verbose)
+    def __init__(self, config, binaries=[], verbose=False, fimages=[]):
+        super(gap_debug_bridge, self).__init__(config=config, binaries=binaries, verbose=verbose, fimages=fimages)
 
         self.start_cores = False
 
@@ -158,3 +158,5 @@ class gap_debug_bridge(debug_bridge):
         self.get_cable().jtag_set_reg(JTAG_SOC_CONFREG, JTAG_SOC_CONFREG_WIDTH, CONFREG_PGM_LOADED)
 
         return 0
+
+
