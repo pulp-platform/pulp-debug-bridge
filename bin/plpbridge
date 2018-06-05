@@ -281,9 +281,6 @@ elif args.fimages != []:
 else:
     binaries = args.binaries
 
-print ("binaries: " + str(binaries))
-print ("flash image: " + str(args.fimages))
-
 bridge = db.get_bridge(config=config, verbose=args.verbose, binaries=binaries, fimages=args.fimages)
 
 if args.ipython:
