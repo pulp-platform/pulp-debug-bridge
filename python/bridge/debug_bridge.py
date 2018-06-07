@@ -22,7 +22,7 @@ import bridge.chips.wolfe as wolfe
 import bridge.chips.fulmine as fulmine
 
 
-def get_bridge(config, binaries=[], verbose=False, fimages=[]):
+def get_bridge(config, binaries=[], verbose=False):
 
 
     chip = list(config.get('**/pulp_chip').get_items().values())[0].get('name').get()
@@ -37,4 +37,4 @@ def get_bridge(config, binaries=[], verbose=False, fimages=[]):
     else:
         bridge_class = debug_bridge
 
-    return bridge_class(config=config, binaries=binaries, verbose=verbose, fimages=fimages)
+    return bridge_class(config=config, binaries=binaries, verbose=verbose)
