@@ -235,7 +235,7 @@ class debug_bridge(object):
     def read_8(self, addr):
         return self.read_int(addr, 1)
 
-    def __get_binary_symbol_addr(self, name):
+    def _get_binary_symbol_addr(self, name):
         for binary in self.binaries:
             with open(binary, 'rb') as file:
                 elf = ELFFile(file)
@@ -259,9 +259,9 @@ class debug_bridge(object):
 
         # First get address of the structure used to communicate between
         # the bridge and the runtime
-        addr = self.__get_binary_symbol_addr('__rt_debug_struct_ptr')
+        addr = self._get_binary_symbol_addr('__rt_debug_struct_ptr')
         if addr == 0:
-            addr = self.__get_binary_symbol_addr('debugStruct_ptr')
+            addr = self._get_binary_symbol_addr('debugStruct_ptr')
 
         self.ioloop_handle = self.module.bridge_ioloop_open(
             self.get_cable().get_instance(), addr)
@@ -272,16 +272,17 @@ class debug_bridge(object):
 
         # First get address of the structure used to communicate between
         # the bridge and the runtime
-        addr = self.__get_binary_symbol_addr('__rt_debug_struct_ptr')
+        addr = self._get_binary_symbol_addr('__rt_debug_struct_ptr')
         if addr == 0:
-            addr = self.__get_binary_symbol_addr('debugStruct_ptr')
+            addr = self._get_binary_symbol_addr('debugStruct_ptr')
 
         self.reqloop_handle = self.module.bridge_reqloop_open(
             self.get_cable().get_instance(), addr)
 
         return 0
 
-
+    def flash(self):
+        raise Exception('Flash is not supported on this target')
 
     def gdb(self, port):
         self.gdb_handle = self.module.gdb_server_open(self.get_cable().get_instance(), port)

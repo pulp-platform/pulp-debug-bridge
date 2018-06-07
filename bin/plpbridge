@@ -140,6 +140,17 @@ def wait(bridge):
 
     return bridge.wait()
 
+def flash(bridge):
+    # When using the flasher, the binaries should be the flasher
+    bridge.binaries= [os.environ["INSTALL_DIR"] + "/bin/flasher"]
+    if args.verbose >=4:
+        print("Flashing the flash image")
+
+    load(bridge)
+    ioloop(bridge)
+    start(bridge)
+    return bridge.flash(args.fimages)
+
 
 def reset(bridge):
     if args.verbose >= 4:
@@ -177,6 +188,7 @@ commands = {
   'reqloop' : ['Activate request loop',             reqloop],
   'gdb'     : ['Open RSP server for GDB connection',gdb],
   'start'   : ['Start execution',                   start],
+  'flash'   : ['Flash the flash image',             flash],
   'wait'    : ['Wait termination',                  wait],
   'reset'   : ['Chip reset',                        reset],
   'script'  : ['Execute user scripts',              script],
@@ -207,8 +219,9 @@ parser.add_argument("--help", dest="help", action='store_true', default=False, h
 parser.add_argument("--cable", dest="cable", default=None, help="Specify cable")
 parser.add_argument("--chip", dest="chip", default=None, help="Specify target chip")
 parser.add_argument("--binary", dest="binaries", default=[], action="append", help="Specify a binary to be loaded by the load command")
-  
-[args, otherArgs] = parser.parse_known_args() 
+parser.add_argument("--flash-image", dest="fimages", default=[], action="append", help="Specify a flash image to be flashed")
+
+[args, otherArgs] = parser.parse_known_args()
 
 if 'read' in args.command or 'write' in args.command:
   parser.add_argument("--addr", dest="addr", default=None, help="Specify the address of the access for read and write commands")
@@ -239,7 +252,7 @@ config_path = args.config
 
 # First get the json configuration
 if config_path is not None:
-    # Either it is specified and then just process it, everything is specified 
+    # Either it is specified and then just process it, everything is specified
     # inside and all arguments are ignored
     config = js.import_config_from_file(config_path)
 elif args.chip is not None:
@@ -262,8 +275,6 @@ elif args.chip is not None:
 
 else:
     raise Exception('A chip or a config file must be specified')
-
-
 
 bridge = db.get_bridge(config=config, verbose=args.verbose, binaries=args.binaries)
 
