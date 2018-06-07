@@ -426,7 +426,7 @@ bool Adv_dbg_itf::write_internal(ADBG_OPCODES opcode, unsigned int addr, int siz
 bool Adv_dbg_itf::read_internal(ADBG_OPCODES opcode, unsigned int addr, int size, char* buffer)
 {
   char recv[size];
-  char buf[8];
+  char buf[size < 8 ? 8 : size];
   int bytewidth;
   int nwords;
   uint32_t crc = 0xFFFFFFFF;
