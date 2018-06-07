@@ -101,7 +101,7 @@ def write(bridge):
 
 def load(bridge):
     if args.verbose >= 4:
-        print ('Loading ELF binaries (path: %s)' % ' '.join(binaries))
+        print ('Loading ELF binaries (path: %s)' % ' '.join(args.binaries))
 
     return bridge.load()
 
@@ -141,10 +141,15 @@ def wait(bridge):
     return bridge.wait()
 
 def flash(bridge):
+    # When using the flasher, the binaries should be the flasher
+    bridge.binaries= [os.environ["INSTALL_DIR"] + "/bin/flasher"]
     if args.verbose >=4:
         print("Flashing the flash image")
 
-    return bridge.flash()
+    load(bridge)
+    ioloop(bridge)
+    start(bridge)
+    return bridge.flash(args.fimages)
 
 
 def reset(bridge):
@@ -214,7 +219,7 @@ parser.add_argument("--help", dest="help", action='store_true', default=False, h
 parser.add_argument("--cable", dest="cable", default=None, help="Specify cable")
 parser.add_argument("--chip", dest="chip", default=None, help="Specify target chip")
 parser.add_argument("--binary", dest="binaries", default=[], action="append", help="Specify a binary to be loaded by the load command")
-parser.add_argument("--fimage", dest="fimages", default=[], action="append", help="Specify a flash image to be flashed")
+parser.add_argument("--flash-image", dest="fimages", default=[], action="append", help="Specify a flash image to be flashed")
 
 [args, otherArgs] = parser.parse_known_args()
 
@@ -271,17 +276,7 @@ elif args.chip is not None:
 else:
     raise Exception('A chip or a config file must be specified')
 
-# Need to flash the flash image and boot from flash
-if args.boot_mode == "jtag_hyper":
-    binaries= [os.environ["INSTALL_DIR"] + "/bin/flasher"]
-# Need to flash the flash image and still boot from jtag
-elif args.fimages != []:
-    binaries= [os.environ["INSTALL_DIR"] + "/bin/flasher"] + args.binaries
-# boot from jtag
-else:
-    binaries = args.binaries
-
-bridge = db.get_bridge(config=config, verbose=args.verbose, binaries=binaries, fimages=args.fimages)
+bridge = db.get_bridge(config=config, verbose=args.verbose, binaries=args.binaries)
 
 if args.ipython:
   embed()
