@@ -97,7 +97,11 @@ $(DEP_SRC_DIR)/json-tools:
 	mkdir -p $(DEP_SRC_DIR)
 	cd $(DEP_SRC_DIR) && git clone https://github.com/pulp-platform/json-tools.git
 
-checkout: $(DEP_SRC_DIR)/json-tools
+$(DEP_SRC_DIR)/pulp-configs:
+	mkdir -p $(DEP_SRC_DIR)
+	cd $(DEP_SRC_DIR) && git clone https://github.com/pulp-platform/pulp-configs.git
+
+checkout: $(DEP_SRC_DIR)/json-tools $(DEP_SRC_DIR)/pulp-configs
 
 -include $(OBJS:.o=.d)
 
@@ -113,6 +117,7 @@ $(INSTALL_DIR)/lib/libpulpdebugbridge.so: $(BUILD_DIR)/libpulpdebugbridge.so
 
 deps:
 	make -C $(DEP_SRC_DIR)/json-tools all BUILD_DIR=$(BUILD_DIR)/json-tools INSTALL_DIR=$(INSTALL_DIR)
+	make -C $(DEP_SRC_DIR)/pulp-configs all BUILD_DIR=$(BUILD_DIR)/pulp-configs INSTALL_DIR=$(INSTALL_DIR)
 
 build: $(INSTALL_HEADERS) $(INSTALL_DIR)/lib/libpulpdebugbridge.so
 

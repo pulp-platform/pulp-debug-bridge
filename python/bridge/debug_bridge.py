@@ -24,9 +24,7 @@ import bridge.chips.fulmine as fulmine
 
 def get_bridge(config, binaries=[], verbose=False):
 
-
-    chip = list(config.get('**/pulp_chip').get_items().values())[0].get('name').get()
-
+    chip = config.get('**/board/chip').get('name').get()
 
     if chip == 'gap':
         bridge_class = gap.gap_debug_bridge

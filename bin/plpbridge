@@ -24,6 +24,7 @@ import argparse
 import code
 import imp
 import os.path
+import sys
 
 try:
   import plptree
@@ -250,31 +251,24 @@ if args.port != -1:
 config_path = args.config
 
 
-# First get the json configuration
-if config_path is not None:
-    # Either it is specified and then just process it, everything is specified
-    # inside and all arguments are ignored
-    config = js.import_config_from_file(config_path)
-elif args.chip is not None:
-    # Or a chip is given, in this case, import the configuration for this chip
-    try:
-        configs = plptree.get_configs_from_env(configs=["system=%s" % args.chip])
-        config = js.import_config(configs[0].get_dict())
-    except:
-        config = js.import_config({"debug-bridge": {}, "pulp_chip": { args.chip: { "name": args.chip } } })
-
-    with open('myconfig.json', 'w') as file:
-        file.write(config.dump_to_string())
-
-    # And overloads it with the specified options
-    if args.boot_mode is not None:
-        config.get('**/debug-bridge').set('boot-mode', args.boot_mode)
-    if args.cable is not None:
-        config.get('**/debug-bridge').set('cable/type', args.cable)
-
-
-else:
+if args.chip is not None:
+    config_path = os.path.join(
+        os.path.dirname(os.path.dirname(sys.argv[0])),
+        'configs', 'systems', '%s.json' % args.chip
+    )
+elif config_path is None:
     raise Exception('A chip or a config file must be specified')
+
+config = js.import_config_from_file(config_path)
+
+
+# And overloads it with the specified options
+if args.boot_mode is not None:
+    config.get('**/debug-bridge').set('boot-mode', args.boot_mode)
+
+if args.cable is not None:
+    config.get('**/debug-bridge').set('cable/type', args.cable)
+
 
 bridge = db.get_bridge(config=config, verbose=args.verbose, binaries=args.binaries)
 
