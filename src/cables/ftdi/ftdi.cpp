@@ -61,7 +61,7 @@ Ftdi::connect(js::config *config)
   int err;
   const char *description = NULL;
 
-  if (config)
+  if (config && config->get("description") != NULL)
   {
     description = config->get("description")->get_str().c_str();
   }
@@ -209,7 +209,7 @@ bool Ftdi::chip_reset(bool active)
 {
   if (m_id == Olimex)
   {
-    std::string chip = this->config->get("**/pulp_chip/*/name")->get_str();
+    std::string chip = this->config->get("**/chip/name")->get_str();
 
     if (chip == "vivosoc2" || chip == "vivosoc2_1")
     {
@@ -873,7 +873,7 @@ bool
 Ftdi::jtag_reset(bool active)
 {
   if (m_id == Olimex) {
-    std::string chip = this->config->get("**/pulp_chip/*/name")->get_str();
+    std::string chip = this->config->get("**/chip/name")->get_str();
 
     if (chip == "vivosoc2" || chip == "vivosoc2_1")
     {

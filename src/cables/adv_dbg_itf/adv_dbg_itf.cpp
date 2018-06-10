@@ -55,7 +55,7 @@ bool Adv_dbg_itf::connect(js::config *config)
   if (config != NULL) jtag_cable_config = config->get("jtag_cable");
 
   if (!m_dev->connect(jtag_cable_config)) {
-    log->error("Could not connect ftdi device\n");
+    log->error("Could not connect to JTAG device\n");
     return false;
   }
 
@@ -757,7 +757,7 @@ bool Adv_dbg_itf::jtag_auto_discovery()
 
   log->debug("JTAG IR len is %d, DR len is %d\n", ir_len, dr_len);
 
-  std::string chip = this->config->get("**/pulp_chip/*/name")->get_str();
+  std::string chip = this->config->get("**/chip/name")->get_str();
 
   if (chip != "wolfe")
   {
