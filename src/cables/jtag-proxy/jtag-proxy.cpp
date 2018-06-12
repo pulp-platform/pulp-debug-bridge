@@ -44,7 +44,15 @@ bool Jtag_proxy::connect(js::config *config)
   struct sockaddr_in addr;
   struct hostent *he;
 
-  int m_port = config->get("port")->get_int();
+  js::config *proxy_config = config->get("jtag-proxy");
+
+  if (proxy_config == NULL || proxy_config->get("port") == NULL)
+  {
+    fprintf(stderr, "Didn't find any information for JTAG proxy\n");
+    return false;
+  }
+
+  int m_port = proxy_config->get("port")->get_int();
   char *m_server = (char *)"localhost";
 
   if((m_socket = socket(PF_INET, SOCK_STREAM, 0)) < 0) {

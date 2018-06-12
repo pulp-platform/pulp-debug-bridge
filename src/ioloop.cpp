@@ -128,10 +128,10 @@ extern "C" void *bridge_ioloop_open(void *cable, unsigned int debug_struct_addr)
   return (void *)new Ioloop((Cable *)cable, debug_struct_addr);
 }
 
-extern "C" void bridge_ioloop_close(void *arg, int kill)
+extern "C" int bridge_ioloop_close(void *arg, int kill)
 {
   Ioloop *ioloop = (Ioloop *)arg;
-  ioloop->stop(kill);
+  return ioloop->stop(kill);
 }
 
 

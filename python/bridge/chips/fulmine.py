@@ -25,8 +25,8 @@ class fulmine_debug_bridge(debug_bridge):
         super(fulmine_debug_bridge, self).__init__(config=config, binaries=binaries, verbose=verbose)
 
         # We have to use the soc tap on fulmine
-        if config.get('**/debug-bridge/cable/tap') is not None:
-            config.get('**/debug-bridge/cable').set('tap', 1)
+        if config.get('**/debug_bridge/cable/tap') is not None:
+            config.get('**/debug_bridge/cable').set('tap', 1)
 
     def start(self):
         self.write_32(0x10200008, 0x1)

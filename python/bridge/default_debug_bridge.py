@@ -98,13 +98,13 @@ class debug_bridge(object):
     def __init__(self, config, binaries=[], verbose=False):
         self.config = config
         self.cable = None
-        self.cable_name = config.get('**/debug-bridge/cable/type').get()
+        self.cable_name = config.get('**/debug_bridge/cable/type').get()
         self.binaries = binaries
         self.ioloop_handle = None
         self.reqloop_handle = None
         self.verbose = verbose
         self.gdb_handle = None
-        self.cable_config = config.get('**/debug-bridge/cable')
+        self.cable_config = config.get('**/debug_bridge/cable')
 
 
 
@@ -176,10 +176,16 @@ class debug_bridge(object):
                             size,
                             [0] * size
                         )
+
+
+            set_pc_addr_config = self.config.get('**/debug_bridge/set_pc_addr')
+            if set_pc_addr_config is not None:
+                return self.write_32(set_pc_addr_config.get_int(), 0x1c008080) #elffile.header['e_entry'])
+
         return 0
 
     def load(self):
-        mode = self.config.get('**/debug-bridge/boot-mode').get()
+        mode = self.config.get('**/debug_bridge/boot-mode').get()
         if mode == 'jtag':
             return self.load_jtag()
         elif mode == 'jtag_hyper':
@@ -188,8 +194,6 @@ class debug_bridge(object):
             return self.load_default()
 
     def load_default(self):
-        self.reset()
-
         for binary in self.binaries:
             if self.load_elf(binary=binary):
                 return 1
@@ -197,6 +201,15 @@ class debug_bridge(object):
         return 0
 
     def start(self):
+        start_addr_config = self.config.get('**/debug_bridge/start_addr')
+        if start_addr_config is not None:
+            self.write_32(start_addr_config.get_int(), self.config.get('**/debug_bridge/start_value').get_int())
+        return 0
+
+    def stop(self):
+        stop_addr_config = self.config.get('**/debug_bridge/stop_addr')
+        if stop_addr_config is not None:
+            self.write_32(stop_addr_config.get_int(), self.config.get('**/debug_bridge/stop_value').get_int()) != 0
         return 0
 
     def read(self, addr, size):
@@ -296,8 +309,7 @@ class debug_bridge(object):
         # as it will check for end of application.
         # Otherwise it will wait for reqloop for ever
         if self.ioloop_handle is not None:
-            self.module.bridge_ioloop_close(self.ioloop_handle, 0)
-            return 0
+            return self.module.bridge_ioloop_close(self.ioloop_handle, 0)
 
         if self.reqloop_handle is not None:
             self.module.bridge_reqloop_close(self.reqloop_handle, 0)
