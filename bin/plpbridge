@@ -101,8 +101,9 @@ def write(bridge):
 
 
 def load(bridge):
+
     if args.verbose >= 4:
-        print ('Loading ELF binaries (path: %s)' % ' '.join(args.binaries))
+        print ('Loading ELF binaries (path: %s)' % ' '.join(bridge.config.get('**/loader/binaries').get_dict()))
 
     return bridge.load()
 
@@ -133,6 +134,13 @@ def start(bridge):
         print ('Starting execution')
 
     return bridge.start()
+
+
+def stop(bridge):
+    if args.verbose >= 4:
+        print ('Stopping execution')
+
+    return bridge.stop()
 
 
 def wait(bridge):
@@ -189,6 +197,7 @@ commands = {
   'reqloop' : ['Activate request loop',             reqloop],
   'gdb'     : ['Open RSP server for GDB connection',gdb],
   'start'   : ['Start execution',                   start],
+  'stop'    : ['Stop execution',                    stop],
   'flash'   : ['Flash the flash image',             flash],
   'wait'    : ['Wait termination',                  wait],
   'reset'   : ['Chip reset',                        reset],
@@ -264,13 +273,24 @@ config = js.import_config_from_file(config_path)
 
 # And overloads it with the specified options
 if args.boot_mode is not None:
-    config.get('**/debug-bridge').set('boot-mode', args.boot_mode)
+    config.get('**/debug_bridge').set('boot-mode', args.boot_mode)
 
 if args.cable is not None:
-    config.get('**/debug-bridge').set('cable/type', args.cable)
+    config.get('**/debug_bridge').set('cable/type', args.cable)
+
+for binary in args.binaries:
+    config.get('**/loader').set('binaries', binary)
 
 
-bridge = db.get_bridge(config=config, verbose=args.verbose, binaries=args.binaries)
+
+
+if len(args.command) == 0:
+    json_commands = config.get('**/debug_bridge/commands')
+    if json_commands is not None: 
+        args.command = json_commands.get().split()
+
+
+bridge = db.get_bridge(config=config, verbose=args.verbose, binaries=config.get('**/loader/binaries').get_dict())
 
 if args.ipython:
   embed()
@@ -300,6 +320,7 @@ def handle_commands(bridge):
                     if commands.get(cmd)[1](bridge) != 0:
                         print ()
                         fatal_error('the command \'%s\' has failed' % (cmd))
+                        exit(1)
                 except Exception as e:
                     fatal_error('the command \'%s\' has failed with an exception: %s' % (cmd, e))
                     if args.debug:

@@ -52,12 +52,15 @@ bool Adv_dbg_itf::connect(js::config *config)
 {
   js::config *jtag_cable_config = NULL;
 
-  if (config != NULL) jtag_cable_config = config->get("jtag_cable");
-
-  if (!m_dev->connect(jtag_cable_config)) {
+  if (!m_dev->connect(config)) {
     log->error("Could not connect to JTAG device\n");
     return false;
   }
+
+  m_dev->jtag_reset(true);
+  m_dev->jtag_reset(false);
+
+  this->jtag_soft_reset();
 
   // now we can work with the chain
   if (!jtag_auto_discovery()) {
@@ -403,10 +406,12 @@ bool Adv_dbg_itf::write_internal(ADBG_OPCODES opcode, unsigned int addr, int siz
 
   // receive match bit
   recv[0] = 0;
+
   if (!m_dev->stream_inout(recv, buf, 2, false)) {
     log->warning("ft2232: failed to read match bit from device\n");
     return false;
   }
+
 
   m_dev->jtag_write_tms(1); // exit 1 DR
   m_dev->jtag_write_tms(1); // update DR
@@ -759,7 +764,7 @@ bool Adv_dbg_itf::jtag_auto_discovery()
 
   std::string chip = this->config->get("**/chip/name")->get_str();
 
-  if (chip != "wolfe")
+  if (chip != "wolfe" && chip != "pulp" && chip != "pulpissimo")
   {
     if (dr_len <= 0 || ir_len <= 0) {
       log->error("JTAG sanity check failed\n");
