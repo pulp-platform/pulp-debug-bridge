@@ -655,7 +655,12 @@ Target::Target(Gdb_server *top)
     int nb_clusters = config->get("**/nb_cluster")->get_int();
     for (int i=0; i<nb_clusters; i++)
     {
-      Target_cluster *cluster = new Target_cluster(config, cluster_config, top, 0x10000000 + 0x400000 * i, 0x10000000 + 0x400000 * i, i);
+      unsigned int cluster_base = 0x10000000;
+      js::config *base_config = config->get("**/cluster/base");
+      if (base_config != NULL)
+        cluster_base = base_config->get_int();
+
+      Target_cluster *cluster = new Target_cluster(config, cluster_config, top, cluster_base + 0x400000 * i, cluster_base + 0x400000 * i, i);
 
       clusters.push_back(cluster);
       for (int j=0; j<cluster->get_nb_core(); j++)

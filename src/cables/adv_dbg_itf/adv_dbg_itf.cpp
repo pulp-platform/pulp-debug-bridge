@@ -37,6 +37,9 @@ Adv_dbg_itf::Adv_dbg_itf(js::config *system_config, Log* log, Cable *m_dev) : co
   pthread_mutexattr_init(&attr);
   pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_RECURSIVE);
   pthread_mutex_init(&mutex, &attr);
+
+  this->debug_ir = system_config->get("**/adv_dbg_unit/debug_ir")->get_int();
+  log->debug("Using debug IR: 0x%x\n", this->debug_ir);
 }
 
 
@@ -711,7 +714,7 @@ bool Adv_dbg_itf::jtag_debug()
   if (!dev.is_in_debug)
   {
     jtag_soft_reset();
-    dev.is_in_debug = jtag_set_selected_ir(0x04);
+    dev.is_in_debug = jtag_set_selected_ir(this->debug_ir);
     return dev.is_in_debug;
   }
 }
