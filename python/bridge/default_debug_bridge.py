@@ -40,6 +40,11 @@ class Ctype_cable(object):
         self.module.cable_jtag_get_reg.argtypes = \
             [ctypes.c_void_p, ctypes.c_int, ctypes.c_int, ctypes.POINTER(ctypes.c_int)]
 
+        self.module.gdb_server_open.argtypes = [ctypes.c_void_p, ctypes.c_int]
+        self.module.gdb_server_open.restype = ctypes.c_void_p
+
+        self.module.gdb_server_close.argtypes = [ctypes.c_void_p, ctypes.c_int]
+
         config_string = None
 
         if config is not None:

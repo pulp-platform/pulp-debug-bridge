@@ -79,6 +79,7 @@ class Adv_dbg_itf : public Cable  {
     js::config *config;
 
     pthread_mutex_t mutex;
+    unsigned int debug_ir;
 
 
     std::vector<jtag_device> m_jtag_devices;
