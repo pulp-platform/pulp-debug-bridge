@@ -38,7 +38,9 @@ Adv_dbg_itf::Adv_dbg_itf(js::config *system_config, Log* log, Cable *m_dev) : co
   pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_RECURSIVE);
   pthread_mutex_init(&mutex, &attr);
 
-  this->debug_ir = system_config->get("**/adv_dbg_unit/debug_ir")->get_int();
+  js::config *conf = system_config->get("**/adv_dbg_unit/debug_ir");
+
+  this->debug_ir = conf != NULL ? conf->get_int() : 0x4;
   log->debug("Using debug IR: 0x%x\n", this->debug_ir);
 }
 
