@@ -33,12 +33,41 @@ class Ctype_cable(object):
 
         # Register entry points with appropriate arguments
         self.module.cable_new.argtypes = [ctypes.c_char_p, ctypes.c_char_p]
+        self.module.cable_new.restype = ctypes.c_void_p
+
         self.module.cable_write.argtypes = \
             [ctypes.c_void_p, ctypes.c_int, ctypes.c_int, ctypes.c_char_p]
+
         self.module.cable_read.argtypes = \
             [ctypes.c_void_p, ctypes.c_int, ctypes.c_int, ctypes.c_char_p]
+
+        self.module.chip_reset.argtypes = \
+            [ctypes.c_void_p, ctypes.c_bool]
+            
+        self.module.jtag_reset.argtypes = \
+            [ctypes.c_void_p, ctypes.c_bool]
+            
+        self.module.jtag_soft_reset.argtypes = \
+            [ctypes.c_void_p]
+            
+        self.module.cable_jtag_set_reg.argtypes = \
+            [ctypes.c_void_p, ctypes.c_int, ctypes.c_int, ctypes.c_uint]
+        self.module.cable_jtag_set_reg.restype = ctypes.c_bool
+
         self.module.cable_jtag_get_reg.argtypes = \
             [ctypes.c_void_p, ctypes.c_int, ctypes.c_int, ctypes.POINTER(ctypes.c_int)]
+        self.module.cable_jtag_get_reg.restype = ctypes.c_bool
+
+        self.module.cable_lock.argtypes = \
+            [ctypes.c_void_p]
+            
+        self.module.cable_unlock.argtypes = \
+            [ctypes.c_void_p]
+            
+        self.module.bridge_get_error.argtypes = []
+        self.module.bridge_get_error.restype = ctypes.c_char_p
+            
+        self.module.bridge_init.argtypes = [ctypes.c_char_p, ctypes.c_int]
 
         self.module.gdb_server_open.argtypes = [ctypes.c_void_p, ctypes.c_int]
         self.module.gdb_server_open.restype = ctypes.c_void_p
