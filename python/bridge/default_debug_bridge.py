@@ -146,9 +146,17 @@ class debug_bridge(object):
         # python / C++ bindings
         lib_path=os.path.join('libpulpdebugbridge.so')
         self.module = ctypes.CDLL(lib_path)
+
+        self.module.bridge_ioloop_open.argtypes = [ctypes.c_void_p, ctypes.c_uint]
+        self.module.bridge_ioloop_open.restype = ctypes.c_void_p
+
         self.module.bridge_ioloop_close.argtypes = [ctypes.c_void_p, ctypes.c_int]
+        self.module.bridge_ioloop_close.restype = ctypes.c_int
+
+        self.module.bridge_reqloop_open.argtypes = [ctypes.c_void_p, ctypes.c_uint]
+        self.module.bridge_reqloop_open.restype = ctypes.c_void_p
+        
         self.module.bridge_reqloop_close.argtypes = [ctypes.c_void_p, ctypes.c_int]
-        self.module.bridge_get_error.restype = ctypes.c_char_p
 
         self.module.bridge_init(config.dump_to_string().encode('utf-8'), verbose)
 
