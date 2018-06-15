@@ -57,6 +57,12 @@ bool Adv_dbg_itf::connect(js::config *config)
 {
   js::config *jtag_cable_config = NULL;
 
+  access_timeout = config->get_int("**/access_timeout_us");
+  if (access_timeout == 0)
+    access_timeout = 1000000;
+
+  log->debug ("Using access timeout: %d us\n", access_timeout);
+
   if (!m_dev->connect(config)) {
     log->error("Could not connect to JTAG device\n");
     return false;
@@ -529,7 +535,7 @@ bool Adv_dbg_itf::read_internal(ADBG_OPCODES opcode, unsigned int addr, int size
     assert(retval == 0);
     unsigned long usec_elapsed = (now.tv_sec - start.tv_sec) * 1000000 + (now.tv_usec - start.tv_usec);
 
-    if (usec_elapsed > 1000000) {
+    if (usec_elapsed > access_timeout) {
       log->warning("ft2232: did not get a start bit from the AXI module in 1s\n");
       return false;
     }
@@ -769,7 +775,7 @@ bool Adv_dbg_itf::jtag_auto_discovery()
 
   std::string chip = this->config->get("**/chip/name")->get_str();
 
-  if (chip != "wolfe" && chip != "pulp" && chip != "pulpissimo")
+  if (chip != "wolfe")
   {
     if (dr_len <= 0 || ir_len <= 0) {
       log->error("JTAG sanity check failed\n");
