@@ -265,8 +265,19 @@ if args.chip is not None:
         os.path.dirname(os.path.dirname(sys.argv[0])),
         'configs', 'systems', '%s.json' % args.chip
     )
-elif config_path is None:
+
+    if not os.path.exists(config_path):
+        print ("ERROR, didn't find any configuration for specified chip (chip: %s, config: %s)" % (args.chip, config_path))
+        exit(-1)
+
+elif config_path is not None:
+    if not os.path.exists(config_path):
+        print ("ERROR, specified configuration does not exist (config: %s)" % (config_path))
+        exit(-1)
+else:
     raise Exception('A chip or a config file must be specified')
+
+
 
 config = js.import_config_from_file(config_path)
 
