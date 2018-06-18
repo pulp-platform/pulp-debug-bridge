@@ -81,7 +81,7 @@ class Ctype_cable(object):
 
         self.instance = self.module.cable_new(config_string, system_config.dump_to_string().encode('utf-8'))
 
-        if self.instance == 0:
+        if self.instance == None:
             raise Exception('Failed to initialize cable with error: ' + self.module.bridge_get_error().decode('utf-8'))
 
     def get_instance(self):

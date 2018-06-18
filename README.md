@@ -5,9 +5,9 @@ It also provide an RSP server so that it can be used to interface GDB with pulp 
 
 ###  Getting the sources
 
-This repository uses submodules. You need the --recursive option to fetch the submodules automatically
+You can get the sources with this command:
 
-    $ git clone --recursive to https://github.com/pulp-platform/pulp-debug-bridge.git
+    $ git clone https://github.com/pulp-platform/pulp-debug-bridge.git
 
 ### Prerequisites
 
@@ -16,11 +16,11 @@ In case the FTDI cables are needed, the libftdi must be installed. Here is the c
     $ sudo apt-get install libftdi1-dev
     
 Once the FTDI lib is installed, USB access rights must be updated.
-Most of the time a rule like the following must be added under /etc/udev/rules.d/, for example in /etc/udev/rules.d/10-ftdi.rules: ::
+Most of the time a rule like the following must be added under /etc/udev/rules.d/, for example in /etc/udev/rules.d/10-ftdi.rules:
 
         ATTR{idVendor}=="15ba", ATTR{idProduct}=="002b", MODE="0666", GROUP="dialout"
 
-The following command can be used to restart udev after the rule has been added: ::
+The following command can be used to restart udev after the rule has been added:
 
         sudo udevadm control --reload-rules && sudo udevadm trigger
 
@@ -36,12 +36,17 @@ The following python package is also needed:
 To build this tool, execute this command from the root directory:
 
     $ make all
+
+This will checkout sources from other modules needed by the bridge. In case the sources are already checked out and you just want to build the bridge, you can execute this command:
+
+    $ make build
     
 All what is needed to use the tool is then inside the directory `install`. You can define the following paths in order to use it:
 
-    $ export PATH=<root dir>/install/bin:$PATH
-    $ export PYTHONPATH=<root dir>/install/python:$PYTHONPATH
-    $ export LD_LIBRARY_PATH=<root dir>/install/lib:$LD_LIBRARY_PATH
+    $ export PATH=$PWD/install/bin:$PATH
+    $ export PYTHONPATH=$PWD/install/python:$PYTHONPATH
+    $ export LD_LIBRARY_PATH=$PWD/install/lib:$LD_LIBRARY_PATH
+    $ export PULP_CONFIGS_PATH=$PWD/install/configs
 
 
 ### Usage
@@ -81,3 +86,25 @@ More information for this cable will be provided soon.
 ### Supported targets
 
 Only pulp and pulpissimo are supported for now.
+
+### Customizing existing targets
+
+The bridge is getting architecture information about the selected chip using a JSON description of the architecture.
+Such descriptions can be found under install/configs/systems (once the bridge is built). For example if the selected chip is pulpissimo, the bridge will get the description from install/configs/systems/pulpissimo.json. These configs comes from the pulp-configs module which is downloaded as a dependency and are found by the bridge using the environment variable PULP_CONFIGS_PATH.
+
+The configs contains a lot of hardware details and are generated from high-level descriptions that can be found under install/configs/templates/chips. The idea is that this high-level config describes the most important architecture properties, which are then used by generator scripts to generate the final detailed description.
+
+If the targetted architecture is slightly different from an existing one, it is possible to take one of these templates and customize it to reflect the differences, and then use the generated configuration to configure the bridge.
+
+For that first copy and modify an existing template:
+
+    $ cp install/configs/templates/chips/pulpissimo.json my_template.json
+
+The memory map can for example be modified and will be taken into account by the generators.
+Then generate the configuration from your template:
+
+    $  pulp_config_gen --template=$PWD/my_template.json --output=my_config.json
+
+Then instead of specifying a chip, you can specify your configuration on the bridge command-line like this:
+
+    $ plpbridge --config=my_config.json --cable=ftdi load --binary=<binary path>
