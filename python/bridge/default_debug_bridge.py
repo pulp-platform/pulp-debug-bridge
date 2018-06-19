@@ -222,7 +222,7 @@ class debug_bridge(object):
 
             set_pc_addr_config = self.config.get('**/debug_bridge/set_pc_addr')
             if set_pc_addr_config is not None:
-                return self.write_32(set_pc_addr_config.get_int(), 0x1c008080) #elffile.header['e_entry'])
+                return self.write_32(set_pc_addr_config.get_int(), elffile.header['e_entry'])
 
         return 0
 
