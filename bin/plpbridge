@@ -61,6 +61,7 @@ def read(bridge):
 
     addr = int(args.addr, 0)
     size = int(args.size, 0)
+    width = args.width
 
     if args.verbose >= 4:
         print ('Read access command (addr: 0x%x, size: 0x%x)' % (addr, size))
@@ -69,11 +70,13 @@ def read(bridge):
 
     while size > 0:
         line = '%8.8x: ' % addr
-        for i in range(0, 16):
-            line += '%2.2x ' % (int.from_bytes(data.pop(0), byteorder='little'))
-            size -= 1
-            addr += 1
-            if size == 0:
+        for i in range(0, 16, width):
+
+            line += '%*.*x ' % (width*2, width*2, int.from_bytes(b''.join(data[0:width]), byteorder='little'))
+            size -= width
+            addr += width
+            data = data[width:]
+            if size <= 0:
                 break
         print (line)
 
@@ -236,6 +239,9 @@ parser.add_argument("--flash-image", dest="fimages", default=[], action="append"
 if 'read' in args.command or 'write' in args.command:
   parser.add_argument("--addr", dest="addr", default=None, help="Specify the address of the access for read and write commands")
   parser.add_argument("--size", dest="size", default="4", help="Specify the size of the access for read and write commands")
+
+if 'read' in args.command:
+  parser.add_argument("--width", dest="width", default=1, type=int, help="Specify the word size in bytes used to display numbers for read commands")
 
 if 'write' in args.command:
   parser.add_argument("--value", dest="value", default=None, help="Specify the value to be written for write command")
