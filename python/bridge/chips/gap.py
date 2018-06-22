@@ -38,11 +38,7 @@ class gap_debug_bridge(debug_bridge):
         self.fimages = fimages
         self.start_cores = False
 
-
-    def load_jtag(self):
-
-        if self.verbose:
-            print ('Loading binary through jtag')
+    def stop(self):
 
         # Reset the chip and tell him we want to load via jtag
         # We keep the reset active until the end so that it sees
@@ -71,6 +67,17 @@ class gap_debug_bridge(debug_bridge):
         # Configure FLL with no lock to avoid the HW bug with fll
         self.write_32(0x1a100004, 0x840005f5)
         self.write_32(0x1a100008, 0x8100410b)
+
+        return 0
+
+
+    def load_jtag(self):
+
+        if self.verbose:
+            print ('Loading binary through jtag')
+
+        if self.stop() != 0:
+            return -1
 
         # Load the binary through jtag
         if self.verbose:
