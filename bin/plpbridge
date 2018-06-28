@@ -258,10 +258,6 @@ if args.help:
     exit(0)
 
 
-cable_option = None
-if args.port != -1:
-  cable_option = "--port=%d" % (args.port)
-
 
 config_path = args.config
 
@@ -294,6 +290,9 @@ if args.boot_mode is not None:
 
 if args.cable is not None:
     config.get('**/debug_bridge').set('cable/type', args.cable)
+
+if args.port is not None:
+    config.get('**/debug_bridge/cable/jtag-proxy').set('port', args.port)
 
 for binary in args.binaries:
     config.get('**/loader').set('binaries', binary)
