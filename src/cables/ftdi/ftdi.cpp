@@ -16,6 +16,36 @@
  * Authors: Andreas Traber
  */
 
+/*
+ * Olimex ARM-USB-OCD, ARM-USB-OCD-H, ARM-USB-TINY and ARM-USB-TINY-H pinout
+ *
+ * GPIO     Function      Comment
+ *  0       TCK           Set as output but do not drive manually
+ *  1       TDI           Set as output but do not drive manually
+ *  2       TDO           Set as input, should not be driven
+ *  3       TMS           Set as output but do not drive manually
+ *  4       ??            GPIOL0 of FT2232H, set as output 
+ *  5       ??            GPIOL1 of FT2232H, set as input, should not be driven
+ *  6       ??            GPIOL2 of FT2232H, set as input, should not be driven
+ *  7       RTCK          GPIOL3 of FT2232H, set as input, should not be driven
+ *  8       TRST*)        Set as output
+ *  9       SRST**)       Set as output
+ * 10       ??            GPIOH2 of FT2232H, set as output
+ * 11       Red LED       Set as output
+ * 12       ??            GPIOH4 of FT2232H, set as input, should not be driven
+ * 13       ??            GPIOH5 of FT2232H, set as input, should not be driven
+ * 14       ??            GPIOH6 of FT2232H, set as input, should not be driven
+ * 15       ??            GPIOH7 of FT2232H, set as input, should not be driven
+ *
+ *  *)  Pin is driven by Olimex in an active-high way, i.e. 0: driven to GND by Olimex
+ *                                                          1: driven to VRef by Olimex
+ *  **) Pin is driven by Olimex in an active-low way, i.e.  0: not driven by Olimex -> needs to be driven to high from DUT side (V_reset)
+ *                                                          1: driven to GND by Olimex
+ *
+ * Use command SET_BITS_LOW for GPIO 0 - 7 (byte0: value, byte1: direction)
+ * Use command SET_BITS_HIGH for GPIO 8 - 15 (byte0: value, byte1: direction)
+ */
+
 #include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -891,6 +921,11 @@ Ftdi::jtag_reset(bool active)
         if(ft2232_write(buf, 7, 0) != 7) return false;
       }
       return true;
+    }    
+    else if(chip == "vivosoc3")
+    {
+      bool result = set_bit_value(9, active);
+      return result;
     }
     else
     {
