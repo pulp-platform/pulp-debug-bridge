@@ -166,6 +166,7 @@ class Target_cluster_common
 
 public:
   Target_cluster_common(js::config *config, Gdb_server *top, uint32_t cluster_addr, uint32_t xtrigger_addr, int cluster_id);
+  ~Target_cluster_common();
   int get_nb_core() { return nb_core; }
   Target_core *get_core(int i) { return cores[i]; }
   void update_power();
@@ -173,6 +174,7 @@ public:
   void resume();
   void halt();
   void flush();
+  void init();
 
 protected:
   Gdb_server *top;
@@ -209,7 +211,15 @@ Target_core::Target_core(Gdb_server *top, uint32_t dbg_unit_addr, int cluster_id
   this->thread_id = first_free_thread_id++;
 }
 
-
+void Target_core::init(bool is_on)
+{
+  top->log->print(LOG_DEBUG, "Init core (is_on: %d)\n", is_on);
+  this->is_on = is_on;
+  ppc_is_cached = false;
+  stopped = false;
+  step = false;
+  commit_step = false;
+}
 
 void Target_core::flush()
 {
@@ -451,7 +461,32 @@ Target_cluster_common::Target_cluster_common(js::config *config, Gdb_server *top
 {
 }
 
+Target_cluster_common::~Target_cluster_common()
+{
+  for (auto &core: cores)
+  {
+    delete(core);
+  }
+}
 
+void Target_cluster_common::init()
+{
+  is_on = power->is_on();
+  if (is_on) {
+    nb_on_cores = nb_core;
+  } else {
+    nb_on_cores = 0;
+  }
+  top->log->print(LOG_DEBUG, "Init cluster %d (is_on: %d)\n", cluster_id, is_on);
+  for (auto &core: cores)
+  {
+    core->init(is_on);
+  }
+  if (is_on)
+  {
+    ctrl->init();
+  }
+}
 
 Target_cluster::Target_cluster(js::config *system_config, js::config *config, Gdb_server *top, uint32_t cluster_base, uint32_t xtrigger_addr, int cluster_id)
 : Target_cluster_common(config, top, cluster_base, xtrigger_addr, cluster_id)
@@ -488,8 +523,6 @@ Target_cluster::Target_cluster(js::config *system_config, js::config *config, Gd
   this->update_power();
 }
 
-
-
 Target_fc::Target_fc(js::config *config, Gdb_server *top, uint32_t fc_dbg_base, uint32_t fc_cache_base, int cluster_id)
 : Target_cluster_common(config, top, fc_dbg_base, -1, cluster_id)
 {
@@ -507,8 +540,6 @@ Target_fc::Target_fc(js::config *config, Gdb_server *top, uint32_t fc_dbg_base, 
 
   this->update_power();
 }
-
-
 
 void Target_cluster_common::flush()
 {
@@ -564,21 +595,25 @@ void Target_cluster_common::update_power()
 
 void Target_cluster_common::set_power(bool is_on)
 {
-  this->top->log->debug("Set cluster power (cluster: %d, is_on: %d)\n", cluster_id, is_on);
+  this->top->log->debug("Set cluster power (cluster: %d, old_is_on: %d, new_is_on: %d)\n", cluster_id, this->is_on, is_on);
 
   if (is_on != this->is_on) {
     this->is_on = is_on;
+    this->top->log->debug("Do controller init\n");
 
     ctrl->init();
   }
 
   if (is_on && nb_on_cores != nb_core)
   {
+    this->top->log->debug("Set all on\n");
     for(auto const& core: cores)
     {
       core->set_power(is_on);
     }
-  } else {
+  }
+  else
+  {
     nb_on_cores = 0;
   }
 }
@@ -673,7 +708,13 @@ Target::Target(Gdb_server *top)
   }
 }
 
-
+Target::~Target()
+{
+  for (auto &cluster : this->clusters)
+  {
+    delete(cluster);
+  }
+}
 
 void Target::flush()
 {
@@ -721,7 +762,13 @@ bool Target::wait(int socket_client)
   return true;
 }
 
-
+void Target::reinitialize()
+{
+  this->top->log->debug("Reinitialize target\n");
+  for (auto &cluster: clusters) {
+    cluster->init();
+  }
+}
 
 void Target::update_power()
 {
@@ -729,8 +776,6 @@ void Target::update_power()
     cluster->update_power();
   }
 }
-
-
 
 void Target::halt()
 {

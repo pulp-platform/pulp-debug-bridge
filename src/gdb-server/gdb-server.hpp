@@ -46,6 +46,7 @@
 
 #define DBG_CAUSE_BP  0x3
 
+typedef int (*cmd_cb_t)(const char * cmd, char * rsp_buf, int rsp_buf_len);
 
 class Rsp;
 class Breakpoints;
@@ -59,16 +60,23 @@ static int first_free_thread_id = 0;
 class Gdb_server
 {
 public:
-  Gdb_server(Log *log, Cable *cable, js::config *config, int socket_port);
+  Gdb_server(Log *log, Cable *cable, js::config *config, int socket_port,
+    cmd_cb_t cmd_cb, const char * capabilities);
   int stop(bool kill);
   void print(const char *format, ...);
+  int target_is_started();
+  void start_target();
+  void stop_target();
+  void refresh_target();
+  void target_update_power();
 
   Rsp *rsp;
   Log *log;
   Cable *cable;
   Target *target;
   Breakpoints *bkp;
-
+  cmd_cb_t cmd_cb;
+  const char * capabilities;
   js::config *config;
 };
 
@@ -98,6 +106,7 @@ public:
   void commit_step_mode();
   void resume();
   void flush();
+  void init(bool is_on);
 
   bool gpr_read_all(uint32_t *data);
   bool gpr_read(unsigned int i, uint32_t *data);
@@ -123,7 +132,7 @@ private:
 class Target {
 public:
   Target(Gdb_server *top);
-
+  ~Target();
   inline int get_nb_threads() { return cores.size(); }
 
 
@@ -132,7 +141,7 @@ public:
   void resume_all();
   bool wait(int socket_client);
   void flush();
-
+  void reinitialize();
   void update_power();
 
   std::vector<Target_core *> get_threads() { return cores; }
@@ -186,6 +195,7 @@ class Rsp {
 
     bool open();
     void close(int kill);
+    void init();
 
 
   private:
@@ -235,8 +245,6 @@ class Rsp {
 
     int thread_sel;
     Target_core *main_core = NULL;
-
-
 
     bool wait_client();
     bool loop();

@@ -22,17 +22,40 @@
 #include "gdb-server/gdb-server.hpp"
 #include <stdarg.h>
 
-
-Gdb_server::Gdb_server(Log *log, Cable *cable, js::config *config, int socket_port)
-: log(log), cable(cable), config(config)
+Gdb_server::Gdb_server(Log *log, Cable *cable, js::config *config, int socket_port,
+  cmd_cb_t cmd_cb, const char * capabilities)
+: log(log), cable(cable), config(config), cmd_cb(cmd_cb), capabilities(capabilities)
 {
   target = new Target(this);
+  printf("init target -- %p\n", target);
 
   bkp = new Breakpoints(this);
 
   rsp = new Rsp(this, socket_port);
 
   if (!rsp->open()) throw std::logic_error("Unable to open RSP server");
+}
+
+int Gdb_server::target_is_started() {
+  return cmd_cb("__is_started", NULL, 0);
+}
+
+void Gdb_server::start_target() {
+  cmd_cb("__start_target", NULL, 0);
+}
+
+void Gdb_server::stop_target() {
+  cmd_cb("__stop_target", NULL, 0);
+}
+
+void Gdb_server::target_update_power() {
+  target->update_power();
+}
+
+void Gdb_server::refresh_target()
+{
+  target->reinitialize();
+  target->update_power();
 }
 
 int Gdb_server::stop(bool kill)

@@ -48,6 +48,34 @@ void Log::print(log_level_e level, const char *str, ...)
   va_end(va);
 }
 
+// void Log::DumpHex(const void* data, size_t size) {
+// 	char ascii[17];
+// 	size_t i, j;
+// 	ascii[16] = '\0';
+// 	for (i = 0; i < size; ++i) {
+// 		printf("%02X ", ((unsigned char*)data)[i]);
+// 		if (((unsigned char*)data)[i] >= ' ' && ((unsigned char*)data)[i] <= '~') {
+// 			ascii[i % 16] = ((unsigned char*)data)[i];
+// 		} else {
+// 			ascii[i % 16] = '.';
+// 		}
+// 		if ((i+1) % 8 == 0 || i+1 == size) {
+// 			printf(" ");
+// 			if ((i+1) % 16 == 0) {
+// 				printf("|  %s \n", ascii);
+// 			} else if (i+1 == size) {
+// 				ascii[(i+1) % 16] = '\0';
+// 				if ((i+1) % 16 <= 8) {
+// 					printf(" ");
+// 				}
+// 				for (j = (i+1) % 16; j < 16; ++j) {
+// 					printf("   ");
+// 				}
+// 				printf("|  %s \n", ascii);
+// 			}
+// 		}
+// 	}
+// }
 
 void Log::user(const char *str, ...)
 {
@@ -203,9 +231,6 @@ extern "C" void cable_unlock(void *handler)
   cable->unlock();
 }
 
-
-
-
 static void init_sigint_handler(int s) {
   raise(SIGTERM);
 }
@@ -218,6 +243,7 @@ extern "C" char * bridge_get_error()
 
 extern "C" void bridge_init(const char *config_string, int verbose)
 {
+  printf("Bridge init - log level %d\n", verbose);
   system_config = js::import_config_from_string(std::string(config_string));
   bridge_verbose = verbose;
 
@@ -229,9 +255,9 @@ extern "C" void bridge_init(const char *config_string, int verbose)
 }
 
 
-extern "C" void *gdb_server_open(void *cable, int socket_port)
+extern "C" void *gdb_server_open(void *cable, int socket_port, cmd_cb_t cmd_cb, const char * capabilities)
 {
-  return (void *)new Gdb_server(new Log(), (Cable *)cable, system_config, socket_port);
+  return (void *)new Gdb_server(new Log(), (Cable *)cable, system_config, socket_port, cmd_cb, capabilities);
 }
 
 extern "C" void gdb_server_close(void *arg, int kill)
@@ -240,7 +266,11 @@ extern "C" void gdb_server_close(void *arg, int kill)
   server->stop(kill);
 }
 
-
+extern "C" void gdb_server_refresh_target(void *arg)
+{
+  Gdb_server *server = (Gdb_server *)arg;
+  server->refresh_target();
+}
 
 
 #if 0

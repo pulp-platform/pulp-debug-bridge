@@ -22,6 +22,7 @@
 #define __GDB_SERVER_GDB_SERVER_H__
 
 #include <list>
+#include <memory>
 #include <stdio.h>
 #include <stdbool.h>
 #include <stdlib.h>
