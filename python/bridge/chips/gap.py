@@ -30,20 +30,68 @@ CONFREG_BOOT_WAIT = 1
 CONFREG_PGM_LOADED = 1
 CONFREG_INIT = 0
 
+FEATURES={
+    'target.xml':'''<?xml version="1.0"?>
+<!DOCTYPE target SYSTEM "gdb-target.dtd">
+<target>
+  <architecture>riscv:rv32</architecture>
+
+  <feature name="org.gnu.gdb.riscv.rv32i">
+    <reg name="x0"  bitsize="32" group="general"/>
+    <reg name="x1"  bitsize="32" group="general"/>
+    <reg name="x2"  bitsize="32" group="general"/>
+    <reg name="x3"  bitsize="32" group="general"/>
+    <reg name="x4"  bitsize="32" group="general"/>
+    <reg name="x5"  bitsize="32" group="general"/>
+    <reg name="x6"  bitsize="32" group="general"/>
+    <reg name="x7"  bitsize="32" group="general"/>
+    <reg name="x8"  bitsize="32" group="general"/>
+    <reg name="x9"  bitsize="32" group="general"/>
+    <reg name="x10" bitsize="32" group="general"/>
+    <reg name="x11" bitsize="32" group="general"/>
+    <reg name="x12" bitsize="32" group="general"/>
+    <reg name="x13" bitsize="32" group="general"/>
+    <reg name="x14" bitsize="32" group="general"/>
+    <reg name="x15" bitsize="32" group="general"/>
+    <reg name="x16" bitsize="32" group="general"/>
+    <reg name="x17" bitsize="32" group="general"/>
+    <reg name="x18" bitsize="32" group="general"/>
+    <reg name="x19" bitsize="32" group="general"/>
+    <reg name="x20" bitsize="32" group="general"/>
+    <reg name="x21" bitsize="32" group="general"/>
+    <reg name="x22" bitsize="32" group="general"/>
+    <reg name="x23" bitsize="32" group="general"/>
+    <reg name="x24" bitsize="32" group="general"/>
+    <reg name="x25" bitsize="32" group="general"/>
+    <reg name="x26" bitsize="32" group="general"/>
+    <reg name="x27" bitsize="32" group="general"/>
+    <reg name="x28" bitsize="32" group="general"/>
+    <reg name="x29" bitsize="32" group="general"/>
+    <reg name="x30" bitsize="32" group="general"/>
+    <reg name="x31" bitsize="32" group="general"/>
+  </feature>
+</target>
+'''
+}
+
 class gap_debug_bridge(debug_bridge):
 
-    def __init__(self, config, binaries=[], verbose=False, fimages=[]):
+    def __init__(self, config, binaries=[], verbose=0, fimages=[]):
         super(gap_debug_bridge, self).__init__(config=config, binaries=binaries, verbose=verbose)
 
         self.fimages = fimages
         self.start_cores = False
+        # self.capabilities("qXfer:features:read+")
 
     def stop(self):
+        if self.is_started == False:
+            return 0
 
+        self.is_started = False
         # Reset the chip and tell him we want to load via jtag
         # We keep the reset active until the end so that it sees
         # the boot mode as soon as it boots from rom
-        if self.verbose:
+        if self.verbose > 0:
             print ("Notifying to boot code that we are doing a JTAG boot")
         self.get_cable().chip_reset(True)
         self.get_cable().jtag_set_reg(JTAG_SOC_CONFREG, JTAG_SOC_CONFREG_WIDTH, BOOT_MODE_JTAG)
@@ -70,19 +118,26 @@ class gap_debug_bridge(debug_bridge):
 
         return 0
 
+    def qxfer_read(self, object, annex):
+        if object != "features":
+            raise XferInvalidObjectException()
+        if annex not in FEATURES:
+            raise XferInvalidAnnexException()
+        return FEATURES[annex]
 
     def load_jtag(self):
 
-        if self.verbose:
+        if self.verbose > 0:
             print ('Loading binary through jtag')
 
         if self.stop() != 0:
             return -1
 
         # Load the binary through jtag
-        if self.verbose:
-            print ("Loading binaries")
+
         for binary in self.binaries:
+            if self.verbose > 1:
+                print ("Loading binary from " + binary)
             if self.load_elf(binary=binary):
                 return 1
 
@@ -97,9 +152,10 @@ class gap_debug_bridge(debug_bridge):
 
     def start(self):
 
-        if self.start_cores:
+        if self.start_cores and not self.is_started:
             print ('Starting execution')
 
+            self.is_started = True
             # Unstall the FC so that it starts fetching instructions from the loaded binary
             self.write(0x1B300000, 4, [0, 0, 0, 0])
 

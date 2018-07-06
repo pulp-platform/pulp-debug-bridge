@@ -33,6 +33,8 @@
 #include "gdb-server.hpp"
 #include <unistd.h>
 
+#define REPLY_BUF_LEN 256
+
 enum mp_type {
   BP_MEMORY   = 0,
   BP_HARDWARE = 1,
@@ -60,6 +62,11 @@ enum target_signal {
 
 Rsp::Rsp(Gdb_server *top, int socket_port) : top(top), socket_port(socket_port)
 {
+  init();
+}
+
+void Rsp::init()
+{
   main_core = top->target->get_threads().front();
 
   m_thread_init = main_core->get_thread_id();
@@ -68,6 +75,7 @@ Rsp::Rsp(Gdb_server *top, int socket_port) : top(top), socket_port(socket_port)
 
 bool Rsp::v_packet(int socket_client, char* data, size_t len)
 {
+  top->log->print(LOG_ERROR, "V PKT: %s\n", data);
   if (strncmp ("vKill", data, strlen ("vKill")) == 0)
   {
     this->send_str(socket_client,  "OK");
@@ -86,7 +94,7 @@ bool Rsp::v_packet(int socket_client, char* data, size_t len)
       thread_done[i] = false;
     }
     // vCont can contains several commands, handle them in sequence
-      char *str = strtok(&data[6], ";");
+    char *str = strtok(&data[6], ";");
     while(str != NULL) {
       // Extract command and thread ID
       char *delim = index(str, ':');
@@ -144,11 +152,16 @@ bool Rsp::v_packet(int socket_client, char* data, size_t len)
 bool Rsp::query(int socket_client, char* data, size_t len)
 {
   int ret;
-  char reply[256];
-
+  char reply[REPLY_BUF_LEN];
+  top->log->print(LOG_ERROR, "QUERY PKT: %s\n", data);
   if (strncmp ("qSupported", data, strlen ("qSupported")) == 0)
   {
-    return this->send_str(socket_client,  "PacketSize=256");
+    if (strlen(top->capabilities) > 0) {
+      snprintf(reply, REPLY_BUF_LEN, "PacketSize=%x;%s", REPLY_BUF_LEN, top->capabilities);
+    } else {
+      snprintf(reply, REPLY_BUF_LEN, "PacketSize=%x", REPLY_BUF_LEN);
+    }
+    return this->send_str(socket_client, reply);
   }
   else if (strncmp ("qTStatus", data, strlen ("qTStatus")) == 0)
   {
@@ -161,7 +174,7 @@ bool Rsp::query(int socket_client, char* data, size_t len)
     ret = 1;
     for (auto &thread : top->target->get_threads())
     {
-      ret += snprintf(&reply[ret], 256 - ret, "%u,", thread->get_thread_id());
+      ret += snprintf(&reply[ret], REPLY_BUF_LEN - ret, "%u,", thread->get_thread_id());
     } 
 
     return this->send(socket_client, reply, ret-1);
@@ -173,7 +186,7 @@ bool Rsp::query(int socket_client, char* data, size_t len)
   else if (strncmp ("qThreadExtraInfo", data, strlen ("qThreadExtraInfo")) == 0)
   {
     const char* str_default = "Unknown Core";
-    char str[256];
+    char str[REPLY_BUF_LEN];
     unsigned int thread_id;
     if (sscanf(data, "qThreadExtraInfo,%d", &thread_id) != 1) {
       top->log->print(LOG_ERROR, "Could not parse qThreadExtraInfo packet\n");
@@ -182,13 +195,13 @@ bool Rsp::query(int socket_client, char* data, size_t len)
     Target_core *thread = top->target->get_thread(thread_id);
     {
       if (thread != NULL)
-        thread->get_name(str, 256);
+        thread->get_name(str, REPLY_BUF_LEN);
       else
         strcpy(str, str_default);
 
       ret = 0;
       for(int i = 0; i < strlen(str); i++)
-        ret += snprintf(&reply[ret], 256 - ret, "%02X", str[i]);
+        ret += snprintf(&reply[ret], REPLY_BUF_LEN - ret, "%02X", str[i]);
     }
 
     return this->send(socket_client, reply, ret);
@@ -215,10 +228,19 @@ bool Rsp::query(int socket_client, char* data, size_t len)
     // not supported, send empty packet
     return this->send_str(socket_client,  "");
   }
+  else if (strncmp ("qRcmd", data, strlen ("qRcmd")) == 0||strncmp ("qXfer", data, strlen ("qXfer")) == 0)
+  {
+    int ret = this->top->cmd_cb(data, reply, REPLY_BUF_LEN);
+    if (ret > 0) {
+      return this->send_str(socket_client, reply);
+    } else {
+      return this->send_str(socket_client, "");
+    }
+  }
 
   top->log->print(LOG_ERROR, "Unknown query packet\n");
 
-  return false;
+  return this->send_str(socket_client, "");
 }
 
 
@@ -441,15 +463,18 @@ bool Rsp::regs_send(int socket_client)
   char regs_str[512];
   int i;
 
+  top->log->print(LOG_ERROR, "In regs_send\n");
+
   this->top->target->get_thread(thread_sel)->gpr_read_all(gpr);
 
   // now build the string to send back
   for(i = 0; i < 32; i++) {
     snprintf(&regs_str[i * 8], 9, "%08x", htonl(gpr[i]));
   }
-
+  top->log->print(LOG_ERROR, "Before pc_read\n");
   this->pc_read(socket_client, &npc);
   snprintf(&regs_str[32 * 8 + 0 * 8], 9, "%08x", htonl(npc));
+  top->log->print(LOG_ERROR, "After pc_read\n");
 
   return this->send_str(socket_client,  regs_str);
 }
@@ -669,11 +694,13 @@ bool Rsp::decode(int socket_client, char* data, size_t len)
     return this->signal(socket_client);
   }
 
+  top->log->print(LOG_ERROR, "Received %c command!\n", data[0]);
   switch (data[0]) {
   case 'q':
     return this->query(socket_client, &data[0], len);
 
   case 'g':
+    top->log->print(LOG_ERROR, "Execute regs_send\n");
     return this->regs_send(socket_client);
 
   case 'p':
@@ -752,7 +779,8 @@ Rsp::get_packet(int socket_client, char* pkt, size_t* p_pkt_len) {
     ret = recv(socket_client, &c, 1, 0);
 
     if((ret == -1 && errno != EWOULDBLOCK) || (ret == 0)) {
-      top->log->print(LOG_ERROR, "RSP: Error receiving\n");
+      top->log->print(LOG_ERROR, "RSP: Error receiving1\n");
+      exit(1);
       return false;
     }
 
@@ -781,7 +809,8 @@ Rsp::get_packet(int socket_client, char* pkt, size_t* p_pkt_len) {
     ret = recv(socket_client, &c, 1, 0);
 
     if((ret == -1 && errno != EWOULDBLOCK) || (ret == 0)) {
-      top->log->print(LOG_ERROR, "RSP: Error receiving\n");
+      top->log->print(LOG_ERROR, "RSP: Error receiving2\n");
+      exit(1);
       return false;
     }
 
@@ -812,13 +841,15 @@ Rsp::get_packet(int socket_client, char* pkt, size_t* p_pkt_len) {
   // checksum, 2 bytes
   ret = recv(socket_client, &check_chars[0], 1, 0);
   if((ret == -1 && errno != EWOULDBLOCK) || (ret == 0)) {
-    top->log->print(LOG_ERROR, "RSP: Error receiving\n");
+    top->log->print(LOG_ERROR, "RSP: Error receiving3\n");
+    exit(1);
     return false;
   }
 
   ret = recv(socket_client, &check_chars[1], 1, 0);
   if((ret == -1 && errno != EWOULDBLOCK) || (ret == 0)) {
-    top->log->print(LOG_ERROR, "RSP: Error receiving\n");
+    top->log->print(LOG_ERROR, "RSP: Error receiving4\n");
+    exit(1);
     return false;
   }
 
@@ -898,7 +929,8 @@ bool Rsp::send(int socket_client, const char* data, size_t len)
     ret = recv(socket_client, &ack, 1, 0);
     if((ret == -1 && errno != EWOULDBLOCK) || (ret == 0)) {
       free(raw);
-      top->log->print(LOG_ERROR, "RSP: Error receiving\n");
+      top->log->print(LOG_ERROR, "RSP: Error receiving0\n");
+      exit(1);
       return false;
     }
 

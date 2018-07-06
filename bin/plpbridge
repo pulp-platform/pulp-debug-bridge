@@ -348,3 +348,4 @@ def handle_commands(bridge):
 
 
 handle_commands(bridge)
+print("Exiting!!")

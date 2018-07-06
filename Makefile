@@ -60,8 +60,8 @@ endif
 
 
 
-CFLAGS += -O3 -g -fPIC -std=gnu++11 -MMD -MP -Isrc -Iinclude -I$(INSTALL_DIR)/include $(FTDI_CFLAGS) $(SDL_CFLAGS)
-LDFLAGS += -O3 -g -shared $(FTDI_LDFLAGS) $(SDL_LDFLAGS)
+CFLAGS += -g -fPIC -std=gnu++11 -MMD -MP -Isrc -Iinclude -I$(INSTALL_DIR)/include $(FTDI_CFLAGS) $(SDL_CFLAGS)
+LDFLAGS += -g -shared $(FTDI_LDFLAGS) $(SDL_LDFLAGS)
 
 SRCS = src/python_wrapper.cpp src/ioloop.cpp src/cables/jtag.cpp src/reqloop.cpp \
 src/cables/adv_dbg_itf/adv_dbg_itf.cpp src/gdb-server/gdb-server.cpp \
