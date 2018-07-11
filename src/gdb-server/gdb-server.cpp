@@ -27,7 +27,6 @@ Gdb_server::Gdb_server(Log *log, Cable *cable, js::config *config, int socket_po
 : log(log), cable(cable), config(config), cmd_cb(cmd_cb), capabilities(capabilities)
 {
   target = new Target(this);
-  printf("init target -- %p\n", target);
 
   bkp = new Breakpoints(this);
 
@@ -56,6 +55,7 @@ void Gdb_server::refresh_target()
 {
   target->reinitialize();
   target->update_power();
+  bkp->enable_all();
 }
 
 int Gdb_server::stop(bool kill)
