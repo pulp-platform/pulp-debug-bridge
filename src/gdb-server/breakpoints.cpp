@@ -42,6 +42,8 @@ Breakpoints::insert(unsigned int addr) {
   retval = top->cable->access(false, addr, 4, (char*)&bp.insn_orig);
   bp.is_compressed = INSN_IS_COMPRESSED(bp.insn_orig);
 
+  top->log->debug("Insert breakpoint at addr: 0x%x)\n", addr);
+
   breakpoints.push_back(bp);
 
   if (bp.is_compressed) {
@@ -68,6 +70,7 @@ Breakpoints::remove(unsigned int addr) {
       data = it->insn_orig;
       is_compressed = it->is_compressed;
 
+      top->log->debug("Remove breakpoint at addr: 0x%x)\n", addr);
       breakpoints.erase(it);
 
       if (is_compressed)
@@ -115,9 +118,11 @@ Breakpoints::enable(unsigned int addr) {
   for (std::list<struct bp_insn>::iterator it = breakpoints.begin(); it != breakpoints.end(); it++) {
     if (it->addr == addr) {
       if (it->is_compressed) {
+        top->log->debug("Enable compressed breakpoint at addr: 0x%x)\n", it->addr);
         data = INSN_BP_COMPRESSED;
         retval = top->cable->access(1, addr, 2, (char*)&data);
       } else {
+        top->log->debug("Enable breakpoint at addr: 0x%x)\n", it->addr);
         data = INSN_BP;
         retval = top->cable->access(1, addr, 4, (char*)&data);
       }
@@ -157,6 +162,7 @@ bool
 Breakpoints::enable_all() {
   bool retval = true;
 
+  top->log->debug("Enable all breakpoints (size: %d)\n", breakpoints.size());
   for (std::list<struct bp_insn>::iterator it = breakpoints.begin(); it != breakpoints.end(); it++) {
     retval = retval && this->enable(it->addr);
   }
@@ -168,6 +174,7 @@ bool
 Breakpoints::disable_all() {
   bool retval = true;
 
+  top->log->debug("Disable all breakpoints\n");
   for (std::list<struct bp_insn>::iterator it = breakpoints.begin(); it != breakpoints.end(); it++) {
     retval = retval && this->disable(it->addr);
   }
