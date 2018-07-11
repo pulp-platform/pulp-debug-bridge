@@ -75,7 +75,7 @@ void Rsp::init()
 
 bool Rsp::v_packet(int socket_client, char* data, size_t len)
 {
-  top->log->print(LOG_ERROR, "V PKT: %s\n", data);
+  top->log->print(LOG_DEBUG, "V Packet: %s\n", data);
   if (strncmp ("vKill", data, strlen ("vKill")) == 0)
   {
     this->send_str(socket_client,  "OK");
@@ -153,7 +153,7 @@ bool Rsp::query(int socket_client, char* data, size_t len)
 {
   int ret;
   char reply[REPLY_BUF_LEN];
-  top->log->print(LOG_ERROR, "QUERY PKT: %s\n", data);
+  top->log->print(LOG_DEBUG, "Query packet: %s\n", data);
   if (strncmp ("qSupported", data, strlen ("qSupported")) == 0)
   {
     if (strlen(top->capabilities) > 0) {
@@ -417,6 +417,8 @@ bool Rsp::reg_read(int socket_client, char* data, size_t len)
     this->top->target->get_thread(thread_sel)->gpr_read(addr, &rdata);
   else if (addr == 0x20)
     this->pc_read(socket_client, &rdata);
+  else if (addr == 0x41 + 0x301) // CSR MISA read - return not implemented
+    return this->send_str(socket_client,  "0000");
   else
     return this->send_str(socket_client,  "");
 
@@ -463,18 +465,14 @@ bool Rsp::regs_send(int socket_client)
   char regs_str[512];
   int i;
 
-  top->log->print(LOG_ERROR, "In regs_send\n");
-
   this->top->target->get_thread(thread_sel)->gpr_read_all(gpr);
 
   // now build the string to send back
   for(i = 0; i < 32; i++) {
     snprintf(&regs_str[i * 8], 9, "%08x", htonl(gpr[i]));
   }
-  top->log->print(LOG_ERROR, "Before pc_read\n");
   this->pc_read(socket_client, &npc);
   snprintf(&regs_str[32 * 8 + 0 * 8], 9, "%08x", htonl(npc));
-  top->log->print(LOG_ERROR, "After pc_read\n");
 
   return this->send_str(socket_client,  regs_str);
 }
@@ -694,13 +692,12 @@ bool Rsp::decode(int socket_client, char* data, size_t len)
     return this->signal(socket_client);
   }
 
-  top->log->print(LOG_ERROR, "Received %c command!\n", data[0]);
+  top->log->print(LOG_DEBUG, "Received %c command!\n", data[0]);
   switch (data[0]) {
   case 'q':
     return this->query(socket_client, &data[0], len);
 
   case 'g':
-    top->log->print(LOG_ERROR, "Execute regs_send\n");
     return this->regs_send(socket_client);
 
   case 'p':
