@@ -114,7 +114,7 @@ void Ioloop::ioloop_routine()
         cable->access(false, (unsigned int)(long)&debug_struct->putc_buffer, value, (char*)buff);
         unsigned int zero = 0;
         cable->access(true, (unsigned int)(long)&debug_struct->pending_putchar, 4, (char*)&zero);
-        for (int i=0; i<value; i++) putchar(buff[i]);
+        for (uint i=0; i<value; i++) putchar(buff[i]);
         fflush(NULL);
       }
 
