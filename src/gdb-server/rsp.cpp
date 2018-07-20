@@ -16,6 +16,7 @@
 
 /* 
  * Authors: Andreas Traber
+ *          Martin Croome, GreenWaves Technologies (martin.croome@greenwaves-technologies.com)
  */
 
 
@@ -43,24 +44,9 @@ enum mp_type {
   WP_ACCESS   = 4
 };
 
-enum target_signal {
-  TARGET_SIGNAL_NONE =  0,
-  TARGET_SIGNAL_INT  =  2,
-  TARGET_SIGNAL_ILL  =  4,
-  TARGET_SIGNAL_TRAP =  5,
-  TARGET_SIGNAL_FPE  =  8,
-  TARGET_SIGNAL_BUS  = 10,
-  TARGET_SIGNAL_SEGV = 11,
-  TARGET_SIGNAL_ALRM = 14,
-  TARGET_SIGNAL_STOP = 17,
-  TARGET_SIGNAL_USR2 = 31,
-  TARGET_SIGNAL_PWR  = 32
-};
-
 #define PACKET_MAX_LEN 4096
 
-
-Rsp::Rsp(Gdb_server *top, int socket_port) : top(top), socket_port(socket_port)
+Rsp::Rsp(Gdb_server *top, int socket_port) : top(top), socket_port(socket_port), stopped(false)
 {
   init();
 }
@@ -78,8 +64,15 @@ bool Rsp::v_packet(int socket_client, char* data, size_t len)
   top->log->print(LOG_DEBUG, "V Packet: %s\n", data);
   if (strncmp ("vKill", data, strlen ("vKill")) == 0)
   {
-    this->send_str(socket_client,  "OK");
-    return false;
+    this->top->target->halt();
+    stopped=true;
+    return this->send_str(socket_client,  "OK");
+  }
+  else if (strncmp ("vRun", data, strlen ("vRun")) == 0)
+  {
+    char *filename = &data[5];
+    top->log->print(LOG_DEBUG, "Run: %s\n", filename);
+    return this->send_str(socket_client,  "X09;process:a410");
   }
   else if (strncmp ("vCont?", data, strlen ("vCont?")) == 0)
   {
@@ -87,12 +80,9 @@ bool Rsp::v_packet(int socket_client, char* data, size_t len)
   }
   else if (strncmp ("vCont", data, strlen ("vCont")) == 0)
   {
-    int nb_threads = top->target->get_nb_threads();
-    bool thread_done[nb_threads];
-    for (int i=0; i<nb_threads; i++)
-    {
-      thread_done[i] = false;
-    }
+
+    this->top->target->clear_resume_all();
+
     // vCont can contains several commands, handle them in sequence
     char *str = strtok(&data[6], ";");
     while(str != NULL) {
@@ -101,6 +91,11 @@ bool Rsp::v_packet(int socket_client, char* data, size_t len)
       int tid = -1;
       if (delim != NULL) {
         tid = atoi(delim+1);
+        if (tid == 0) {
+          tid = 1;
+        } else {
+          tid = tid - 1;
+        }
         *delim = 0;
         thread_sel = tid;
       }
@@ -121,20 +116,9 @@ bool Rsp::v_packet(int socket_client, char* data, size_t len)
 
       if (cont) {
         if (tid == -1) {
-          for (int i=0; i<nb_threads; i++)
-          {
-            if (!thread_done[i])
-            {
-              thread_done[i] = true;
-              this->top->target->get_thread_from_id(i)->prepare_resume(step);
-            }
-          }
+          this->top->target->prepare_resume_all(step);
         } else {
-          if (!thread_done[tid])
-          {
-            thread_done[tid] = true;
-            this->top->target->get_thread(tid)->prepare_resume(step);
-          }
+          this->top->target->get_thread(tid)->prepare_resume(step);
         }
       }
 
@@ -174,7 +158,7 @@ bool Rsp::query(int socket_client, char* data, size_t len)
     ret = 1;
     for (auto &thread : top->target->get_threads())
     {
-      ret += snprintf(&reply[ret], REPLY_BUF_LEN - ret, "%u,", thread->get_thread_id());
+      ret += snprintf(&reply[ret], REPLY_BUF_LEN - ret, "%u,", thread->get_thread_id()+1);
     } 
 
     return this->send(socket_client, reply, ret-1);
@@ -192,7 +176,7 @@ bool Rsp::query(int socket_client, char* data, size_t len)
       top->log->print(LOG_ERROR, "Could not parse qThreadExtraInfo packet\n");
       return this->send_str(socket_client,  "");
     }
-    Target_core *thread = top->target->get_thread(thread_id);
+    Target_core *thread = top->target->get_thread(thread_id - 1);
     {
       if (thread != NULL)
         thread->get_name(str, REPLY_BUF_LEN);
@@ -208,11 +192,15 @@ bool Rsp::query(int socket_client, char* data, size_t len)
   }
   else if (strncmp ("qAttached", data, strlen ("qAttached")) == 0)
   {
-    return this->send_str(socket_client,  "1");
+    if (stopped) {
+      return this->send_str(socket_client,  "0");
+    } else {
+      return this->send_str(socket_client,  "1");
+    }
   }
   else if (strncmp ("qC", data, strlen ("qC")) == 0)
   {
-    snprintf(reply, 64, "0.%u", this->top->target->get_thread(thread_sel)->get_thread_id());
+    snprintf(reply, 64, "0.%u", this->top->target->get_thread(thread_sel)->get_thread_id()+1);
     return this->send_str(socket_client,  reply);
   }
   else if (strncmp ("qSymbol", data, strlen ("qSymbol")) == 0)
@@ -242,43 +230,6 @@ bool Rsp::query(int socket_client, char* data, size_t len)
 
   return this->send_str(socket_client, "");
 }
-
-
-
-// internal helper functions
-bool Rsp::pc_read(int socket_client, unsigned int* pc)
-{
-  uint32_t npc;
-  uint32_t ppc;
-  uint32_t cause;
-  uint32_t hit;
-  Target_core *core;
-
-  core = this->top->target->get_thread(thread_sel);
-
-  core->read_ppc(&ppc);
-  core->read(DBG_NPC_REG, &npc);
-
-  core->read(DBG_HIT_REG, &hit);
-  core->read(DBG_CAUSE_REG, &cause);
-
-  if (hit & 0x1)
-    *pc = npc;
-  else if(cause & (1 << 31)) // interrupt
-    *pc = npc;
-  else if ((cause & 0x1f) == 3)  // breakpoint
-    *pc = ppc;
-  else if ((cause & 0x1f) == 2)
-    *pc = ppc;
-  else if ((cause & 0x1f) == 5)
-    *pc = ppc;
-  else
-    *pc = npc;
-
-  return true;
-}
-
-
 
 
 bool Rsp::mem_read(int socket_client, char* data, size_t len)
@@ -395,7 +346,7 @@ bool Rsp::mem_write(int socket_client, char* data, size_t len)
   data = &data[i+1];
   len = len - i - 1;
 
-  top->cable->access(write, addr, len, data);
+  top->cable->access(true, addr, len, data);
 
   return this->send_str(socket_client,  "OK");
 }
@@ -416,7 +367,7 @@ bool Rsp::reg_read(int socket_client, char* data, size_t len)
   if (addr < 32)
     this->top->target->get_thread(thread_sel)->gpr_read(addr, &rdata);
   else if (addr == 0x20)
-    this->pc_read(socket_client, &rdata);
+    this->top->target->get_thread(thread_sel)->actual_pc_read(&rdata);
   else if (addr == 0x41 + 0x301) // CSR MISA read - return not implemented
     return this->send_str(socket_client,  "0000");
   else
@@ -464,62 +415,79 @@ bool Rsp::regs_send(int socket_client)
   uint32_t ppc;
   char regs_str[512];
   int i;
+  Target_core * core;
 
-  this->top->target->get_thread(thread_sel)->gpr_read_all(gpr);
+  core = this->top->target->get_thread(thread_sel);
+
+  core->gpr_read_all(gpr);
 
   // now build the string to send back
   for(i = 0; i < 32; i++) {
     snprintf(&regs_str[i * 8], 9, "%08x", htonl(gpr[i]));
   }
-  this->pc_read(socket_client, &npc);
+  core->actual_pc_read(&npc);
   snprintf(&regs_str[32 * 8 + 0 * 8], 9, "%08x", htonl(npc));
+  top->log->print(LOG_ERROR, "PC 0x%x Thread %d\n", npc, thread_sel);
 
   return this->send_str(socket_client,  regs_str);
 }
 
-
-
-bool Rsp::signal(int socket_client)
+bool Rsp::signal(int socket_client, Target_core *core)
 {
-  uint32_t cause;
-  uint32_t hit;
-  int signal;
-  char str[4];
+  char str[16];
   int len;
-  Target_core *core;
-
-  core = this->top->target->get_thread(thread_sel);
-
-  //dbgif->write(DBG_IE_REG, 0xFFFF);
-
-  // figure out why we are stopped
-  if (core->is_stopped()) {
-    if (!core->read(DBG_HIT_REG, &hit))
-      return false;
-    if (!core->read(DBG_CAUSE_REG, &cause))
-      return false;
-
-    if (hit & 0x1)
-      signal = TARGET_SIGNAL_TRAP;
-    else if(cause & (1 << 31))
-      signal = TARGET_SIGNAL_INT;
-    else if ((cause & 0x1f) == 3)
-      signal = TARGET_SIGNAL_TRAP;
-    else if ((cause & 0x1f) == 2)
-      signal = TARGET_SIGNAL_ILL;
-    else if ((cause & 0x1f) == 5)
-      signal = TARGET_SIGNAL_BUS;
-    else
-      signal = TARGET_SIGNAL_STOP;
-  } else {
-    signal = TARGET_SIGNAL_NONE;
+  if (stopped) {
+    return this->send_str(socket_client, "X00");
   }
-
-  len = snprintf(str, 4, "S%02x", signal);
+  if (core == NULL) {
+    len = snprintf(str, 16, "S%02x", this->get_signal(this->top->target->get_thread(thread_sel)));
+  } else {
+    int sig = this->get_signal(core);
+    this->top->log->debug("sig is 0x%x\n", sig);
+    len = snprintf(str, 16, "T%02xthread:%1x;", sig, core->get_thread_id()+1);
+  }
   
   return this->send(socket_client, str, len);
 }
 
+int Rsp::cause_to_signal(uint32_t cause, int * int_num)
+{
+  int res;
+  if (EXC_CAUSE_INTERUPT(cause)) {
+    if (int_num) {
+      *int_num = cause & 0x1f;
+    }
+    res = TARGET_SIGNAL_INT;
+  } else {
+    cause &= EXC_CAUSE_MASK;
+    if (cause == EXC_CAUSE_BREAKPOINT)
+      res = TARGET_SIGNAL_TRAP;
+    else if (cause == EXC_CAUSE_ILLEGAL_INSN)
+      res = TARGET_SIGNAL_ILL;
+    // else if ((cause & 0x1f) == 5) - There is no definition for this in the RTL
+    //   return TARGET_SIGNAL_BUS;
+    else
+      res = TARGET_SIGNAL_STOP;
+  }
+  return res;
+}
+
+int Rsp::get_signal(Target_core *core)
+{
+  if (core->is_stopped()) {
+    bool is_hit, is_sleeping;
+    if (!core->read_hit(&is_hit, &is_sleeping))
+      return TARGET_SIGNAL_NONE;
+    if (is_hit)
+      return TARGET_SIGNAL_TRAP;
+    else if (is_sleeping)
+      return TARGET_SIGNAL_NONE;
+    else
+      return this->cause_to_signal(core->get_cause());
+  } else {
+    return TARGET_SIGNAL_NONE;
+  }
+}
 
 bool Rsp::cont(int socket_client, char* data, size_t len)
 {
@@ -557,7 +525,9 @@ bool Rsp::cont(int socket_client, char* data, size_t len)
 
 bool Rsp::resume(int socket_client, bool step)
 {
-  this->top->target->resume(step);
+  this->top->target->clear_resume_all();
+  this->top->target->prepare_resume_all(step);
+  this->top->target->resume_all();
   return this->wait(socket_client);
 }
 
@@ -565,7 +535,9 @@ bool Rsp::resume(int socket_client, bool step)
 
 bool Rsp::resume(int socket_client, int tid, bool step)
 {
-  this->top->target->resume(step, tid);
+  this->top->target->clear_resume_all();
+  this->top->target->get_thread(tid)->prepare_resume(step);
+  this->top->target->resume_all();
   return this->wait(socket_client);
 }
 
@@ -604,7 +576,7 @@ bool Rsp::step(int socket_client, char* data, size_t len)
 
 
 
-bool Rsp::wait(int socket_client, Target_core *core)
+bool Rsp::wait(int socket_client)
 {
   int ret;
   char pkt;
@@ -613,23 +585,17 @@ bool Rsp::wait(int socket_client, Target_core *core)
   struct timeval tv;
 
   while(1) {
-
     // Check if a cluster power state has changed
     this->top->target->update_power();
 
-    //First check if one core has stopped
-    if (core) {
-      if (core->is_stopped()) {
-        this->top->target->halt();
-        return this->signal(socket_client);
-      }
-    } else {
-      for (auto &core: this->top->target->get_threads()) {
-        if (core->is_stopped()) {
-          this->top->target->halt();
-          return this->signal(socket_client);
-        }
-      }
+    Target_core *stopped_core = this->top->target->check_stopped();
+
+    if (stopped_core) {
+      // move to thread of stopped core
+      thread_sel = stopped_core->get_thread_id();
+      this->top->log->debug("found stopped core - thread %d\n", thread_sel);
+      this->top->target->halt();
+      return this->signal(socket_client, stopped_core);
     }
 
     // Otherwise wait for a stop request from gdb side for a while
@@ -643,12 +609,7 @@ bool Rsp::wait(int socket_client, Target_core *core)
     if (select(socket_client+1, &rfds, NULL, NULL, &tv)) {
       ret = recv(socket_client, &pkt, 1, 0);
       if (ret == 1 && pkt == 0x3) {
-        if (core) {
-          core->halt();
-          return this->signal(socket_client);
-        } else {
-          top->target->halt();
-        }
+        top->target->halt();
       }
     }
   }
@@ -670,6 +631,9 @@ bool Rsp::multithread(int socket_client, char* data, size_t len)
 
       if (thread_id == -1) // affects all threads
         return this->send_str(socket_client,  "OK");
+
+      if (thread_id != 0)
+        thread_id = thread_id - 1;
 
       // we got the thread id, now let's look for this thread in our list
       if (this->top->target->get_thread(thread_id) != NULL) {
@@ -745,6 +709,9 @@ bool Rsp::decode(int socket_client, char* data, size_t len)
     this->send_str(socket_client,  "OK");
     return false;
 
+  case '!':
+    return this->send_str(socket_client,  "OK"); // extended mode supported
+
   default:
     top->log->print(LOG_ERROR, "Unknown packet: starts with %c\n", data[0]);
     break;
@@ -752,8 +719,6 @@ bool Rsp::decode(int socket_client, char* data, size_t len)
 
   return false;
 }
-
-
 
 bool
 Rsp::get_packet(int socket_client, char* pkt, size_t* p_pkt_len) {
@@ -930,6 +895,7 @@ bool Rsp::send(int socket_client, const char* data, size_t len)
       exit(1);
       return false;
     }
+    top->log->print(LOG_DEBUG, "Received %c\n", ack);
 
     if(ret == -1 && errno == EWOULDBLOCK) {
       // no data available
@@ -1082,13 +1048,6 @@ bool Rsp::bp_remove(int socket_client, char* data, size_t len)
   }
 
   top->bkp->remove(addr);
-
-  // check if we are currently on this bp that is removed
-  core->read_ppc(&ppc);
-
-  if (addr == ppc) {
-    core->write(DBG_NPC_REG, ppc); // re-execute this instruction
-  }
 
   return this->send_str(socket_client,  "OK");
 }
