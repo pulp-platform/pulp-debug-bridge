@@ -42,7 +42,7 @@ Breakpoints::insert(unsigned int addr) {
   retval = top->cable->access(false, addr, 4, (char*)&bp.insn_orig);
   bp.is_compressed = INSN_IS_COMPRESSED(bp.insn_orig);
 
-  top->log->debug("Insert breakpoint at addr: 0x%x)\n", addr);
+  top->log->print(LOG_ERROR, "Insert breakpoint at addr: 0x%x)\n", addr);
 
   breakpoints.push_back(bp);
 
@@ -65,18 +65,29 @@ Breakpoints::remove(unsigned int addr) {
   bool retval;
   bool is_compressed;
   uint32_t data;
-  for (std::list<struct bp_insn>::iterator it = breakpoints.begin(); it != breakpoints.end(); it++) {
+  std::list<struct bp_insn>::iterator it;
+  
+  it = breakpoints.begin();
+  while (it != breakpoints.end()) {
     if (it->addr == addr) {
       data = it->insn_orig;
       is_compressed = it->is_compressed;
 
-      top->log->debug("Remove breakpoint at addr: 0x%x)\n", addr);
-      breakpoints.erase(it);
+      top->log->print(LOG_ERROR, "Remove breakpoint at addr: 0x%x)\n", addr);
+      it = breakpoints.erase(it);
 
       if (is_compressed)
         retval = top->cable->access(true, addr, 2, (char*)&data);
       else
         retval = top->cable->access(true, addr, 4, (char*)&data);
+
+      for (auto &core : this->top->target->get_threads())
+      {
+        uint32_t actual_ppc;
+        if (core->actual_pc_read(&actual_ppc) && actual_ppc == addr) {
+          core->write(DBG_NPC_REG, addr); // re-execute this instruction
+        }
+      }
 
       this->top->target->flush();
 
