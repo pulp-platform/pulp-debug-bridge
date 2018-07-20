@@ -60,7 +60,12 @@ endif
 
 
 
-CFLAGS += -g -fPIC -std=gnu++11 -MMD -MP -Isrc -Iinclude -I$(INSTALL_DIR)/include $(FTDI_CFLAGS) $(SDL_CFLAGS)
+CFLAGS += -g -fPIC -std=gnu++11 -MMD -MP -Isrc -Iinclude -Wall -Werror \
+ -Wno-unused-function -Wno-unused-variable -Wno-unused-but-set-variable \
+ -Wno-delete-non-virtual-dtor -Wno-sign-compare -Wno-return-type -Wno-maybe-uninitialized \
+ -Wno-reorder \
+ -I$(INSTALL_DIR)/include $(FTDI_CFLAGS) $(SDL_CFLAGS)
+
 LDFLAGS += -g -shared $(FTDI_LDFLAGS) $(SDL_LDFLAGS)
 
 SRCS = src/python_wrapper.cpp src/ioloop.cpp src/cables/jtag.cpp src/reqloop.cpp \
