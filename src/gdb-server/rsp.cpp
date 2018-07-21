@@ -1033,9 +1033,8 @@ bool Rsp::bp_remove(int socket_client, char* data, size_t len)
   uint32_t addr;
   uint32_t ppc;
   int bp_len;
-  Target_core *core;
 
-  core = this->top->target->get_thread(thread_sel);
+  data[len] = 0;
 
   if (3 != sscanf(data, "z%1d,%x,%1d", (int *)&type, &addr, &bp_len)) {
     top->log->print(LOG_ERROR, "Could not get three arguments\n");

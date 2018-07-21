@@ -67,13 +67,14 @@ Breakpoints::remove(unsigned int addr) {
   uint32_t data;
   std::list<struct bp_insn>::iterator it;
   
+  top->log->debug("Remove breakpoint at addr: 0x%x)\n", addr);
   it = breakpoints.begin();
   while (it != breakpoints.end()) {
     if (it->addr == addr) {
       data = it->insn_orig;
       is_compressed = it->is_compressed;
 
-      top->log->print(LOG_ERROR, "Remove breakpoint at addr: 0x%x)\n", addr);
+      top->log->debug("Breakpoint found at addr: 0x%x)\n", addr);
       it = breakpoints.erase(it);
 
       if (is_compressed)
@@ -93,7 +94,9 @@ Breakpoints::remove(unsigned int addr) {
 
       return retval;
     }
+    it++;
   }
+  top->log->debug("No breakpoint found at addr: 0x%x)\n", addr);
 
   return false;
 }
