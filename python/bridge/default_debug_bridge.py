@@ -22,6 +22,8 @@ import os.path
 import json_tools as js
 from elftools.elf.elffile import ELFFile
 import time
+from portable import to_bytes
+import struct
 
 class DebugBridgeException(Exception):
     pass
@@ -285,7 +287,7 @@ class debug_bridge(object):
         return self.get_cable().write(addr, size, buffer)
 
     def write_int(self, addr, value, size):
-        return self.write(addr, size, value.to_bytes(size, byteorder='little'))
+        return self.write(addr, size, to_bytes(value, size, byteorder='little'))
 
     def write_32(self, addr, value):
         return self.write_int(addr, value, 4)
@@ -303,7 +305,8 @@ class debug_bridge(object):
                 byte_array = byte
             else:
                 byte_array += byte
-        return int.from_bytes(byte_array, byteorder='little')
+        return struct.unpack(">i",byte_array)[0]
+            # int.from_bytes(byte_array, byteorder='little')
 
     def read_32(self, addr):
         return self.read_int(addr, 4)
@@ -374,7 +377,8 @@ class debug_bridge(object):
             return -len(enc)
         for i in range(len(enc)):
             buf[i] = enc[i]
-        buf[len(enc)] = 0
+        print(buf, len(enc))
+        buf[len(enc)] = b'\000'
         return len(enc)
 
     def qrcmd_reset(self, cmd, buf, buf_len):
