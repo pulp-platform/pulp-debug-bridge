@@ -26,16 +26,19 @@
 #include <stdbool.h>
 #include <stdlib.h>
 #include <errno.h>
-#include <netinet/in.h>
-#include <netdb.h>
-#include <arpa/inet.h>
+
+
+
 #include <fcntl.h>
 #include <string.h>
 #include <sys/select.h>
 #include <thread>
+#include <unordered_map>
 
 #include "cable.hpp"
 #include "json.hpp"
+
+#include "Tcp_listener.hpp"
 
 #define DBG_CTRL_REG  0x0
 #define DBG_HIT_REG   0x4
@@ -179,7 +182,7 @@ public:
   void clear_resume_all();
   void prepare_resume_all(bool step);
   void resume_all();
-  bool wait(int socket_client);
+  bool wait();
   void flush();
   void reinitialize();
   void update_power();
@@ -229,84 +232,117 @@ class Breakpoints {
     Gdb_server *top;
 };
 
+enum capability_support {
+  CAPABILITY_NOT_SUPPORTED = 0,
+  CAPABILITY_MAYBE_SUPPORTED = 1,
+  CAPABILITY_IS_SUPPORTED = 2
+};
+
+using std::unique_ptr;
+class Rsp_capability;
+using Rsp_capabilities = std::unordered_map<std::string,unique_ptr<Rsp_capability>>;
+
+class Rsp_capability
+{
+public:
+  Rsp_capability(const char * name, capability_support support);
+  Rsp_capability(const char * name, const char * value);
+  static void parse(char * buf, size_t len, Rsp_capabilities *caps);
+  bool is_supported() { return support == CAPABILITY_IS_SUPPORTED; }
+private:
+  capability_support support;
+  std::string name, value;
+};
+
+
+
 class Rsp {
   public:
-    Rsp(Gdb_server *top, int socket_port);
-    //Rsp(int socket_port, MemIF* mem, LogIF *log, std::list<DbgIF*> list_dbgif, std::list<DbgIF*> list_dbg_cluster_if, BreakPoints* bp, DbgIF *main_if);
+    Rsp(Gdb_server *top, int port);
 
     bool open();
-    void close(int kill);
+    void close(bool await_one);
     void init();
+    void wait_finished(int cnt);
 
+    class Client
+    {
+      public:
+        Client(Rsp *rsp, Tcp_listener::Tcp_socket *client);
+        void stop();
+        bool is_running() { return running; };
+      private:
+        bool remote_capability(const char * name) {
+          Rsp_capabilities::const_iterator it = remote_caps.find (name);
+          return it != remote_caps.end() && it->second.get()->is_supported();
+        }
+        int cause_to_signal(uint32_t cause, int * int_num = NULL);
+        int get_signal(Target_core *core);
+        bool decode(char* data, size_t len);
+        bool get_packet(char* data, size_t* len);
+
+        void client_routine();
+
+        bool regs_send();
+        bool signal(Target_core *core);
+
+        bool signal() { return this->signal(NULL); };
+
+        bool multithread(char* data, size_t len);
+
+        bool v_packet(char* data, size_t len);
+
+        bool query(char* data, size_t len);
+
+        bool send(const char* data, size_t len);
+        bool send_str(const char* data);
+
+        bool cont(char* data, size_t len); // continue, reserved keyword, thus not used as function name
+        bool resume(bool step);
+        bool resume(int tid, bool step);
+        bool wait();
+        bool step(char* data, size_t len);
+
+        // internal helper functions
+
+        bool reg_read(char* data, size_t len);
+        bool reg_write(char* data, size_t len);
+
+        bool mem_read(char* data, size_t len);
+        bool mem_write_ascii(char* data, size_t len);
+        bool mem_write(char* data, size_t len);
+
+        bool bp_insert(char* data, size_t len);
+        bool bp_remove(char* data, size_t len);
+
+        bool running = true;
+        Rsp_capabilities remote_caps;
+        Gdb_server *top;
+        bool stopped;
+
+        Rsp *rsp;
+        Tcp_listener::Tcp_socket *client;
+
+        std::thread *thread;
+
+        int thread_sel;
+    };
 
   private:
-    int cause_to_signal(uint32_t cause, int * int_num = NULL);
-    int get_signal(Target_core *core);
-    bool decode(int socket_client, char* data, size_t len);
-    bool get_packet(int socket_client, char* data, size_t* len);
-
-    void client_routine(int socket_client);
-    void listener_routine();
-
-
-    bool regs_send(int socket_client);
-    bool signal(int socket_client, Target_core *core);
-
-    bool signal(int socket_client) { return this->signal(socket_client, NULL); };
-
-    bool multithread(int socket_client, char* data, size_t len);
-
-    bool v_packet(int socket_client, char* data, size_t len);
-
-    bool query(int socket_client, char* data, size_t len);
-
-    bool send(int socket_client, const char* data, size_t len);
-    bool send_str(int socket_client, const char* data);
-
-    bool cont(int socket_client, char* data, size_t len); // continue, reserved keyword, thus not used as function name
-    bool resume(int socket_client, bool step);
-    bool resume(int socket_client, int tid, bool step);
-    bool wait(int socket_client);
-    bool step(int socket_client, char* data, size_t len);
-
-    // internal helper functions
-
-    bool reg_read(int socket_client, char* data, size_t len);
-    bool reg_write(int socket_client, char* data, size_t len);
-
-    bool mem_read(int socket_client, char* data, size_t len);
-    bool mem_write_ascii(int socket_client, char* data, size_t len);
-    bool mem_write(int socket_client, char* data, size_t len);
-
-    bool bp_insert(int socket_client, char* data, size_t len);
-    bool bp_remove(int socket_client, char* data, size_t len);
-
-    Gdb_server *top;
-    int socket_port;
-    int socket_in;
-    std::thread *listener_thread;
-    bool stopped;
-
-    int thread_sel;
+    void client_connected(Tcp_listener::Tcp_socket* client);
+    void client_disconnected(Tcp_listener::Tcp_socket *client);
+    void rsp_client_finished();
     Target_core *main_core = NULL;
 
-    bool wait_client();
-    bool loop();
+    Tcp_listener *listener;
+    Rsp::Client *client;
 
-
-
-    //void resumeCoresPrepare(DbgIF *dbgif, bool step);
-    void resumeCores();
-
-    //DbgIF* get_dbgif(int thread_id);
-
-
+    Gdb_server *top;
     int m_thread_init;
-    //MemIF* m_mem;
-    //LogIF *log;
-    //BreakPoints* m_bp;
-    //std::list<DbgIF*> m_dbgifs;
-    //std::list<DbgIF*> m_dbg_cluster_ifs;
+    int port;
+    std::mutex m_finished, m_rsp_client;
+    std::condition_variable cv_finished, cv_rsp_client;
+    int conn_cnt=0;
 };
 
 #endif
