@@ -62,7 +62,7 @@ int Gdb_server::stop(bool kill)
 {
   if (rsp != NULL)
   {
-    rsp->close(kill);
+    rsp->close(!kill);
     rsp = NULL;
   }
 }
