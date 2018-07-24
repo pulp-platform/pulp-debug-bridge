@@ -226,7 +226,7 @@ parser.add_argument("--script", dest="scripts", default=[], action="append", hel
 parser.add_argument("--config", dest="config", default=None, help="Specify the system configuration")
 parser.add_argument("--ipython", dest="ipython", action="store_true", help="Enter ipython shell")
 parser.add_argument("--shell", dest="shell", action="store_true", help="Enter python shell")
-parser.add_argument("--port", dest="port", type=int, default=-1, help="Specify port for proxy mode")
+parser.add_argument("--port", dest="port", type=int, default=None, help="Specify port for proxy mode")
 parser.add_argument("--debug", dest="debug", action='store_true', default=False, help="Activate debug mode for this script")
 parser.add_argument("--verbose", dest="verbose", type=int, default=3, help="Verbose mode")
 parser.add_argument("--help", dest="help", action='store_true', default=False, help="Dump help")
