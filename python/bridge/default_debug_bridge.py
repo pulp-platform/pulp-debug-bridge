@@ -22,7 +22,26 @@ import os.path
 import json_tools as js
 from elftools.elf.elffile import ELFFile
 import time
+from misc.portable import to_bytes
+import struct
+import sys
 
+class DebugBridgeException(Exception):
+    pass
+
+class XferInvalidObjectException(DebugBridgeException):
+    pass
+
+class XferInvalidAnnexException(DebugBridgeException):
+    pass
+
+class XferErrorException(DebugBridgeException):
+
+    def __init__(self, error_code):
+        self.error_code = error_code
+
+    def __str__(self):
+        return "E {0:02X}".format(self.error_code)
 
 class Ctype_cable(object):
 
@@ -43,13 +62,13 @@ class Ctype_cable(object):
 
         self.module.chip_reset.argtypes = \
             [ctypes.c_void_p, ctypes.c_bool]
-            
+
         self.module.jtag_reset.argtypes = \
             [ctypes.c_void_p, ctypes.c_bool]
-            
+
         self.module.jtag_soft_reset.argtypes = \
             [ctypes.c_void_p]
-            
+
         self.module.cable_jtag_set_reg.argtypes = \
             [ctypes.c_void_p, ctypes.c_int, ctypes.c_int, ctypes.c_uint]
         self.module.cable_jtag_set_reg.restype = ctypes.c_bool
@@ -60,19 +79,29 @@ class Ctype_cable(object):
 
         self.module.cable_lock.argtypes = \
             [ctypes.c_void_p]
-            
+
         self.module.cable_unlock.argtypes = \
             [ctypes.c_void_p]
-            
+
         self.module.bridge_get_error.argtypes = []
         self.module.bridge_get_error.restype = ctypes.c_char_p
-            
+
         self.module.bridge_init.argtypes = [ctypes.c_char_p, ctypes.c_int]
 
-        self.module.gdb_server_open.argtypes = [ctypes.c_void_p, ctypes.c_int]
+        self.module.bridge_set_log_level.argtypes = [ctypes.c_int]
+
+        self.cmd_func_typ = ctypes.CFUNCTYPE(ctypes.c_int, ctypes.c_char_p,
+          ctypes.POINTER(ctypes.c_char), ctypes.c_int)
+        self.module.gdb_server_open.argtypes = [ctypes.c_void_p, ctypes.c_int,
+          self.cmd_func_typ, ctypes.c_char_p]
         self.module.gdb_server_open.restype = ctypes.c_void_p
 
+        self.module.gdb_send_str.argtypes = [ctypes.c_void_p, ctypes.c_char_p]
+        self.module.gdb_send_str.restype = ctypes.c_bool
+
         self.module.gdb_server_close.argtypes = [ctypes.c_void_p, ctypes.c_int]
+
+        self.module.gdb_server_refresh_target.argtypes = [ctypes.c_void_p]
 
         config_string = None
 
@@ -81,8 +110,10 @@ class Ctype_cable(object):
 
         self.instance = self.module.cable_new(config_string, system_config.dump_to_string().encode('utf-8'))
 
-        if self.instance == None:
-            raise Exception('Failed to initialize cable with error: ' + self.module.bridge_get_error().decode('utf-8'))
+        if self.instance is None:
+            raise Exception('Failed to initialize cable with error: ' +
+                self.module.bridge_get_error().decode('utf-8'))
+
 
     def get_instance(self):
         return self.instance
@@ -129,7 +160,8 @@ class Ctype_cable(object):
 
 class debug_bridge(object):
 
-    def __init__(self, config, binaries=[], verbose=False):
+    def __init__(self, config, binaries=[], verbose=0):
+        print("Verbose", verbose)
         self.config = config
         self.cable = None
         self.cable_name = config.get('**/debug_bridge/cable/type').get()
@@ -139,12 +171,11 @@ class debug_bridge(object):
         self.verbose = verbose
         self.gdb_handle = None
         self.cable_config = config.get('**/debug_bridge/cable')
-
-
-
+        self.is_started = None
+        self.do_exit = False
         # Load the library which provides generic services through
         # python / C++ bindings
-        lib_path=os.path.join('libpulpdebugbridge.so')
+        lib_path = os.path.join('libpulpdebugbridge.so')
         self.module = ctypes.CDLL(lib_path)
 
         self.module.bridge_ioloop_open.argtypes = [ctypes.c_void_p, ctypes.c_uint]
@@ -155,10 +186,12 @@ class debug_bridge(object):
 
         self.module.bridge_reqloop_open.argtypes = [ctypes.c_void_p, ctypes.c_uint]
         self.module.bridge_reqloop_open.restype = ctypes.c_void_p
-        
+
         self.module.bridge_reqloop_close.argtypes = [ctypes.c_void_p, ctypes.c_int]
 
         self.module.bridge_init(config.dump_to_string().encode('utf-8'), verbose)
+
+        self.capabilities("")
 
         #self.module.jtag_shift.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.POINTER(ctypes.c_char_p), ctypes.POINTER(ctypes.c_char_p)]
 
@@ -204,7 +237,7 @@ class debug_bridge(object):
                     addr = segment['p_paddr']
                     size = len(data)
 
-                    if self.verbose:
+                    if self.verbose > 0:
                         print ('Loading section (base: 0x%x, size: 0x%x)' % (addr, size))
 
                     self.write(addr, size, data)
@@ -255,7 +288,8 @@ class debug_bridge(object):
     def start(self):
         start_addr_config = self.config.get('**/debug_bridge/start_addr')
         if start_addr_config is not None:
-            if self.verbose:
+            self.is_started = True
+            if self.verbose > 0:
                 print ('Starting (base: 0x%x, value: 0x%x)' % (start_addr_config.get_int(), self.config.get('**/debug_bridge/start_value').get_int()))
 
             self.write_32(start_addr_config.get_int(), self.config.get('**/debug_bridge/start_value').get_int())
@@ -264,6 +298,7 @@ class debug_bridge(object):
     def stop(self):
         stop_addr_config = self.config.get('**/debug_bridge/stop_addr')
         if stop_addr_config is not None:
+            self.is_started = False
             self.write_32(stop_addr_config.get_int(), self.config.get('**/debug_bridge/stop_value').get_int()) != 0
         return 0
 
@@ -274,7 +309,7 @@ class debug_bridge(object):
         return self.get_cable().write(addr, size, buffer)
 
     def write_int(self, addr, value, size):
-        return self.write(addr, size, value.to_bytes(size, byteorder='little'))
+        return self.write(addr, size, to_bytes(value, size, byteorder='little'))
 
     def write_32(self, addr, value):
         return self.write_int(addr, value, 4)
@@ -292,7 +327,8 @@ class debug_bridge(object):
                 byte_array = byte
             else:
                 byte_array += byte
-        return int.from_bytes(byte_array, byteorder='little')
+        return struct.unpack(">i",byte_array)[0]
+            # int.from_bytes(byte_array, byteorder='little')
 
     def read_32(self, addr):
         return self.read_int(addr, 4)
@@ -324,10 +360,16 @@ class debug_bridge(object):
         return 0
 
     def ioloop(self):
+        if self.ioloop_handle is not None:
+            print("close existing handle ....")
+            self.module.bridge_ioloop_close(self.ioloop_handle, 1)
 
         # First get address of the structure used to communicate between
         # the bridge and the runtime
         addr = self._get_binary_symbol_addr('__rt_debug_struct_ptr')
+        if self.verbose > 0:
+            print("debug address 0x{:x} contents 0x{:x}".format(addr, self.read_32(addr)))
+
         if addr == 0:
             addr = self._get_binary_symbol_addr('debugStruct_ptr')
 
@@ -352,13 +394,179 @@ class debug_bridge(object):
     def flash(self):
         raise Exception('Flash is not supported on this target')
 
+    def encode_bytes(self, sbuf, buf, buf_len, start=0):
+        enc = sbuf.encode('ascii')
+        if len(enc) + 1 > buf_len - start:
+            return -len(enc)
+        for i in range(len(enc)):
+            buf[i+start] = enc[i]
+        buf[len(enc)+start] = b'\000'
+        return len(enc) + start
+
+    def qrcmd_debug_level(self, cmd, buf, buf_len):
+        level = int(cmd.split()[1])
+        print("Log level set to "+level)
+        self.module.bridge_set_log_level(level)
+        return self.encode_bytes("OK", buf, buf_len)
+
+    def doreset(self, run):
+        self.module.bridge_ioloop_close(self.ioloop_handle, 1)
+        self.ioloop_handle = None
+        self.stop()
+        self.load()
+        self.module.gdb_server_refresh_target(self.gdb_handle)
+        self.ioloop()
+        if run:
+            self.start()
+        return True
+
+    def qrcmd_reset(self, cmd, buf, buf_len):
+        cmd = cmd.split(' ')
+        if len(cmd) == 1:
+            cmd = "run"
+        elif len(cmd) == 2:
+            cmd = cmd[1]
+        else:
+            return self.encode_bytes("", buf, buf_len)
+        if "run".startswith(cmd):
+            cmd = "run"
+        elif "halt".startswith(cmd):
+            cmd = "halt"
+        else:
+            return self.encode_bytes("", buf, buf_len)
+
+        if self.doreset(cmd == "run"):
+            return self.encode_bytes("OK", buf, buf_len)
+        else:
+            return self.encode_bytes("E00", buf, buf_len)
+
+    def qrcmd_shutdown(self, cmd, buf, buf_len):
+        self.do_exit = True
+        self.module.gdb_server_close(self.gdb_handle, 1)
+        return self.encode_bytes("OK", buf, buf_len)
+
+    def hex_string(self, s):
+        res = []
+        for b in bytearray(s):
+            res.append('{0:02x}'.format(b))
+        return ''.join(res)
+
+    def qrcmd_help(self, cmd, buf, buf_len, commands):
+        init = 'Command List\n'
+        for c in commands:
+            self.encode_bytes('O'+self.hex_string(init+commands[c]+'\n'), buf, buf_len)
+            self.module.gdb_send_str(self.gdb_handle, buf)
+            init = ''
+        return self.encode_bytes("OK", buf, buf_len)
+
+    def qrcmd_cb(self, cmd, buf, buf_len):
+        commands = {
+            "reset":       "reset [run|halt]     - resets the target",
+            "debug_level": "debug_level (0-6)    - sets bridge debug level",
+            "shutdown":    "shutdown             - shuts down the bridge",
+            "help":        "help                 - gets list of supported commands"
+        }
+        try:
+            cmd = str(bytearray.fromhex(cmd))
+            cmd_name = cmd.split(' ')[0].lower()
+            cmd_selected = None
+            for c in commands:
+                if c.startswith(cmd_name):
+                    if cmd_selected is None:
+                        cmd_selected = c
+                    else:
+                        return self.encode_bytes("", buf, buf_len)
+            if cmd_selected is None:
+                return self.encode_bytes("", buf, buf_len)
+            elif cmd_selected == "help":
+                return self.qrcmd_help(cmd, buf, buf_len, commands)
+            else:
+                handler = getattr(self, 'qrcmd_'+cmd_selected)
+                return handler(cmd, buf, buf_len)
+        except:
+            return self.encode_bytes("E00", buf, buf_len)
+
+    def qxfer_read_cb(self, obj, annex, offset, length, buf, buf_len):
+        try:
+            if obj == "exec-file":
+                if len(self.binaries) > 0:
+                    obj_val = os.path.abspath(self.binaries[0])
+                else:
+                    obj_val = ""
+            else:
+                obj_val = self.qxfer_read(obj, annex)
+
+            if offset >= len(obj_val):
+                obj_val = "l"
+            elif offset + length >= len(obj_val):
+                obj_val = "l" + obj_val[offset:]
+            else:
+                obj_val = "m" + obj_val[offset:offset+length-1]
+
+        except XferInvalidObjectException:
+            obj_val = ""
+        except XferInvalidAnnexException:
+            obj_val = "E00"
+        except XferErrorException as err:
+            obj_val = str(err)
+        except Exception:
+            obj_val = ""
+
+        return self.encode_bytes(obj_val, buf, buf_len)
+
+    def capabilities(self, extra):
+        capstr = "qXfer:exec-file:read+"
+        if len(extra) > 0:
+            capstr = capstr + ";" + extra
+        self.capabilities_str = capstr.encode('ascii')
+
+    def cmd_cb(self, cmd, buf, buf_len):
+        try:
+            cmd = cmd.decode('ascii')
+            if cmd.startswith("qXfer"):
+                cmd = cmd.split(":")
+                if len(cmd) != 5:
+                    raise Exception()
+                offlen = cmd[4].split(',')
+                if cmd[2] == "read":
+                    return self.qxfer_read_cb(cmd[1], cmd[3], int(offlen[0], base=16), int(offlen[1], base=16), buf, buf_len)
+            elif cmd.startswith("qRcmd"):
+                if len(cmd) < len("qRcmd") + 2:
+                    return self.encode_bytes("E01", buf, buf_len)
+                cmd = cmd.split(',')
+                if len(cmd) != 2:
+                    return self.encode_bytes("E01", buf, buf_len)
+
+                return self.qrcmd_cb(cmd[1], buf, buf_len)
+            elif cmd.startswith("__is_started"):
+                return self.is_started and 1 or 0
+            elif cmd.startswith("__start_target"):
+                return self.start()
+            elif cmd.startswith("__stop_target"):
+                return self.stop()
+
+            return self.encode_bytes("", buf, buf_len)
+        except:
+            print("Unexpected error:", sys.exc_info()[0])
+            return self.encode_bytes("E00", buf, buf_len)
+
     def gdb(self, port):
-        self.gdb_handle = self.module.gdb_server_open(self.get_cable().get_instance(), port)
+        def cmd_cb_hook(cmd, buf, buf_len):
+            return self.cmd_cb(cmd, buf, buf_len)
+
+        self.cmd_func_ptr = self.get_cable().cmd_func_typ(cmd_cb_hook)
+        self.gdb_handle = self.module.gdb_server_open(
+            self.get_cable().get_instance(),
+            port,
+            self.cmd_func_ptr,
+            self.capabilities_str)
         return 0
 
     def wait(self):
         if self.gdb_handle is not None:
             self.module.gdb_server_close(self.gdb_handle, 0)
+            if self.do_exit:
+                return 0
 
         # The wait function returns in case ioloop has been launched
         # as it will check for end of application.

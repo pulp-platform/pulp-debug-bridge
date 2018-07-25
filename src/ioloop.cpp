@@ -20,6 +20,8 @@
 
 #include <stdio.h>
 #include <thread>
+#include <mutex>
+#include <condition_variable>
 #include "cable.hpp"
 #include "debug_bridge/debug_bridge.h"
 #include <unistd.h>
@@ -43,8 +45,14 @@ private:
 
 int Ioloop::stop(bool kill)
 {
-  if (kill) end = true;
-  thread->join();
+  if (thread) {
+    if (kill) end = true;
+    if (thread->joinable()) {
+      thread->join();
+    }
+    delete(thread);
+    thread = NULL;
+  }
   return status;
 }
 
@@ -106,14 +114,13 @@ void Ioloop::ioloop_routine()
         cable->access(false, (unsigned int)(long)&debug_struct->putc_buffer, value, (char*)buff);
         unsigned int zero = 0;
         cable->access(true, (unsigned int)(long)&debug_struct->pending_putchar, 4, (char*)&zero);
-        for (int i=0; i<value; i++) putchar(buff[i]);
+        for (uint i=0; i<value; i++) putchar(buff[i]);
         fflush(NULL);
       }
 
       // Small sleep to not poll too often
       usleep(50000);
     }
-
   }
 }
 
@@ -131,7 +138,9 @@ extern "C" void *bridge_ioloop_open(void *cable, unsigned int debug_struct_addr)
 extern "C" int bridge_ioloop_close(void *arg, int kill)
 {
   Ioloop *ioloop = (Ioloop *)arg;
-  return ioloop->stop(kill);
+  int status = ioloop->stop(kill);
+  delete(ioloop);
+  return status;
 }
 
 

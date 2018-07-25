@@ -35,23 +35,55 @@
 using namespace std;
 
 
-static int bridge_verbose = 0;
-static const char *bridge_error = NULL;
 static js::config *system_config = NULL;
+
+char Log::last_error[MAX_LOG_LINE] = "unknown error";
+int Log::log_level = LOG_ERROR;
+std::mutex Log::m_last_error;
+
+static Log *log;
 
 void Log::print(log_level_e level, const char *str, ...)
 {
-  if (bridge_verbose <= level) return;
+  if (this->log_level <= level) return;
   va_list va;
   va_start(va, str);
   vprintf(str, va);
   va_end(va);
 }
 
+// void Log::DumpHex(const void* data, size_t size) {
+// 	char ascii[17];
+// 	size_t i, j;
+// 	ascii[16] = '\0';
+// 	for (i = 0; i < size; ++i) {
+// 		printf("%02X ", ((unsigned char*)data)[i]);
+// 		if (((unsigned char*)data)[i] >= ' ' && ((unsigned char*)data)[i] <= '~') {
+// 			ascii[i % 16] = ((unsigned char*)data)[i];
+// 		} else {
+// 			ascii[i % 16] = '.';
+// 		}
+// 		if ((i+1) % 8 == 0 || i+1 == size) {
+// 			printf(" ");
+// 			if ((i+1) % 16 == 0) {
+// 				printf("|  %s \n", ascii);
+// 			} else if (i+1 == size) {
+// 				ascii[(i+1) % 16] = '\0';
+// 				if ((i+1) % 16 <= 8) {
+// 					printf(" ");
+// 				}
+// 				for (j = (i+1) % 16; j < 16; ++j) {
+// 					printf("   ");
+// 				}
+// 				printf("|  %s \n", ascii);
+// 			}
+// 		}
+// 	}
+// }
 
 void Log::user(const char *str, ...)
 {
-  if (bridge_verbose <= LOG_INFO) return;
+  if (this->log_level <= LOG_INFO) return;
   va_list va;
   va_start(va, str);
   vprintf(str, va);
@@ -60,7 +92,7 @@ void Log::user(const char *str, ...)
 
 void Log::debug(const char *str, ...)
 {
-  if (bridge_verbose <= LOG_DEBUG) return;
+  if (this->log_level <= LOG_DEBUG) return;
   va_list va;
   va_start(va, str);
   vprintf(str, va);
@@ -69,7 +101,7 @@ void Log::debug(const char *str, ...)
 
 void Log::warning(const char *str, ...)
 {
-  if (bridge_verbose <= LOG_WARNING) return;
+  if (this->log_level <= LOG_WARNING) return;
   va_list va;
   va_start(va, str);
   vprintf(str, va);
@@ -78,14 +110,16 @@ void Log::warning(const char *str, ...)
 
 void Log::error(const char *str, ...)
 {
-  char buff[1024];
+  char buf[MAX_LOG_LINE];
   va_list va;
   va_start(va, str);
-  vsnprintf(buff, 1024, str, va);
+  vsnprintf(buf, MAX_LOG_LINE, str, va);
   va_end(va);
-  bridge_error = strdup(buff);
-
-  if (bridge_verbose <= LOG_ERROR) return;
+  {
+    std::unique_lock<std::mutex> lck(m_last_error);
+    strncpy(last_error, buf, MAX_LOG_LINE);
+  }
+  if (this->log_level <= LOG_ERROR) return;
   va_start(va, str);
   vprintf(str, va);
   va_end(va);
@@ -108,31 +142,29 @@ extern "C" void *cable_new(const char *config_string, const char *system_config_
   }
 
   if (cable_name == NULL) {
-    bridge_error = "No cable name specified";
+    log->error("No cable name specified\n");
     return NULL;
   }
 
   if (strncmp(cable_name, "ftdi", 4) == 0)
   {
 #ifdef __USE_FTDI__
-    Log *log = new Log();
     Ftdi::FTDIDeviceID id = Ftdi::Olimex;
     if (strcmp(cable_name, "ftdi@digilent") == 0) id = Ftdi::Digilent;
-    Adv_dbg_itf *adu = new Adv_dbg_itf(system_config, log, new Ftdi(system_config, log, id));
+    Adv_dbg_itf *adu = new Adv_dbg_itf(system_config, new Log("FTDI"), new Ftdi(system_config, log, id));
     if (!adu->connect(config)) return NULL;
     int tap = 0;
     if (config->get("tap")) tap = config->get("tap")->get_int();
     adu->device_select(tap);
     return (void *)static_cast<Cable *>(adu);
 #else
-    fprintf(stderr, "Debug bridge has not been compiled with FTDI support\n");
+    log->error("Debug bridge has not been compiled with FTDI support\n");
     return NULL;
 #endif
   }
   else if (strcmp(cable_name, "jtag-proxy") == 0)
   {
-    Log *log = new Log();
-    Adv_dbg_itf *adu = new Adv_dbg_itf(system_config, log, new Jtag_proxy(log));
+    Adv_dbg_itf *adu = new Adv_dbg_itf(system_config, new Log("JPROX"), new Jtag_proxy(log));
     if (!adu->connect(config)) return NULL;
     int tap = 0;
     if (config->get("tap")) tap = config->get("tap")->get_int();
@@ -141,7 +173,7 @@ extern "C" void *cable_new(const char *config_string, const char *system_config_
   }
   else
   {
-    fprintf(stderr, "Unknown cable: %s\n", cable_name);
+    log->error("Unknown cable: %s\n", cable_name);
     return NULL;
   }
   
@@ -203,35 +235,38 @@ extern "C" void cable_unlock(void *handler)
   cable->unlock();
 }
 
-
-
-
 static void init_sigint_handler(int s) {
   raise(SIGTERM);
 }
 
 extern "C" char * bridge_get_error()
 {
-  if (bridge_error == NULL) return strdup("unknown error");
-  return strdup(bridge_error);
+  return strdup(Log::last_error);
 }
 
-extern "C" void bridge_init(const char *config_string, int verbose)
+extern "C" void bridge_set_log_level(int level)
 {
+  Log::log_level = level;
+}
+
+extern "C" void bridge_init(const char *config_string, int log_level)
+{
+  printf("Bridge init - log level %d\n", log_level);
+
+  Log::log_level = log_level;
+  log = new Log();
   system_config = js::import_config_from_string(std::string(config_string));
-  bridge_verbose = verbose;
 
   // This should be the first C method called by python.
   // As python is not catching SIGINT where we are in C world, we have to
   // setup a  sigint handler to exit in case control+C is hit.
   signal (SIGINT, init_sigint_handler);
-
 }
 
 
-extern "C" void *gdb_server_open(void *cable, int socket_port)
+extern "C" void *gdb_server_open(void *cable, int socket_port, cmd_cb_t cmd_cb, const char * capabilities)
 {
-  return (void *)new Gdb_server(new Log(), (Cable *)cable, system_config, socket_port);
+  return (void *)new Gdb_server(new Log("GDB_SRV"), (Cable *)cable, system_config, socket_port, cmd_cb, capabilities);
 }
 
 extern "C" void gdb_server_close(void *arg, int kill)
@@ -240,8 +275,23 @@ extern "C" void gdb_server_close(void *arg, int kill)
   server->stop(kill);
 }
 
+extern "C" int gdb_send_str(void *arg, const char * str)
+{
+  Gdb_server *server = (Gdb_server *)arg;
+  if (server->rsp) {
+    Rsp::Client *client = server->rsp->get_client();
+    if (client) {
+      return client->send_str(str);
+    }
+  }
+  return 0;
+}
 
-
+extern "C" void gdb_server_refresh_target(void *arg)
+{
+  Gdb_server *server = (Gdb_server *)arg;
+  server->refresh_target();
+}
 
 #if 0
 

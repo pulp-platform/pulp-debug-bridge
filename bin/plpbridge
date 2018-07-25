@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python
 
 #
 # Copyright (C) 2018 ETH Zurich and University of Bologna
@@ -25,6 +25,7 @@ import code
 import imp
 import os.path
 import sys
+from bridge.misc.portable import to_bytes
 
 try:
   import plptree
@@ -98,7 +99,7 @@ def write(bridge):
     if args.verbose >= 4:
         print ('Write access command (addr: 0x%x, size: 0x%x, value: 0x%x)' % (addr, size, value))
 
-    bridge.write(addr=addr, size=size, buffer=value.to_bytes(size, byteorder='little'))
+    bridge.write(addr=addr, size=size, buffer=to_bytes(value, size, byteorder='little'))
 
     return 0
 
@@ -302,7 +303,7 @@ for binary in args.binaries:
 
 if len(args.command) == 0:
     json_commands = config.get('**/debug_bridge/commands')
-    if json_commands is not None: 
+    if json_commands is not None:
         args.command = json_commands.get().split()
 
 
@@ -348,3 +349,4 @@ def handle_commands(bridge):
 
 
 handle_commands(bridge)
+print("Exiting!!")

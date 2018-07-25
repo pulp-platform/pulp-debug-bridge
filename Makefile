@@ -60,12 +60,18 @@ endif
 
 
 
-CFLAGS += -O3 -g -fPIC -std=gnu++11 -MMD -MP -Isrc -Iinclude -I$(INSTALL_DIR)/include $(FTDI_CFLAGS) $(SDL_CFLAGS)
-LDFLAGS += -O3 -g -shared $(FTDI_LDFLAGS) $(SDL_LDFLAGS)
+CFLAGS += -g -O0 -fPIC -std=gnu++11 -MMD -MP -Isrc -Iinclude -Wall -Werror \
+ -Wno-unused-function -Wno-unused-variable -Wno-unused-but-set-variable \
+ -Wno-delete-non-virtual-dtor -Wno-sign-compare -Wno-return-type -Wno-maybe-uninitialized \
+ -Wno-reorder \
+ -I$(INSTALL_DIR)/include $(FTDI_CFLAGS) $(SDL_CFLAGS)
+
+LDFLAGS += -g -shared $(FTDI_LDFLAGS) $(SDL_LDFLAGS)
 
 SRCS = src/python_wrapper.cpp src/ioloop.cpp src/cables/jtag.cpp src/reqloop.cpp \
 src/cables/adv_dbg_itf/adv_dbg_itf.cpp src/gdb-server/gdb-server.cpp \
-src/gdb-server/rsp.cpp src/gdb-server/target.cpp src/gdb-server/breakpoints.cpp
+src/gdb-server/rsp.cpp src/gdb-server/target.cpp src/gdb-server/breakpoints.cpp \
+src/gdb-server/Tcp_listener.cpp
 
 ifdef STAND_ALONE_INSTALL
 LDFLAGS += -L$(INSTALL_DIR)/lib
