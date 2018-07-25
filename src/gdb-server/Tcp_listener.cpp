@@ -1,3 +1,23 @@
+/*
+ * Copyright (C) 2018 ETH Zurich and University of Bologna and GreenWaves Technologies SA
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+/* 
+ * Authors: Martin Croome, GreenWaves Technologies (martin.croome@greenwaves-technologies.com)
+ */
+
 #include "Tcp_listener.hpp"
 
 Tcp_listener::Tcp_listener(Log *log, port_t port, socket_cb_t connected_cb, socket_cb_t disconnected_cb) : 
@@ -105,11 +125,11 @@ bool Tcp_listener::stop()
 {
   log->debug("Tcp_listener stopped (running %d)\n", this->running);
   if (this->running) {
-    this->running = false;
     if (client) {
       client->close();
     }
-    close(socket_in);
+    this->running = false;
+    ::close(socket_in);
     listener_thread->join();
   }
   this->socket_deinit();
@@ -185,10 +205,54 @@ ssize_t Tcp_listener::Tcp_socket::check_error(func_ret_t ret)
 #endif
 }
 
+void Tcp_listener::Tcp_socket::shutdown()
+{
+  listener->log->debug("Shutdown client socket\n");
+  fd_set rfds;
+  struct timeval tv;
+  char buf[100];
+
+  if (is_shutdown) return;
+  is_shutdown = true;
+
+  if (::shutdown(socket, SHUT_RDWR) == -1) return;
+
+  tv.tv_sec = 0;
+  tv.tv_usec = 500 * 1000;
+
+  FD_ZERO(&rfds);
+  FD_SET(socket, &rfds);
+
+  while(1) {
+    func_ret_t ret;
+  #ifdef _WIN32
+    ret = select(0, &rfds, NULL, NULL, &tv);
+  #else
+    ret = select(socket+1, &rfds, NULL, NULL, &tv);
+  #endif
+    if (ret > 0) {
+      ret = recv(socket, buf, 100, 0);
+      if (ret < 1) {
+        break;
+      }
+    } else {
+      break;
+    }
+  }
+  listener->log->debug("Shutdown finished waiting\n");
+}
+
+
 void Tcp_listener::Tcp_socket::close()
 {
   if (!is_closed) {
+    listener->log->debug("Close client socket %d\n", is_shutdown);
+    if (!is_shutdown) {
+      this->shutdown();
+    }
+    listener->log->debug("Close client socket\n");
     is_closed = true;
+    listener->set_blocking(socket, true);
     ::close(socket);
     if (f_cb != nullptr) f_cb();
     listener->client_disconnected();
@@ -247,7 +311,7 @@ func_ret_t Tcp_listener::Tcp_socket::recvsend(bool send, void * buf, size_t buf_
     }
 
   #ifdef _WIN32
-    ret = select(0, &rfds, NULL, NULL, &tv);
+    ret = select(0, &rfds, &wfds, NULL, &tv);
   #else
     ret = select(socket+1, &rfds, &wfds, NULL, &tv);
   #endif
@@ -271,6 +335,8 @@ func_ret_t Tcp_listener::Tcp_socket::recvsend(bool send, void * buf, size_t buf_
 
       // check if the connection has closed
       if (!send && ret == 0) {
+        listener->log->debug("Shutdown 1\n");
+        this->is_shutdown = true;
         this->close();
         res = -1;
         break;
@@ -280,6 +346,8 @@ func_ret_t Tcp_listener::Tcp_socket::recvsend(bool send, void * buf, size_t buf_
       if (ret == SOCKET_ERROR) {
         // ret will be 0 if the socket would block
         if ((ret = this->check_error(ret)) < 0) {
+          listener->log->debug("Shutdown 2\n");
+          this->is_shutdown = true;
           res = ret;
           break;
         };
@@ -306,6 +374,8 @@ func_ret_t Tcp_listener::Tcp_socket::recvsend(bool send, void * buf, size_t buf_
 
     } else if (ret == SOCKET_ERROR) {
       res = this->check_error(ret);
+      listener->log->debug("Shutdown 3\n");
+      this->is_shutdown = true;
       break;
     } else {
       res = 0;

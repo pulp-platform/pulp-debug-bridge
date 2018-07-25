@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2018 ETH Zurich and University of Bologna
+ * Copyright (C) 2018 ETH Zurich and University of Bologna and GreenWaves Technologies SA
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -63,14 +63,31 @@ void Rsp::init()
 void Rsp::client_connected(Tcp_listener::Tcp_socket *client)
 {
   top->log->print(LOG_INFO, "RSP: client connected\n");
+
+  // Make sure target is halted
+  top->target->halt();
   this->client = new Rsp::Client(this, client);
 
-  // hang the listener
+  // hang the listener until the client stops
   {
     std::unique_lock<std::mutex> lk(m_rsp_client);
     cv_rsp_client.wait(lk, [this]{return !this->client->is_running(); });
   }
 
+  top->target->halt();
+
+  // If we're not aborted leave the target running when nothing is attached
+  if (!this->aborted) {
+    // clear the breakpoints
+    top->bkp->clear();
+
+    // Start everything
+    top->target->clear_resume_all();
+    top->target->prepare_resume_all(false);
+    top->target->resume_all();
+  }
+
+  // Clean up the client
   this->client->stop();
   delete this->client;
   this->client = nullptr;
@@ -95,17 +112,22 @@ void Rsp::rsp_client_finished()
   cv_rsp_client.notify_one();
 }
 
-void Rsp::wait_finished(int cnt)
+void Rsp::wait_finished()
 {
   std::unique_lock<std::mutex> lk(m_finished);
-  cv_finished.wait(lk, [this, cnt]{return this->conn_cnt>=cnt; });
+  cv_finished.wait(lk, [this]{ return this->aborted; });
 }
 
-void Rsp::close(bool await_one)
+void Rsp::close(bool wait_finished)
 {
-  if (await_one) {
+  if (this->client && this->client->is_worker_thread(std::this_thread::get_id())) {
+    assert(!wait_finished); // wait_finished cannot be true if we are called from the RSP worker thread
+    this->aborted = true;
+    return;
+  }
+  if (wait_finished) {
     top->log->debug("RSP: Wait for RSP client to finish\n");
-    this->wait_finished(1);
+    this->wait_finished();
     top->log->debug("RSP: RSP client is finished\n");
   }
   if (this->client) {
@@ -150,19 +172,24 @@ void Rsp::Client::stop()
 
 void Rsp::Client::client_routine()
 {
-  while(running)
+  while(running && !rsp->aborted)
   {
     char pkt[PACKET_MAX_LEN];
     size_t len;
 
     running = this->get_packet(pkt, &len);
 
-    if (running) {
+    if (running && !rsp->aborted) {
       running = this->decode(pkt, len);
       if (!running) {
         client->close();
       }
     }
+  }
+  // close the connection when aborted
+  if (running) {
+    client->close();
+    running = false;
   }
   top->log->debug("RSP client routine finished\n");
   rsp->rsp_client_finished();
@@ -361,7 +388,7 @@ bool Rsp::Client::mem_read(char* data, size_t len)
     return false;
   }
 
-  top->cable->access(false, addr, length, (char *)buffer);
+  top->target->mem_read(addr, length, (char *)buffer);
 
   for(i = 0; i < length; i++) {
     rdata = buffer[i];
@@ -426,7 +453,7 @@ bool Rsp::Client::mem_write_ascii(char* data, size_t len)
     buffer[j] = wdata;
   }
 
-  top->cable->access(true, addr, buffer_len, buffer);
+  top->target->mem_write(addr, buffer_len, buffer);
 
   free(buffer);
 
@@ -461,7 +488,7 @@ bool Rsp::Client::mem_write(char* data, size_t len)
   data = &data[i+1];
   len = len - i - 1;
 
-  top->cable->access(true, addr, len, data);
+  top->target->mem_write(addr, len, data);
 
   return this->send_str("OK");
 }
@@ -542,7 +569,6 @@ bool Rsp::Client::regs_send()
   }
   core->actual_pc_read(&npc);
   snprintf(&regs_str[32 * 8 + 0 * 8], 9, "%08x", htonl(npc));
-  top->log->print(LOG_ERROR, "PC 0x%x Thread %d\n", npc, thread_sel);
 
   return this->send_str(regs_str);
 }

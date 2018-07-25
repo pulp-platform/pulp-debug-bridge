@@ -189,7 +189,7 @@ void Target_core::set_power(bool is_on)
       top->log->print(LOG_DEBUG, "Setting-on core\n");
       is_on = true;
       // // let's discover core id and cluster id
-      this->stop();
+      // this->stop();
       // // csr_read(0x014, &hartid);
       // csr_read(0xF14, &hartid);
       // top->log->print(LOG_DEBUG, "Read hart id %d\n", hartid);
@@ -199,7 +199,7 @@ void Target_core::set_power(bool is_on)
 
       // top->log->print(LOG_DEBUG, "Found a core with id %X (cluster: %d, core: %d)\n", hartid, cluster_id, core_id);
       this->write(DBG_IE_REG, 1<<3);
-      if (!stopped) resume();
+      // if (!stopped) resume();
     } else {
       top->log->print(LOG_DEBUG, "Setting-off core (cluster: %d, core: %d)\n", cluster_id, core_id);
       is_on = false;
@@ -381,6 +381,8 @@ int Target_core::get_signal()
 
 uint32_t Target_core::check_stopped()
 {
+  this->top->log->debug("Check core %d stopped %d resume %d\n", core_id, this->is_stopped(), this->should_resume());
+
   if (this->should_resume()&&this->is_stopped()) {
     uint32_t cause;
     bool is_hit, is_sleeping;
@@ -407,12 +409,16 @@ uint32_t Target_core::check_stopped()
 
 void Target_core::prepare_resume(bool step)
 {
-
-  if (!is_on||resume_prepared) return;
+  if (resume_prepared) return;
 
   resume_prepared = true;
-
   top->log->debug("Preparing core %d:%d to resume (step: %d)\n", this->get_cluster_id(), this->get_core_id(), step);
+
+  // If the core wasn't on then go no further
+  if (!is_on) {
+    this->set_step_mode(step);
+    return;
+  }
 
   // now let's handle software breakpoints
   uint32_t ppc;
@@ -610,7 +616,7 @@ void Target_cluster_common::set_power(bool is_on)
   if (is_on && nb_on_cores != nb_core)
   {
     nb_on_cores=0;
-    this->top->log->debug("Set all on\n");
+    this->top->log->debug("Set all on (is_on: %d, nb_on_cores: %d, nb_core: %d)\n", is_on, nb_on_cores, nb_core);
     for(auto const& core: cores)
     {
       core->set_power(is_on);
@@ -820,6 +826,8 @@ Target_core * Target::check_stopped()
   for (auto &cluster : this->clusters)
   {
     uint32_t cause;
+    this->top->log->debug("Check cluster %d\n", cluster->get_id());
+
     Target_core * core = cluster->check_stopped(&cause);
     if (cause == EXC_CAUSE_BREAKPOINT) {
       stopped_core = core;
@@ -844,6 +852,16 @@ void Target::update_power()
   for (auto &cluster: clusters) {
     cluster->update_power();
   }
+}
+
+bool Target::mem_read(uint32_t addr, uint32_t length, char * buffer)
+{
+  top->cable->access(false, addr, length, buffer);
+}
+
+bool Target::mem_write(uint32_t addr, uint32_t length, char * buffer)
+{
+    top->cable->access(true, addr, length, buffer);
 }
 
 void Target::halt()

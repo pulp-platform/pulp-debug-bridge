@@ -21,6 +21,10 @@
 #ifndef LOG_H
 #define LOG_H
 
+#include <mutex>
+
+#define MAX_LOG_LINE 1024
+
 typedef enum
 {
   LOG_ERROR = 0,
@@ -31,11 +35,17 @@ typedef enum
 
 class Log {
   public:
+    Log(const char * module) {}
+    Log() {}
     void print(log_level_e, const char *str, ...);
     void error(const char *str, ...) ;
     void warning(const char *str, ...) ;
     void user(const char *str, ...) ;
     void debug(const char *str, ...) ;
+    static int log_level;
+    static char last_error[MAX_LOG_LINE];
+  private:
+    static std::mutex m_last_error;
 };
 
 #endif
