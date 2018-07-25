@@ -303,7 +303,7 @@ for binary in args.binaries:
 
 if len(args.command) == 0:
     json_commands = config.get('**/debug_bridge/commands')
-    if json_commands is not None: 
+    if json_commands is not None:
         args.command = json_commands.get().split()
 
 

@@ -36,7 +36,7 @@ class XferInvalidAnnexException(DebugBridgeException):
     pass
 
 class XferErrorException(DebugBridgeException):
-    
+
     def __init__(self, error_code):
         self.error_code = error_code
 
@@ -62,13 +62,13 @@ class Ctype_cable(object):
 
         self.module.chip_reset.argtypes = \
             [ctypes.c_void_p, ctypes.c_bool]
-            
+
         self.module.jtag_reset.argtypes = \
             [ctypes.c_void_p, ctypes.c_bool]
-            
+
         self.module.jtag_soft_reset.argtypes = \
             [ctypes.c_void_p]
-            
+
         self.module.cable_jtag_set_reg.argtypes = \
             [ctypes.c_void_p, ctypes.c_int, ctypes.c_int, ctypes.c_uint]
         self.module.cable_jtag_set_reg.restype = ctypes.c_bool
@@ -79,19 +79,21 @@ class Ctype_cable(object):
 
         self.module.cable_lock.argtypes = \
             [ctypes.c_void_p]
-            
+
         self.module.cable_unlock.argtypes = \
             [ctypes.c_void_p]
-            
+
         self.module.bridge_get_error.argtypes = []
         self.module.bridge_get_error.restype = ctypes.c_char_p
-            
+
         self.module.bridge_init.argtypes = [ctypes.c_char_p, ctypes.c_int]
 
         self.module.bridge_set_log_level.argtypes = [ctypes.c_int]
 
-        self.cmd_func_typ = ctypes.CFUNCTYPE(ctypes.c_int, ctypes.c_char_p, ctypes.POINTER(ctypes.c_char), ctypes.c_int)
-        self.module.gdb_server_open.argtypes = [ctypes.c_void_p, ctypes.c_int, self.cmd_func_typ, ctypes.c_char_p]
+        self.cmd_func_typ = ctypes.CFUNCTYPE(ctypes.c_int, ctypes.c_char_p,
+          ctypes.POINTER(ctypes.c_char), ctypes.c_int)
+        self.module.gdb_server_open.argtypes = [ctypes.c_void_p, ctypes.c_int,
+          self.cmd_func_typ, ctypes.c_char_p]
         self.module.gdb_server_open.restype = ctypes.c_void_p
 
         self.module.gdb_send_str.argtypes = [ctypes.c_void_p, ctypes.c_char_p]
@@ -108,9 +110,10 @@ class Ctype_cable(object):
 
         self.instance = self.module.cable_new(config_string, system_config.dump_to_string().encode('utf-8'))
 
-        if self.instance == None:
-            raise Exception('Failed to initialize cable with error: ' + self.module.bridge_get_error().decode('utf-8'))
-        
+        if self.instance is None:
+            raise Exception('Failed to initialize cable with error: ' +
+                self.module.bridge_get_error().decode('utf-8'))
+
 
     def get_instance(self):
         return self.instance
@@ -172,7 +175,7 @@ class debug_bridge(object):
         self.do_exit = False
         # Load the library which provides generic services through
         # python / C++ bindings
-        lib_path=os.path.join('libpulpdebugbridge.so')
+        lib_path = os.path.join('libpulpdebugbridge.so')
         self.module = ctypes.CDLL(lib_path)
 
         self.module.bridge_ioloop_open.argtypes = [ctypes.c_void_p, ctypes.c_uint]
@@ -183,7 +186,7 @@ class debug_bridge(object):
 
         self.module.bridge_reqloop_open.argtypes = [ctypes.c_void_p, ctypes.c_uint]
         self.module.bridge_reqloop_open.restype = ctypes.c_void_p
-        
+
         self.module.bridge_reqloop_close.argtypes = [ctypes.c_void_p, ctypes.c_int]
 
         self.module.bridge_init(config.dump_to_string().encode('utf-8'), verbose)
@@ -364,8 +367,10 @@ class debug_bridge(object):
         # First get address of the structure used to communicate between
         # the bridge and the runtime
         addr = self._get_binary_symbol_addr('__rt_debug_struct_ptr')
-        print("debug address 0x{:x} contents 0x{:x}".format(addr, self.read_32(addr)))
-        
+
+        if self.verbose > 0:
+            print("debug address 0x{:x} contents 0x{:x}".format(addr, self.read_32(addr)))
+
         if addr == 0:
             addr = self._get_binary_symbol_addr('debugStruct_ptr')
 
@@ -390,7 +395,7 @@ class debug_bridge(object):
     def flash(self):
         raise Exception('Flash is not supported on this target')
 
-    def encodeBytes(self, sbuf, buf, buf_len, start=0):
+    def encode_bytes(self, sbuf, buf, buf_len, start=0):
         enc = sbuf.encode('ascii')
         if len(enc) + 1 > buf_len - start:
             return -len(enc)
@@ -403,7 +408,7 @@ class debug_bridge(object):
         level = int(cmd.split()[1])
         print("Log level set to "+level)
         self.module.bridge_set_log_level(level)
-        return self.encodeBytes("OK", buf, buf_len)
+        return self.encode_bytes("OK", buf, buf_len)
 
     def doreset(self, run):
         self.module.bridge_ioloop_close(self.ioloop_handle, 1)
@@ -423,23 +428,23 @@ class debug_bridge(object):
         elif len(cmd) == 2:
             cmd = cmd[1]
         else:
-            return self.encodeBytes("", buf, buf_len)
+            return self.encode_bytes("", buf, buf_len)
         if "run".startswith(cmd):
             cmd = "run"
         elif "halt".startswith(cmd):
             cmd = "halt"
         else:
-            return self.encodeBytes("", buf, buf_len)
+            return self.encode_bytes("", buf, buf_len)
 
         if self.doreset(cmd == "run"):
-            return self.encodeBytes("OK", buf, buf_len)
+            return self.encode_bytes("OK", buf, buf_len)
         else:
-            return self.encodeBytes("E00", buf, buf_len)
+            return self.encode_bytes("E00", buf, buf_len)
 
     def qrcmd_shutdown(self, cmd, buf, buf_len):
         self.do_exit = True
         self.module.gdb_server_close(self.gdb_handle, 1)
-        return self.encodeBytes("OK", buf, buf_len)
+        return self.encode_bytes("OK", buf, buf_len)
 
     def hex_string(self, s):
         res = []
@@ -450,10 +455,10 @@ class debug_bridge(object):
     def qrcmd_help(self, cmd, buf, buf_len, commands):
         init = 'Command List\n'
         for c in commands:
-            self.encodeBytes('O'+self.hex_string(init+commands[c]+'\n'), buf, buf_len)
+            self.encode_bytes('O'+self.hex_string(init+commands[c]+'\n'), buf, buf_len)
             self.module.gdb_send_str(self.gdb_handle, buf)
             init = ''
-        return self.encodeBytes("OK", buf, buf_len)
+        return self.encode_bytes("OK", buf, buf_len)
 
     def qrcmd_cb(self, cmd, buf, buf_len):
         commands = {
@@ -462,25 +467,25 @@ class debug_bridge(object):
             "shutdown":    "shutdown             - shuts down the bridge",
             "help":        "help                 - gets list of supported commands"
         }
-        # try:
-        cmd = str(bytearray.fromhex(cmd))
-        cmd_name = cmd.split(' ')[0].lower()
-        cmd_selected = None
-        for c in commands:
-            if c.startswith(cmd_name):
-                if cmd_selected is None:
-                    cmd_selected = c
-                else:
-                    return self.encodeBytes("", buf, buf_len)
-        if cmd_selected is None:
-            return self.encodeBytes("", buf, buf_len)
-        elif cmd_selected == "help":
-            return self.qrcmd_help(cmd, buf, buf_len, commands)
-        else:
-            handler = getattr(self, 'qrcmd_'+cmd_selected)
-            return handler(cmd, buf, buf_len)
-        # except:
-        #     return self.encodeBytes("E00", buf, buf_len)
+        try:
+            cmd = str(bytearray.fromhex(cmd))
+            cmd_name = cmd.split(' ')[0].lower()
+            cmd_selected = None
+            for c in commands:
+                if c.startswith(cmd_name):
+                    if cmd_selected is None:
+                        cmd_selected = c
+                    else:
+                        return self.encode_bytes("", buf, buf_len)
+            if cmd_selected is None:
+                return self.encode_bytes("", buf, buf_len)
+            elif cmd_selected == "help":
+                return self.qrcmd_help(cmd, buf, buf_len, commands)
+            else:
+                handler = getattr(self, 'qrcmd_'+cmd_selected)
+                return handler(cmd, buf, buf_len)
+        except:
+            return self.encode_bytes("E00", buf, buf_len)
 
     def qxfer_read_cb(self, obj, annex, offset, length, buf, buf_len):
         try:
@@ -508,7 +513,7 @@ class debug_bridge(object):
         except Exception:
             obj_val = ""
 
-        return self.encodeBytes(obj_val, buf, buf_len)
+        return self.encode_bytes(obj_val, buf, buf_len)
 
     def capabilities(self, extra):
         capstr = "qXfer:exec-file:read+"
@@ -517,34 +522,34 @@ class debug_bridge(object):
         self.capabilities_str = capstr.encode('ascii')
 
     def cmd_cb(self, cmd, buf, buf_len):
-        # try:
-        cmd = cmd.decode('ascii')
-        if cmd.startswith("qXfer"):
-            cmd = cmd.split(":")
-            if len(cmd) != 5:
-                raise Exception()
-            offlen = cmd[4].split(',')
-            if cmd[2] == "read":
-                return self.qxfer_read_cb(cmd[1], cmd[3], int(offlen[0], base=16), int(offlen[1], base=16), buf, buf_len)
-        elif cmd.startswith("qRcmd"):
-            if len(cmd) < len("qRcmd") + 2:
-                return self.encodeBytes("E01", buf, buf_len)
-            cmd = cmd.split(',')
-            if len(cmd) != 2:
-                return self.encodeBytes("E01", buf, buf_len)
+        try:
+            cmd = cmd.decode('ascii')
+            if cmd.startswith("qXfer"):
+                cmd = cmd.split(":")
+                if len(cmd) != 5:
+                    raise Exception()
+                offlen = cmd[4].split(',')
+                if cmd[2] == "read":
+                    return self.qxfer_read_cb(cmd[1], cmd[3], int(offlen[0], base=16), int(offlen[1], base=16), buf, buf_len)
+            elif cmd.startswith("qRcmd"):
+                if len(cmd) < len("qRcmd") + 2:
+                    return self.encode_bytes("E01", buf, buf_len)
+                cmd = cmd.split(',')
+                if len(cmd) != 2:
+                    return self.encode_bytes("E01", buf, buf_len)
 
-            return self.qrcmd_cb(cmd[1], buf, buf_len)
-        elif cmd.startswith("__is_started"):
-            return self.is_started and 1 or 0
-        elif cmd.startswith("__start_target"):
-            return self.start()
-        elif cmd.startswith("__stop_target"):
-            return self.stop()
+                return self.qrcmd_cb(cmd[1], buf, buf_len)
+            elif cmd.startswith("__is_started"):
+                return self.is_started and 1 or 0
+            elif cmd.startswith("__start_target"):
+                return self.start()
+            elif cmd.startswith("__stop_target"):
+                return self.stop()
 
-        return self.encodeBytes("", buf, buf_len)
-        # except:
-        #     print("Unexpected error:", sys.exc_info()[0])
-        #     return self.encodeBytes("E00", buf, buf_len)
+            return self.encode_bytes("", buf, buf_len)
+        except:
+            print("Unexpected error:", sys.exc_info()[0])
+            return self.encode_bytes("E00", buf, buf_len)
 
     def gdb(self, port):
         def cmd_cb_hook(cmd, buf, buf_len):
