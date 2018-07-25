@@ -221,8 +221,18 @@ class debug_bridge(object):
 
 
             set_pc_addr_config = self.config.get('**/debug_bridge/set_pc_addr')
+
             if set_pc_addr_config is not None:
-                return self.write_32(set_pc_addr_config.get_int(), elffile.header['e_entry'])
+                set_pc_offset_config = self.config.get('**/debug_bridge/set_pc_offset')
+                entry = elffile.header['e_entry']
+
+                if set_pc_offset_config is not None:
+                    entry += set_pc_offset_config.get_int()
+
+                if self.verbose:
+                    print ('Setting PC (base: 0x%x, value: 0x%x)' % (set_pc_addr_config.get_int(), entry))
+
+                return self.write_32(set_pc_addr_config.get_int(), entry)
 
         return 0
 
@@ -245,6 +255,9 @@ class debug_bridge(object):
     def start(self):
         start_addr_config = self.config.get('**/debug_bridge/start_addr')
         if start_addr_config is not None:
+            if self.verbose:
+                print ('Starting (base: 0x%x, value: 0x%x)' % (start_addr_config.get_int(), self.config.get('**/debug_bridge/start_value').get_int()))
+
             self.write_32(start_addr_config.get_int(), self.config.get('**/debug_bridge/start_value').get_int())
         return 0
 
