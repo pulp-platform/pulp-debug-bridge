@@ -251,8 +251,18 @@ class debug_bridge(object):
 
 
             set_pc_addr_config = self.config.get('**/debug_bridge/set_pc_addr')
+
             if set_pc_addr_config is not None:
-                return self.write_32(set_pc_addr_config.get_int(), elffile.header['e_entry'])
+                set_pc_offset_config = self.config.get('**/debug_bridge/set_pc_offset')
+                entry = elffile.header['e_entry']
+
+                if set_pc_offset_config is not None:
+                    entry += set_pc_offset_config.get_int()
+
+                if self.verbose:
+                    print ('Setting PC (base: 0x%x, value: 0x%x)' % (set_pc_addr_config.get_int(), entry))
+
+                return self.write_32(set_pc_addr_config.get_int(), entry)
 
         return 0
 
@@ -276,6 +286,9 @@ class debug_bridge(object):
         start_addr_config = self.config.get('**/debug_bridge/start_addr')
         if start_addr_config is not None:
             self.is_started = True
+            if self.verbose > 0:
+                print ('Starting (base: 0x%x, value: 0x%x)' % (start_addr_config.get_int(), self.config.get('**/debug_bridge/start_value').get_int()))
+
             self.write_32(start_addr_config.get_int(), self.config.get('**/debug_bridge/start_value').get_int())
         return 0
 
@@ -351,7 +364,8 @@ class debug_bridge(object):
         # First get address of the structure used to communicate between
         # the bridge and the runtime
         addr = self._get_binary_symbol_addr('__rt_debug_struct_ptr')
-        print("debug address 0x{:x} contents 0x{:x}".format(addr, self.read_32(addr)))
+        if self.verbose > 0:
+            print("debug address 0x{:x} contents 0x{:x}".format(addr, self.read_32(addr)))
         
         if addr == 0:
             addr = self._get_binary_symbol_addr('debugStruct_ptr')
@@ -449,25 +463,25 @@ class debug_bridge(object):
             "shutdown":    "shutdown             - shuts down the bridge",
             "help":        "help                 - gets list of supported commands"
         }
-        # try:
-        cmd = str(bytearray.fromhex(cmd))
-        cmd_name = cmd.split(' ')[0].lower()
-        cmd_selected = None
-        for c in commands:
-            if c.startswith(cmd_name):
-                if cmd_selected is None:
-                    cmd_selected = c
-                else:
-                    return self.encodeBytes("", buf, buf_len)
-        if cmd_selected is None:
-            return self.encodeBytes("", buf, buf_len)
-        elif cmd_selected == "help":
-            return self.qrcmd_help(cmd, buf, buf_len, commands)
-        else:
-            handler = getattr(self, 'qrcmd_'+cmd_selected)
-            return handler(cmd, buf, buf_len)
-        # except:
-        #     return self.encodeBytes("E00", buf, buf_len)
+        try:
+            cmd = str(bytearray.fromhex(cmd))
+            cmd_name = cmd.split(' ')[0].lower()
+            cmd_selected = None
+            for c in commands:
+                if c.startswith(cmd_name):
+                    if cmd_selected is None:
+                        cmd_selected = c
+                    else:
+                        return self.encodeBytes("", buf, buf_len)
+            if cmd_selected is None:
+                return self.encodeBytes("", buf, buf_len)
+            elif cmd_selected == "help":
+                return self.qrcmd_help(cmd, buf, buf_len, commands)
+            else:
+                handler = getattr(self, 'qrcmd_'+cmd_selected)
+                return handler(cmd, buf, buf_len)
+        except:
+            return self.encodeBytes("E00", buf, buf_len)
 
     def qxfer_read_cb(self, obj, annex, offset, length, buf, buf_len):
         try:
@@ -504,34 +518,34 @@ class debug_bridge(object):
         self.capabilities_str = capstr.encode('ascii')
 
     def cmd_cb(self, cmd, buf, buf_len):
-        # try:
-        cmd = cmd.decode('ascii')
-        if cmd.startswith("qXfer"):
-            cmd = cmd.split(":")
-            if len(cmd) != 5:
-                raise Exception()
-            offlen = cmd[4].split(',')
-            if cmd[2] == "read":
-                return self.qxfer_read_cb(cmd[1], cmd[3], int(offlen[0], base=16), int(offlen[1], base=16), buf, buf_len)
-        elif cmd.startswith("qRcmd"):
-            if len(cmd) < len("qRcmd") + 2:
-                return self.encodeBytes("E01", buf, buf_len)
-            cmd = cmd.split(',')
-            if len(cmd) != 2:
-                return self.encodeBytes("E01", buf, buf_len)
+        try:
+            cmd = cmd.decode('ascii')
+            if cmd.startswith("qXfer"):
+                cmd = cmd.split(":")
+                if len(cmd) != 5:
+                    raise Exception()
+                offlen = cmd[4].split(',')
+                if cmd[2] == "read":
+                    return self.qxfer_read_cb(cmd[1], cmd[3], int(offlen[0], base=16), int(offlen[1], base=16), buf, buf_len)
+            elif cmd.startswith("qRcmd"):
+                if len(cmd) < len("qRcmd") + 2:
+                    return self.encodeBytes("E01", buf, buf_len)
+                cmd = cmd.split(',')
+                if len(cmd) != 2:
+                    return self.encodeBytes("E01", buf, buf_len)
 
-            return self.qrcmd_cb(cmd[1], buf, buf_len)
-        elif cmd.startswith("__is_started"):
-            return self.is_started and 1 or 0
-        elif cmd.startswith("__start_target"):
-            return self.start()
-        elif cmd.startswith("__stop_target"):
-            return self.stop()
+                return self.qrcmd_cb(cmd[1], buf, buf_len)
+            elif cmd.startswith("__is_started"):
+                return self.is_started and 1 or 0
+            elif cmd.startswith("__start_target"):
+                return self.start()
+            elif cmd.startswith("__stop_target"):
+                return self.stop()
 
-        return self.encodeBytes("", buf, buf_len)
-        # except:
-        #     print("Unexpected error:", sys.exc_info()[0])
-        #     return self.encodeBytes("E00", buf, buf_len)
+            return self.encodeBytes("", buf, buf_len)
+        except:
+            print("Unexpected error:", sys.exc_info()[0])
+            return self.encodeBytes("E00", buf, buf_len)
 
     def gdb(self, port):
         def cmd_cb_hook(cmd, buf, buf_len):
