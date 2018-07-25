@@ -1,3 +1,23 @@
+/*
+ * Copyright (C) 2018 ETH Zurich and University of Bologna and GreenWaves Technologies SA
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+/* 
+ * Authors: Martin Croome, GreenWaves Technologies (martin.croome@greenwaves-technologies.com)
+ */
+
 #ifdef _WIN32
   #ifndef _WIN32_WINNT
     #define _WIN32_WINNT 0x0501
@@ -65,6 +85,7 @@ public:
     func_ret_t send(void * buf, size_t len, int ms, int flags=0);
     func_ret_t send(void * buf, size_t len, int flags=0);
     void close();
+    void shutdown();
     void set_finished_cb(finished_cb_t finished_cb);
   private:
     func_ret_t recvsend(bool send, void * buf, size_t buf_len, size_t cnt, int flags, int ms);
@@ -74,7 +95,7 @@ public:
     Tcp_listener *listener;
     int block_timeout = 100;
     finished_cb_t f_cb = nullptr;
-    bool is_closed = false;
+    bool is_closed = false, is_shutdown = false;
   };
 
   typedef std::function<void(Tcp_listener::Tcp_socket *)> socket_cb_t;

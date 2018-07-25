@@ -24,6 +24,7 @@ from elftools.elf.elffile import ELFFile
 import time
 from portable import to_bytes
 import struct
+import sys
 
 class DebugBridgeException(Exception):
     pass
@@ -87,9 +88,14 @@ class Ctype_cable(object):
             
         self.module.bridge_init.argtypes = [ctypes.c_char_p, ctypes.c_int]
 
+        self.module.bridge_set_log_level.argtypes = [ctypes.c_int]
+
         self.cmd_func_typ = ctypes.CFUNCTYPE(ctypes.c_int, ctypes.c_char_p, ctypes.POINTER(ctypes.c_char), ctypes.c_int)
         self.module.gdb_server_open.argtypes = [ctypes.c_void_p, ctypes.c_int, self.cmd_func_typ, ctypes.c_char_p]
         self.module.gdb_server_open.restype = ctypes.c_void_p
+
+        self.module.gdb_send_str.argtypes = [ctypes.c_void_p, ctypes.c_char_p]
+        self.module.gdb_send_str.restype = ctypes.c_bool
 
         self.module.gdb_server_close.argtypes = [ctypes.c_void_p, ctypes.c_int]
 
@@ -163,7 +169,7 @@ class debug_bridge(object):
         self.gdb_handle = None
         self.cable_config = config.get('**/debug_bridge/cable')
         self.is_started = None
-
+        self.do_exit = False
         # Load the library which provides generic services through
         # python / C++ bindings
         lib_path=os.path.join('libpulpdebugbridge.so')
@@ -371,41 +377,97 @@ class debug_bridge(object):
     def flash(self):
         raise Exception('Flash is not supported on this target')
 
-    def encodeBytes(self, sbuf, buf, buf_len):
+    def encodeBytes(self, sbuf, buf, buf_len, start=0):
         enc = sbuf.encode('ascii')
-        if len(enc) + 1 > buf_len:
+        if len(enc) + 1 > buf_len - start:
             return -len(enc)
         for i in range(len(enc)):
-            buf[i] = enc[i]
-        print(buf, len(enc))
-        buf[len(enc)] = b'\000'
-        return len(enc)
+            buf[i+start] = enc[i]
+        buf[len(enc)+start] = b'\000'
+        return len(enc) + start
 
-    def qrcmd_reset(self, cmd, buf, buf_len):
+    def qrcmd_debug_level(self, cmd, buf, buf_len):
+        level = int(cmd.split()[1])
+        print("Log level set to "+level)
+        self.module.bridge_set_log_level(level)
+        return self.encodeBytes("OK", buf, buf_len)
+
+    def doreset(self, run):
         self.module.bridge_ioloop_close(self.ioloop_handle, 1)
         self.ioloop_handle = None
         self.stop()
         self.load()
         self.module.gdb_server_refresh_target(self.gdb_handle)
         self.ioloop()
-        if cmd == "run":
+        if run:
             self.start()
+        return True
+
+    def qrcmd_reset(self, cmd, buf, buf_len):
+        cmd = cmd.split(' ')
+        if len(cmd) == 1:
+            cmd = "run"
+        elif len(cmd) == 2:
+            cmd = cmd[1]
+        else:
+            return self.encodeBytes("", buf, buf_len)
+        if "run".startswith(cmd):
+            cmd = "run"
+        elif "halt".startswith(cmd):
+            cmd = "halt"
+        else:
+            return self.encodeBytes("", buf, buf_len)
+
+        if self.doreset(cmd == "run"):
+            return self.encodeBytes("OK", buf, buf_len)
+        else:
+            return self.encodeBytes("E00", buf, buf_len)
+
+    def qrcmd_shutdown(self, cmd, buf, buf_len):
+        self.do_exit = True
+        self.module.gdb_server_close(self.gdb_handle, 1)
+        return self.encodeBytes("OK", buf, buf_len)
+
+    def hex_string(self, s):
+        res = []
+        for b in bytearray(s):
+            res.append('{0:02x}'.format(b))
+        return ''.join(res)
+
+    def qrcmd_help(self, cmd, buf, buf_len, commands):
+        init = 'Command List\n'
+        for c in commands:
+            self.encodeBytes('O'+self.hex_string(init+commands[c]+'\n'), buf, buf_len)
+            self.module.gdb_send_str(self.gdb_handle, buf)
+            init = ''
         return self.encodeBytes("OK", buf, buf_len)
 
     def qrcmd_cb(self, cmd, buf, buf_len):
-        cmd = bytearray.fromhex(cmd).decode()
-        if cmd.startswith("reset"):
-            cmd = cmd.split(' ')
-            if len(cmd) == 1:
-                cmd = "run"
-            elif len(cmd) == 2:
-                cmd = cmd[1]
-            else:
-                return self.encodeBytes("", buf, buf_len)
-            if cmd == "run" or cmd == "halt":
-                return self.qrcmd_reset(cmd, buf, buf_len)
-            else:
-                return self.encodeBytes("", buf, buf_len)
+        commands = {
+            "reset":       "reset [run|halt]     - resets the target",
+            "debug_level": "debug_level (0-6)    - sets bridge debug level",
+            "shutdown":    "shutdown             - shuts down the bridge",
+            "help":        "help                 - gets list of supported commands"
+        }
+        # try:
+        cmd = str(bytearray.fromhex(cmd))
+        cmd_name = cmd.split(' ')[0].lower()
+        cmd_selected = None
+        for c in commands:
+            if c.startswith(cmd_name):
+                if cmd_selected is None:
+                    cmd_selected = c
+                else:
+                    return self.encodeBytes("", buf, buf_len)
+        if cmd_selected is None:
+            return self.encodeBytes("", buf, buf_len)
+        elif cmd_selected == "help":
+            return self.qrcmd_help(cmd, buf, buf_len, commands)
+        else:
+            handler = getattr(self, 'qrcmd_'+cmd_selected)
+            return handler(cmd, buf, buf_len)
+        # except:
+        #     return self.encodeBytes("E00", buf, buf_len)
 
     def qxfer_read_cb(self, obj, annex, offset, length, buf, buf_len):
         try:
@@ -442,34 +504,34 @@ class debug_bridge(object):
         self.capabilities_str = capstr.encode('ascii')
 
     def cmd_cb(self, cmd, buf, buf_len):
-        try:
-            cmd = cmd.decode('ascii')
-            if cmd.startswith("qXfer"):
-                cmd = cmd.split(":")
-                if len(cmd) != 5:
-                    raise Exception()
-                offlen = cmd[4].split(',')
-                if cmd[2] == "read":
-                    return self.qxfer_read_cb(cmd[1], cmd[3], int(offlen[0], base=16), int(offlen[1], base=16), buf, buf_len)
-            elif cmd.startswith("qRcmd"):
-                if len(cmd) < len("qRcmd") + 2:
-                    return self.encodeBytes("E01", buf, buf_len)
-                cmd = cmd.split(',')
-                print(cmd)
-                if len(cmd) != 2:
-                    return self.encodeBytes("E01", buf, buf_len)
+        # try:
+        cmd = cmd.decode('ascii')
+        if cmd.startswith("qXfer"):
+            cmd = cmd.split(":")
+            if len(cmd) != 5:
+                raise Exception()
+            offlen = cmd[4].split(',')
+            if cmd[2] == "read":
+                return self.qxfer_read_cb(cmd[1], cmd[3], int(offlen[0], base=16), int(offlen[1], base=16), buf, buf_len)
+        elif cmd.startswith("qRcmd"):
+            if len(cmd) < len("qRcmd") + 2:
+                return self.encodeBytes("E01", buf, buf_len)
+            cmd = cmd.split(',')
+            if len(cmd) != 2:
+                return self.encodeBytes("E01", buf, buf_len)
 
-                return self.qrcmd_cb(cmd[1], buf, buf_len)
-            elif cmd.startswith("__is_started"):
-                return self.is_started and 1 or 0
-            elif cmd.startswith("__start_target"):
-                return self.start()
-            elif cmd.startswith("__stop_target"):
-                return self.stop()
+            return self.qrcmd_cb(cmd[1], buf, buf_len)
+        elif cmd.startswith("__is_started"):
+            return self.is_started and 1 or 0
+        elif cmd.startswith("__start_target"):
+            return self.start()
+        elif cmd.startswith("__stop_target"):
+            return self.stop()
 
-            return self.encodeBytes("", buf, buf_len)
-        except:
-            return self.encodeBytes("E00", buf, buf_len)
+        return self.encodeBytes("", buf, buf_len)
+        # except:
+        #     print("Unexpected error:", sys.exc_info()[0])
+        #     return self.encodeBytes("E00", buf, buf_len)
 
     def gdb(self, port):
         def cmd_cb_hook(cmd, buf, buf_len):
@@ -486,6 +548,8 @@ class debug_bridge(object):
     def wait(self):
         if self.gdb_handle is not None:
             self.module.gdb_server_close(self.gdb_handle, 0)
+            if self.do_exit:
+                return 0
 
         # The wait function returns in case ioloop has been launched
         # as it will check for end of application.

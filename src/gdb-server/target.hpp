@@ -120,6 +120,7 @@ public:
   void halt();
   void flush();
   void init();
+  int get_id() { return cluster_id; }
   virtual Target_core * check_stopped(uint32_t *stopped_cause);
 protected:
   Gdb_server *top;

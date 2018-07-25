@@ -186,6 +186,9 @@ public:
   void flush();
   void reinitialize();
   void update_power();
+  bool mem_read(uint32_t addr, uint32_t length, char * buffer);
+  bool mem_write(uint32_t addr, uint32_t length, char * buffer);
+
   Target_core * check_stopped();
 
   std::vector<Target_core *> get_threads() { return cores; }
@@ -260,10 +263,11 @@ class Rsp {
   public:
     Rsp(Gdb_server *top, int port);
 
+
     bool open();
-    void close(bool await_one);
+    void close(bool wait_finished);
     void init();
-    void wait_finished(int cnt);
+    void wait_finished();
 
     class Client
     {
@@ -271,12 +275,14 @@ class Rsp {
         Client(Rsp *rsp, Tcp_listener::Tcp_socket *client);
         void stop();
         bool is_running() { return running; };
+        bool is_worker_thread( std::thread::id id) { return thread==nullptr?false:id==thread->get_id(); }
+        bool send_str(const char* data);
       private:
         bool remote_capability(const char * name) {
           Rsp_capabilities::const_iterator it = remote_caps.find (name);
           return it != remote_caps.end() && it->second.get()->is_supported();
         }
-        int cause_to_signal(uint32_t cause, int * int_num = NULL);
+        int cause_to_signal(uint32_t cause, int * int_num = nullptr);
         int get_signal(Target_core *core);
         bool decode(char* data, size_t len);
         bool get_packet(char* data, size_t* len);
@@ -286,7 +292,7 @@ class Rsp {
         bool regs_send();
         bool signal(Target_core *core);
 
-        bool signal() { return this->signal(NULL); };
+        bool signal() { return this->signal(nullptr); };
 
         bool multithread(char* data, size_t len);
 
@@ -295,7 +301,6 @@ class Rsp {
         bool query(char* data, size_t len);
 
         bool send(const char* data, size_t len);
-        bool send_str(const char* data);
 
         bool cont(char* data, size_t len); // continue, reserved keyword, thus not used as function name
         bool resume(bool step);
@@ -320,29 +325,31 @@ class Rsp {
         Gdb_server *top;
         bool stopped;
 
-        Rsp *rsp;
-        Tcp_listener::Tcp_socket *client;
-
-        std::thread *thread;
+        Rsp *rsp = nullptr;
+        Tcp_listener::Tcp_socket *client = nullptr;
+        std::thread *thread = nullptr;
 
         int thread_sel;
     };
+    Rsp::Client* get_client() { return client; }
+
 
   private:
     void client_connected(Tcp_listener::Tcp_socket* client);
     void client_disconnected(Tcp_listener::Tcp_socket *client);
     void rsp_client_finished();
-    Target_core *main_core = NULL;
 
-    Tcp_listener *listener;
-    Rsp::Client *client;
+    Target_core *main_core = nullptr;
+    Tcp_listener *listener = nullptr;
+    Rsp::Client *client = nullptr;
+    Gdb_server *top = nullptr;
 
-    Gdb_server *top;
     int m_thread_init;
     int port;
     std::mutex m_finished, m_rsp_client;
     std::condition_variable cv_finished, cv_rsp_client;
     int conn_cnt=0;
+    bool aborted = false;
 };
 
 #endif
