@@ -22,7 +22,7 @@ import os.path
 import json_tools as js
 from elftools.elf.elffile import ELFFile
 import time
-from portable import to_bytes
+from misc.portable import to_bytes
 import struct
 import sys
 

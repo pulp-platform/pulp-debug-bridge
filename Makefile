@@ -101,8 +101,7 @@ all: checkout deps build
 
 $(DEP_SRC_DIR)/json-tools:
 	mkdir -p $(DEP_SRC_DIR)
-#	cd $(DEP_SRC_DIR) && git clone https://github.com/pulp-platform/json-tools.git
-	cd $(DEP_SRC_DIR) && git clone https://github.com/GreenWaves-Technologies/json-tools.git
+	cd $(DEP_SRC_DIR) && git clone https://github.com/pulp-platform/json-tools.git
 
 $(DEP_SRC_DIR)/pulp-configs:
 	mkdir -p $(DEP_SRC_DIR)
