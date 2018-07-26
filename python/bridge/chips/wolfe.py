@@ -33,16 +33,8 @@ class wolfe_debug_bridge(debug_bridge):
         if self.verbose:
             print ('Loading binary through jtag')
 
-        # Reset the chip and tell him we want to load via jtag
-        # We keep the reset active until the end so that it sees
-        # the boot mode as soon as it boots from rom
-        if self.verbose:
-            print ("Stalling the FC")
-        self.get_cable().chip_reset(True)
-        self.get_cable().chip_reset(False)
-
-        # Stall the FC as when the reset is released it just tries to load from flash
-        self.write(0x1A110000, 4, [0, 0, 1, 0])
+        if self.stop():
+            return -1
 
         # Load the binary through jtag
         if self.verbose:
@@ -65,5 +57,34 @@ class wolfe_debug_bridge(debug_bridge):
         if self.start_cores:
             # Unstall the FC so that it starts fetching instructions from the loaded binary
             self.write(0x1A110000, 4, [0, 0, 0, 0])
+
+        return 0
+
+    def stop(self):
+
+        # Reset the chip and tell him we want to load via jtag
+        # We keep the reset active until the end so that it sees
+        # the boot mode as soon as it boots from rom
+        if self.verbose:
+            print ("Stalling the FC")
+
+        self.get_cable().chip_reset(True)
+        self.get_cable().chip_reset(False)
+
+        # Stall the FC as when the reset is released it just tries to load from flash
+        while True:
+            # on Wolfe, the core will start only after a while when the reset
+            # is released, so the first accesses we do may not have any effect.
+            # As a aworkaround we have to try stopping it several time.
+            # Another issue on RTL simulation is that the core is not
+            # functional anymore if we let him execute a branch with X
+            # which happens if we let it run too long before we stop it.
+            # Due to that we cannot read the stall status before we stop it.
+            for i in range(0, 10):
+                self.write(0x1A110000, 4, [0, 0, 1, 0])
+
+            value = self.read_32(0x1A110000)
+            if (value >> 16) & 1 == 1:
+                break
 
         return 0
