@@ -289,7 +289,7 @@ class debug_bridge(object):
         start_addr_config = self.config.get('**/debug_bridge/start_addr')
         if start_addr_config is not None:
             self.is_started = True
-            if self.verbose:
+            if self.verbose > 0:
                 print ('Starting (base: 0x%x, value: 0x%x)' % (start_addr_config.get_int(), self.config.get('**/debug_bridge/start_value').get_int()))
 
             self.write_32(start_addr_config.get_int(), self.config.get('**/debug_bridge/start_value').get_int())
@@ -367,7 +367,6 @@ class debug_bridge(object):
         # First get address of the structure used to communicate between
         # the bridge and the runtime
         addr = self._get_binary_symbol_addr('__rt_debug_struct_ptr')
-
         if self.verbose > 0:
             print("debug address 0x{:x} contents 0x{:x}".format(addr, self.read_32(addr)))
 
