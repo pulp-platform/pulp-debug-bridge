@@ -324,11 +324,11 @@ bool Target_core::actual_pc_read(unsigned int* pc)
     on_trap = false;
   } else {
     cause = this->get_cause();
-    *pc = (cause==TARGET_SIGNAL_INT||cause==TARGET_SIGNAL_STOP ? npc : ppc);
-    on_trap = cause == TARGET_SIGNAL_TRAP;
+    *pc = (EXC_CAUSE_INTERUPT(cause)||cause==EXC_CAUSE_DBG_HALT ? npc : ppc);
+    on_trap = cause == EXC_CAUSE_BREAKPOINT;
   }
-  this->top->log->debug("PPC 0x%x NPC 0x%x PC 0x%x Core %d:%d\n", 
-    ppc, npc, *pc, this->get_cluster_id(), this->get_core_id());
+  this->top->log->debug("PPC 0x%x NPC 0x%x PC 0x%x Core %d:%d (is_BP: %d)\n", 
+    ppc, npc, *pc, this->get_cluster_id(), this->get_core_id(), on_trap);
   pc_cached = *pc;
   pc_is_cached = true;
   return true;
@@ -359,31 +359,32 @@ uint32_t Target_core::get_cause()
   return cause;
 }
 
-int Target_core::get_signal()
-{
-  uint32_t cause;
+// int Target_core::get_signal()
+// {
+//   uint32_t cause;
  
-  if (this->is_stopped()) {
-    bool is_hit, is_sleeping;
+//   if (this->is_stopped()) {
+//     bool is_hit, is_sleeping;
 
-    this->read_hit(&is_hit, &is_sleeping);
-    if (is_sleeping)
-      return TARGET_SIGNAL_NONE;
-    if (is_hit)
-      return TARGET_SIGNAL_TRAP;
+//     this->read_hit(&is_hit, &is_sleeping);
+//     if (is_sleeping)
+//       return TARGET_SIGNAL_NONE;
+//     if (is_hit)
+//       return TARGET_SIGNAL_TRAP;
     
-    return this->get_cause();
+//     return this->get_cause();
 
-  } else {
-    return TARGET_SIGNAL_NONE;
-  }
-}
+//   } else {
+//     return TARGET_SIGNAL_NONE;
+//   }
+// }
 
 uint32_t Target_core::check_stopped()
 {
-  this->top->log->debug("Check core %d stopped %d resume %d\n", core_id, this->is_stopped(), this->should_resume());
+  bool stopped = this->is_stopped();
+  this->top->log->debug("Check core %d stopped %d resume %d\n", core_id, stopped, this->should_resume());
 
-  if (this->should_resume()&&this->is_stopped()) {
+  if (this->should_resume() && stopped) {
     uint32_t cause;
     bool is_hit, is_sleeping;
     this->read_hit(&is_hit, &is_sleeping);
@@ -391,10 +392,11 @@ uint32_t Target_core::check_stopped()
       this->top->log->debug("core %d:%d tid %d single stepped\n", this->get_cluster_id(), this->get_core_id(), this->get_thread_id()+1);
       return EXC_CAUSE_BREAKPOINT;
     }
-    if (is_sleeping) {
-      this->top->log->debug("core %d:%d tid %d is stopped but may be sleeping\n", this->get_cluster_id(), this->get_core_id(), this->get_thread_id()+1);
-      return EXC_CAUSE_NONE;
-    }
+    // Experiment for 1f issue
+    // if (is_sleeping) {
+    //   this->top->log->debug("core %d:%d tid %d is stopped but may be sleeping\n", this->get_cluster_id(), this->get_core_id(), this->get_thread_id()+1);
+    //   return EXC_CAUSE_NONE;
+    // }
     cause = this->get_cause();
     if (cause == EXC_CAUSE_BREAKPOINT) {
       this->top->log->debug("core %d:%d tid %d hit breakpoint\n", this->get_cluster_id(), this->get_core_id(), this->get_thread_id()+1);
@@ -511,33 +513,37 @@ Target_core * Target_cluster_common::check_stopped(uint32_t *stopped_cause)
 {
   *stopped_cause = EXC_CAUSE_NONE;
 
-#if 0 // Halt status register doesn't seem to work
-  if (this->ctrl->has_xtrigger()) {
-    uint32_t halt_mask = 0;
-    Target_cluster_ctrl_xtrigger * xtrigger = (Target_cluster_ctrl_xtrigger *) this->ctrl;
-    if (xtrigger->get_halt_mask(&halt_mask)) {
-      uint32_t halt_status = 0;
-      if (xtrigger->get_halt_status(&halt_status)) {
-        this->top->log->debug("Read cluster status mask 0x%08x status 0x%08x\n", halt_mask, halt_status);
-        if (!(halt_mask & halt_status))
-          return NULL;
-      }
-    }
-  }
-#endif
+  top->log->debug("Check if cluster %d stopped\n", get_id());
 
-  Target_core * stopped_core = NULL;
+  Target_core * stopped_core = nullptr;
   for (auto &core: cores)
   {
+    if (!core->should_resume()) continue;
+
     uint32_t cause = core->check_stopped();
     if (cause == EXC_CAUSE_BREAKPOINT) {
       stopped_core = core;
       *stopped_cause = cause;
       break;
+
+#if 1
+    // tried this but it misses breakpoints
+    } else if (cause != EXC_CAUSE_NONE) {
+      if (!stopped_core) {
+        stopped_core = core;
+        *stopped_cause = cause;
+      }
+    } else {
+      if (!stopped_core && this->ctrl->has_xtrigger()) {
+        return nullptr;
+      }
+    }
+#else
     } else if (!stopped_core && cause != EXC_CAUSE_NONE) {
       stopped_core = core;
       *stopped_cause = cause;
     }
+#endif
   }
   return stopped_core;
 }
@@ -822,11 +828,11 @@ void Target::resume_all()
 
 Target_core * Target::check_stopped()
 {
+  this->top->log->debug("Check if target stopped\n");
   Target_core * stopped_core = NULL;
   for (auto &cluster : this->clusters)
   {
     uint32_t cause;
-    this->top->log->debug("Check cluster %d\n", cluster->get_id());
 
     Target_core * core = cluster->check_stopped(&cause);
     if (cause == EXC_CAUSE_BREAKPOINT) {
