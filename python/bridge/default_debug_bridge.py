@@ -22,7 +22,7 @@ import os.path
 import json_tools as js
 from elftools.elf.elffile import ELFFile
 import time
-from misc.portable import to_bytes
+from bridge.misc.portable import to_bytes
 import struct
 import sys
 
@@ -347,7 +347,7 @@ class debug_bridge(object):
                     if section.header['sh_type'] == 'SHT_SYMTAB':
                         for symbol in section.iter_symbols():
                             if symbol.name == name:
-                                t_section=symbol.entry['st_shndx']
+                                # t_section=symbol.entry['st_shndx']
                                 t_vaddr=symbol.entry['st_value']
                                 return t_vaddr
         return 0
@@ -410,12 +410,15 @@ class debug_bridge(object):
         return self.encode_bytes("OK", buf, buf_len)
 
     def doreset(self, run):
-        self.module.bridge_ioloop_close(self.ioloop_handle, 1)
-        self.ioloop_handle = None
+        do_ioloop = self.ioloop_handle is not None
+        if do_ioloop:
+            self.module.bridge_ioloop_close(self.ioloop_handle, 1)
+            self.ioloop_handle = None
         self.stop()
         self.load()
         self.module.gdb_server_refresh_target(self.gdb_handle)
-        self.ioloop()
+        if do_ioloop:
+            self.ioloop()
         if run:
             self.start()
         return True
