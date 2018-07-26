@@ -26,6 +26,7 @@
   #include <Ws2tcpip.h>
   typedef int port_t;
   typedef SOCKET socket_t;
+  #define LST_SHUT_RDWR SD_BOTH
 #else
   #include <sys/socket.h>
   #include <netinet/in.h>
@@ -37,6 +38,7 @@
   #define INVALID_SOCKET -1
   typedef int func_ret_t;
   #define SOCKET_ERROR -1
+  #define LST_SHUT_RDWR SHUT_RDWR
 #endif
 
 #include <fcntl.h>
