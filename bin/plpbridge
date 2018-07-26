@@ -68,18 +68,16 @@ def read(bridge):
         print ('Read access command (addr: 0x%x, size: 0x%x)' % (addr, size))
 
     data = bridge.read(addr=addr, size=size)
-
     while size > 0:
-        line = '%8.8x: ' % addr
-        for i in range(0, 16, width):
-
-            line += '%*.*x ' % (width*2, width*2, int.from_bytes(b''.join(data[0:width]), byteorder='little'))
+        line = [ '{:08x}'.format(addr) ]
+        for _ in range(0, 16, width):
+            line.append(' '+''.join('{:02x}'.format(ord(c)) for c in data[0:width]))
             size -= width
             addr += width
             data = data[width:]
             if size <= 0:
                 break
-        print (line)
+        print (''.join(line))
 
     return 0
 
