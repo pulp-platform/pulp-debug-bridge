@@ -510,8 +510,13 @@ bool Rsp::Client::reg_read(char* data, size_t len)
     this->top->target->get_thread(thread_sel)->gpr_read(addr, &rdata);
   else if (addr == 0x20)
     this->top->target->get_thread(thread_sel)->actual_pc_read(&rdata);
-  else if (addr == 0x41 + 0x301) // CSR MISA read - return not implemented
-    return this->send_str("0000");
+  else if (addr >= 0x41) // Read CSR
+    if (addr == 0x41 + 0x301) {
+      top->log->debug("READ MISA ---------------------------\n");
+      rdata = 0x04000000;
+    } else {
+      this->top->target->get_thread(thread_sel)->csr_read(addr - 0x41, &rdata);
+    }
   else
     return this->send_str("");
 
@@ -733,7 +738,7 @@ bool Rsp::Client::wait()
     if (stopped_core) {
       // move to thread of stopped core
       thread_sel = stopped_core->get_thread_id();
-      this->top->log->debug("found stopped core - thread %d\n", thread_sel);
+      this->top->log->debug("found stopped core - thread %d\n", thread_sel + 1);
       this->top->target->halt();
       return this->signal(stopped_core);
     }
@@ -757,9 +762,12 @@ bool Rsp::Client::multithread(char* data, size_t len)
 {
   int thread_id;
 
+  top->log->debug("Subsequent %c operations on thread %s\n", data[0], &data[1]);
+
   switch (data[0]) {
     case 'c':
     case 'g':
+
       if (sscanf(&data[1], "%d", &thread_id) != 1)
         return false;
 
@@ -872,7 +880,6 @@ bool Rsp::Client::get_packet(char* pkt, size_t* p_pkt_len) {
   // first look for start bit
   do {
     ret = client->receive(&c, 1, true);
-    top->log->debug("loop get packet\n");
     if(ret<0) {
       top->log->print(LOG_ERROR, "RSP: Error receiving1\n");
       return false;
