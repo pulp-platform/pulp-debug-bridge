@@ -51,7 +51,6 @@
 
 enum exception_causes {
   EXC_CAUSE_NONE         = 0x00,
-  EXC_CAUSE_ILLEGAL_NONE = 0x02,
   EXC_CAUSE_ILLEGAL_INSN = 0x02,
   EXC_CAUSE_BREAKPOINT   = 0x03,
   EXC_CAUSE_ECALL_UMODE  = 0x08,
@@ -133,8 +132,6 @@ public:
   bool is_stopped_on_trap() { return pc_is_cached && on_trap; }
   uint32_t get_cause();
   uint32_t check_stopped();
-
-  int get_signal();
 
   bool stop();
   bool halt();
