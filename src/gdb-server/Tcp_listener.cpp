@@ -194,15 +194,18 @@ void Tcp_listener::Tcp_socket::set_finished_cb(finished_cb_t finished_cb)
 ssize_t Tcp_listener::Tcp_socket::check_error(func_ret_t ret)
 {
 #ifdef _WIN32
+  int err_num;
+  if ((err_num = WSAGetLastError()) != WSAEWOULDBLOCK) {
+    listener->log->error("Error on client socket %d - closing\n", err_num);
 #else
   if (errno != EWOULDBLOCK) {
-    listener->log->error("Error on client socket %d - closing\n", ret);
+    listener->log->error("Error on client socket %d - closing\n", errno);
+#endif
     this->close();
     return -1;
   } else {
     return 0;
   }
-#endif
 }
 
 void Tcp_listener::Tcp_socket::shutdown()
@@ -215,7 +218,7 @@ void Tcp_listener::Tcp_socket::shutdown()
   if (is_shutdown) return;
   is_shutdown = true;
 
-  if (::shutdown(socket, SHUT_RDWR) == -1) return;
+  if (::shutdown(socket, LST_SHUT_RDWR) == -1) return;
 
   tv.tv_sec = 0;
   tv.tv_usec = 500 * 1000;
@@ -232,7 +235,7 @@ void Tcp_listener::Tcp_socket::shutdown()
   #endif
     if (ret > 0) {
       ret = recv(socket, buf, 100, 0);
-      if (ret < 1) {
+      if (ret == SOCKET_ERROR||ret == 0) {
         break;
       }
     } else {
@@ -252,8 +255,13 @@ void Tcp_listener::Tcp_socket::close()
     }
     listener->log->debug("Close client socket\n");
     is_closed = true;
-    listener->set_blocking(socket, true);
+    // clear blocking on the socket so that if linger is set we wait
+    listener->set_blocking(socket, false);
+#ifdef _WIN32
+    closesocket(socket);
+#else
     ::close(socket);
+#endif
     if (f_cb != nullptr) f_cb();
     listener->client_disconnected();
   }
@@ -310,11 +318,7 @@ func_ret_t Tcp_listener::Tcp_socket::recvsend(bool send, void * buf, size_t buf_
       return -1;
     }
 
-  #ifdef _WIN32
-    ret = select(0, &rfds, &wfds, NULL, &tv);
-  #else
     ret = select(socket+1, &rfds, &wfds, NULL, &tv);
-  #endif
 
     if (!listener->running) {
       this->close();
@@ -335,7 +339,6 @@ func_ret_t Tcp_listener::Tcp_socket::recvsend(bool send, void * buf, size_t buf_
 
       // check if the connection has closed
       if (!send && ret == 0) {
-        listener->log->debug("Shutdown 1\n");
         this->is_shutdown = true;
         this->close();
         res = -1;
@@ -345,8 +348,7 @@ func_ret_t Tcp_listener::Tcp_socket::recvsend(bool send, void * buf, size_t buf_
       // check it there is an error
       if (ret == SOCKET_ERROR) {
         // ret will be 0 if the socket would block
-        if ((ret = this->check_error(ret)) < 0) {
-          listener->log->debug("Shutdown 2\n");
+        if ((ret = this->check_error(ret)) != 0) {
           this->is_shutdown = true;
           res = ret;
           break;
@@ -374,7 +376,6 @@ func_ret_t Tcp_listener::Tcp_socket::recvsend(bool send, void * buf, size_t buf_
 
     } else if (ret == SOCKET_ERROR) {
       res = this->check_error(ret);
-      listener->log->debug("Shutdown 3\n");
       this->is_shutdown = true;
       break;
     } else {
