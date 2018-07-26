@@ -450,8 +450,8 @@ class debug_bridge(object):
 
     def hex_string(self, s):
         res = []
-        for b in bytearray(s):
-            res.append('{0:02x}'.format(b))
+        for b in s:
+            res.append('{0:02x}'.format(ord(b)))
         return ''.join(res)
 
     def qrcmd_help(self, cmd, buf, buf_len, commands):
@@ -464,13 +464,15 @@ class debug_bridge(object):
 
     def qrcmd_cb(self, cmd, buf, buf_len):
         commands = {
-            "reset":       "reset [run|halt]     - resets the target",
-            "debug_level": "debug_level (0-6)    - sets bridge debug level",
-            "shutdown":    "shutdown             - shuts down the bridge",
-            "help":        "help                 - gets list of supported commands"
+            u"reset":       "reset [run|halt]     - resets the target",
+            u"debug_level": "debug_level (0-6)    - sets bridge debug level",
+            u"shutdown":    "shutdown             - shuts down the bridge",
+            u"help":        "help                 - gets list of supported commands"
         }
         try:
-            cmd = str(bytearray.fromhex(cmd))
+            cmd = bytearray.fromhex(cmd).decode('ascii')
+            if (self.verbose > 0):
+                print("Receive rCmd: "+cmd)
             cmd_name = cmd.split(' ')[0].lower()
             cmd_selected = None
             for c in commands:
