@@ -55,52 +55,57 @@ Rsp::Rsp(Gdb_server *top, int port) : top(top), port(port)
 
 void Rsp::init()
 {
-  top->target->halt();
+  this->halt_target();
   main_core = top->target->get_threads().front();
   m_thread_init = main_core->get_thread_id();
 }
 
 void Rsp::client_connected(Tcp_listener::Tcp_socket *client)
 {
-  top->log->print(LOG_INFO, "RSP: client connected\n");
+  top->log->user("RSP: client connected\n");
 
   // Make sure target is halted
-  top->target->halt();
+  this->halt_target();
   this->client = new Rsp::Client(this, client);
 
-  // hang the listener until the client stops
+  // hang the listener until the client stops (i.e. gdb session completed)
   {
     std::unique_lock<std::mutex> lk(m_rsp_client);
     cv_rsp_client.wait(lk, [this]{return !this->client->is_running(); });
   }
 
-  top->target->halt();
+  top->log->user("RSP: client disconnected\n");
+  this->halt_target();
 
   // If we're not aborted leave the target running when nothing is attached
   if (!this->aborted) {
+    top->log->debug("RSP: clear breakpoints\n");
     // clear the breakpoints
     top->bkp->clear();
 
     // Start everything
-    top->target->clear_resume_all();
-    top->target->prepare_resume_all(false);
-    top->target->resume_all();
+    top->log->debug("RSP: resume target\n");
+    this->resume_target(false);
   }
+
+  top->log->debug("RSP: clean up client\n");
 
   // Clean up the client
   this->client->stop();
   delete this->client;
   this->client = nullptr;
 
+  top->log->debug("RSP: notify finished\n");
   {
     std::unique_lock<std::mutex> lk(m_finished);
     cv_finished.notify_one();
   }
+  top->log->debug("RSP: finished notified\n");
 }
 
 void Rsp::client_disconnected(Tcp_listener::Tcp_socket *client)
 {
-  top->log->print(LOG_INFO, "RSP: TCP client disconnected\n");
+  top->log->user("RSP: TCP client disconnected\n");
 }
 
 void Rsp::rsp_client_finished()
@@ -151,9 +156,43 @@ bool Rsp::open() {
   return listener->start();
 }
 
+void Rsp::indicate_resume()
+{
+  this->top->cmd_cb("__gdb_tgt_res", NULL, 0);
+}
+
+
+
+void Rsp::indicate_halt()
+{
+  this->top->cmd_cb("__gdb_tgt_hlt", NULL, 0);
+}
+
+
+
+void Rsp::halt_target()
+{
+  this->indicate_halt();
+  this->top->target->halt();
+}
+
+
+
+void Rsp::resume_target(bool step, int tid)
+{
+  this->top->target->clear_resume_all();
+  if (tid > 0)
+    this->top->target->get_thread(tid)->prepare_resume(step);
+  else
+    this->top->target->prepare_resume_all(step);
+  this->indicate_resume();
+  this->top->target->resume_all();
+}
+
+
 // Rsp::Client
 
-Rsp::Client::Client(Rsp *rsp, Tcp_listener::Tcp_socket *client) : top(rsp->top), rsp(rsp), client(client), stopped(false)
+Rsp::Client::Client(Rsp *rsp, Tcp_listener::Tcp_socket *client) : top(rsp->top), rsp(rsp), client(client)
 {
   thread_sel = rsp->m_thread_init;
   thread = new std::thread(&Rsp::Client::client_routine, this);
@@ -202,16 +241,15 @@ bool Rsp::Client::v_packet(char* data, size_t len)
   top->log->print(LOG_DEBUG, "V Packet: %s\n", data);
   if (strncmp ("vKill", data, strlen ("vKill")) == 0)
   {
-    this->top->target->halt();
-    stopped=true;
+    rsp->halt_target();
     return this->send_str("OK");
   }
-  else if (strncmp ("vRun", data, strlen ("vRun")) == 0)
-  {
-    char *filename = &data[5];
-    top->log->print(LOG_DEBUG, "Run: %s\n", filename);
-    return this->send_str("X09;process:a410");
-  }
+  // else if (strncmp ("vRun", data, strlen ("vRun")) == 0)
+  // {
+  //   char *filename = &data[5];
+  //   top->log->print(LOG_DEBUG, "Run: %s\n", filename);
+  //   return this->send_str("X09;process:a410");
+  // }
   else if (strncmp ("vCont?", data, strlen ("vCont?")) == 0)
   {
     return this->send_str("vCont;c;s;C;S");
@@ -263,6 +301,7 @@ bool Rsp::Client::v_packet(char* data, size_t len)
       str = strtok(NULL, ";");
     }
 
+    rsp->indicate_resume();
     this->top->target->resume_all();
 
     return this->wait();
@@ -334,7 +373,7 @@ bool Rsp::Client::query(char* data, size_t len)
   }
   else if (strncmp ("qAttached", data, strlen ("qAttached")) == 0)
   {
-    if (stopped) {
+    if (top->target->is_stopped()) {
       return this->send_str("0");
     } else {
       return this->send_str("1");
@@ -582,9 +621,6 @@ bool Rsp::Client::signal(Target_core *core)
 {
   char str[128];
   int len;
-  if (stopped) {
-    return this->send_str("X00");
-  }
   if (core == NULL) {
     len = snprintf(str, 128, "S%02x", this->get_signal(this->top->target->get_thread(thread_sel)));
   } else {
@@ -663,31 +699,14 @@ bool Rsp::Client::cont(char* data, size_t len)
 
   thread_sel = rsp->m_thread_init;
 
-  return this->resume(false);
-}
-
-
-
-bool Rsp::Client::resume(bool step)
-{
-  this->top->target->clear_resume_all();
-  this->top->target->prepare_resume_all(step);
-  this->top->target->resume_all();
+  rsp->resume_target(false);
   return this->wait();
 }
 
 
 
-bool Rsp::Client::resume(int tid, bool step)
-{
-  this->top->target->clear_resume_all();
-  this->top->target->get_thread(tid)->prepare_resume(step);
-  this->top->target->resume_all();
-  return this->wait();
-}
-
-
-
+// This should not be used and is probably wrong
+// but GDB should use vCont anyway
 bool Rsp::Client::step(char* data, size_t len)
 {
   uint32_t addr;
@@ -716,7 +735,8 @@ bool Rsp::Client::step(char* data, size_t len)
 
   thread_sel = rsp->m_thread_init;
 
-  return this->resume(true);
+  rsp->resume_target(true);
+  return this->wait();
 }
 
 
@@ -730,8 +750,9 @@ bool Rsp::Client::wait()
   struct timeval tv;
 
   while(1) {
-    // Check if a cluster power state has changed
-    this->top->target->update_power();
+    // Moved into target
+    // // Check if a cluster power state has changed
+    // this->top->target->update_power();
 
     Target_core *stopped_core = this->top->target->check_stopped();
 
@@ -739,7 +760,7 @@ bool Rsp::Client::wait()
       // move to thread of stopped core
       thread_sel = stopped_core->get_thread_id();
       this->top->log->debug("found stopped core - thread %d\n", thread_sel + 1);
-      this->top->target->halt();
+      rsp->halt_target();
       return this->signal(stopped_core);
     }
 
@@ -749,8 +770,10 @@ bool Rsp::Client::wait()
     if (ret < 0) {
       return false;
     } else if (ret == 1 && pkt == 0x3) {
-      top->target->halt();
+      this->top->log->debug("!!!!!!!!!!!!!!!!!!!!!!! CTRL-C !!!!!!!!!!!!!!!!!!!!!!!!\n");
+      rsp->halt_target();
     }
+    usleep(10000);
   }
 
   return true;
@@ -851,8 +874,8 @@ bool Rsp::Client::decode(char* data, size_t len)
     this->send_str("OK");
     return false;
 
-  case '!':
-    return this->send_str("OK"); // extended mode supported
+  // case '!':
+  //   return this->send_str("OK"); // extended mode supported
 
   default:
     top->log->print(LOG_ERROR, "Unknown packet: starts with %c\n", data[0]);
@@ -1041,18 +1064,22 @@ bool Rsp::Client::bp_insert(char* data, size_t len)
   int bp_len;
 
   if (3 != sscanf(data, "Z%1d,%x,%1d", (int *)&type, &addr, &bp_len)) {
-    top->log->print(LOG_ERROR, "Could not get three arguments\n");
+    top->log->error("Could not get three arguments\n");
     return false;
   }
 
   if (type != BP_MEMORY) {
-    top->log->print(LOG_ERROR, "ERROR: Not a memory bp\n");
+    top->log->error("ERROR: Not a memory bp\n");
     this->send_str("");
     return false;
   }
 
-  top->bkp->insert(addr);
+  if (!top->bkp->insert(addr)) {
+    top->log->error("Unable to insert breakpoint\n");
+    return false;
+  }
 
+  top->log->debug("Breakpoint inserted at 0x%08x\n", addr);
   return this->send_str("OK");
 }
 
@@ -1077,7 +1104,10 @@ bool Rsp::Client::bp_remove(char* data, size_t len)
     return false;
   }
 
-  top->bkp->remove(addr);
+  if (!top->bkp->remove(addr)) {
+    top->log->error("Unable to remove breakpoint\n");
+    return false;
+  }
 
   return this->send_str("OK");
 }

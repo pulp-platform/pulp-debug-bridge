@@ -114,16 +114,16 @@ public:
 class Target_core
 {
 public:
-  Target_core(Gdb_server *top, uint32_t dbg_unit_addr, int cluster_id, int core_id);
+  Target_core(Gdb_server *top, uint32_t dbg_unit_addr, Target_cluster_common * cluster, int core_id);
   void set_power(bool is_on);
   bool read(uint32_t addr, uint32_t* rdata);
   bool write(uint32_t addr, uint32_t wdata);
   bool csr_read(unsigned int i, uint32_t *data);
   int get_thread_id() { return this->thread_id; }
-  int get_cluster_id() { return this->cluster_id; }
+  int get_cluster_id();
   int get_core_id() { return this->core_id; }
   void get_name(char* str, size_t len) {
-    snprintf(str, len, "Cluster %02d - Core %01d", this->cluster_id, this->core_id);
+    snprintf(str, len, "Cluster %02d - Core %01d", get_cluster_id(), get_core_id());
   }
 
   bool actual_pc_read(unsigned int* pc);
@@ -154,7 +154,6 @@ private:
   bool is_on = false;
   uint32_t dbg_unit_addr;
   uint32_t hartid;
-  int cluster_id;
   int core_id;
   int thread_id;
   bool pc_is_cached = false;
@@ -165,6 +164,7 @@ private:
   bool resume_prepared = false;
   bool on_trap = false;
   static int first_free_thread_id;
+  Target_cluster_common * cluster;
 };
 
 class Target {
@@ -183,6 +183,7 @@ public:
   void flush();
   void reinitialize();
   void update_power();
+  bool is_stopped() { return !started; }
   bool mem_read(uint32_t addr, uint32_t length, char * buffer);
   bool mem_write(uint32_t addr, uint32_t length, char * buffer);
 
@@ -198,38 +199,57 @@ private:
   std::vector<Target_cluster_common *> clusters;
   std::vector<Target_core *> cores;
   std::map<int, Target_core *> cores_from_threadid;
+  bool started = true;
 };
-
-
-
-struct bp_insn {
-  uint32_t addr;
-  uint32_t insn_orig;
-  bool is_compressed;
-};
-
 
 
 class Breakpoints {
   public:
+    class Breakpoint {
+      public:
+        Breakpoint(Gdb_server *top, uint32_t addr);
+      private:
+        friend class Breakpoints;
+        bool enable();
+        bool disable();
+        Gdb_server *top;
+        uint32_t addr;
+        union {
+          uint32_t insn_orig32;
+          uint16_t insn_orig16;
+        };
+        bool is_compressed;
+        bool enabled = false;
+    };
+
     Breakpoints(Gdb_server *top);
 
     bool insert(unsigned int addr);
     bool remove(unsigned int addr);
 
-    bool clear();
-
-    bool at_addr(unsigned int addr);
-
     bool enable_all();
     bool disable_all();
 
-    bool disable(unsigned int addr);
-    bool enable(unsigned int addr);
+    bool clear();
+    void clear_history();
+    bool have_changed();
+    bool at_addr(unsigned int addr);
 
   private:
-    std::list<struct bp_insn> breakpoints;
+    typedef std::shared_ptr<Breakpoint> breakpoint_ptr_t;
+    typedef std::map<uint32_t, breakpoint_ptr_t> breakpoints_map_t;
+
+    breakpoints_map_t breakpoints;
+
+    breakpoints_map_t enabled_bps;
+    breakpoints_map_t disabled_bps;
     Gdb_server *top;
+
+    bool remove_it(breakpoints_map_t::iterator it);
+
+    // These do not keep history as yet so should not be used externally
+    bool disable(unsigned int addr);
+    bool enable(unsigned int addr);
 };
 
 enum capability_support {
@@ -300,8 +320,6 @@ class Rsp {
         bool send(const char* data, size_t len);
 
         bool cont(char* data, size_t len); // continue, reserved keyword, thus not used as function name
-        bool resume(bool step);
-        bool resume(int tid, bool step);
         bool wait();
         bool step(char* data, size_t len);
 
@@ -320,7 +338,6 @@ class Rsp {
         bool running = true;
         Rsp_capabilities remote_caps;
         Gdb_server *top;
-        bool stopped;
 
         Rsp *rsp = nullptr;
         Tcp_listener::Tcp_socket *client = nullptr;
@@ -335,6 +352,10 @@ class Rsp {
     void client_connected(Tcp_listener::Tcp_socket* client);
     void client_disconnected(Tcp_listener::Tcp_socket *client);
     void rsp_client_finished();
+    void resume_target(bool step=false, int tid=-1);
+    void halt_target();
+    void indicate_halt();
+    void indicate_resume();
 
     Target_core *main_core = nullptr;
     Tcp_listener *listener = nullptr;

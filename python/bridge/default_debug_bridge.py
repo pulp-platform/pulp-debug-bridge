@@ -161,7 +161,6 @@ class Ctype_cable(object):
 class debug_bridge(object):
 
     def __init__(self, config, binaries=[], verbose=0):
-        print("Verbose", verbose)
         self.config = config
         self.cable = None
         self.cable_name = config.get('**/debug_bridge/cable/type').get()
@@ -183,6 +182,8 @@ class debug_bridge(object):
 
         self.module.bridge_ioloop_close.argtypes = [ctypes.c_void_p, ctypes.c_int]
         self.module.bridge_ioloop_close.restype = ctypes.c_int
+
+        self.module.bridge_ioloop_set_poll_delay.argtypes = [ctypes.c_void_p, ctypes.c_int]
 
         self.module.bridge_reqloop_open.argtypes = [ctypes.c_void_p, ctypes.c_uint]
         self.module.bridge_reqloop_open.restype = ctypes.c_void_p
@@ -245,7 +246,8 @@ class debug_bridge(object):
                     if segment['p_filesz'] < segment['p_memsz']:
                         addr = segment['p_paddr'] + segment['p_filesz']
                         size = segment['p_memsz'] - segment['p_filesz']
-                        print ('Init section to 0 (base: 0x%x, size: 0x%x)' % (addr, size))
+                        if self.verbose > 0:
+                            print ('Init section to 0 (base: 0x%x, size: 0x%x)' % (addr, size))
                         self.write(
                             addr,
                             size,
@@ -262,7 +264,7 @@ class debug_bridge(object):
                 if set_pc_offset_config is not None:
                     entry += set_pc_offset_config.get_int()
 
-                if self.verbose:
+                if self.verbose > 0:
                     print ('Setting PC (base: 0x%x, value: 0x%x)' % (set_pc_addr_config.get_int(), entry))
 
                 return self.write_32(set_pc_addr_config.get_int(), entry)
@@ -412,7 +414,7 @@ class debug_bridge(object):
     def doreset(self, run):
         do_ioloop = self.ioloop_handle is not None
         if do_ioloop:
-            self.module.bridge_ioloop_close(self.ioloop_handle, 1)
+            iores = self.module.bridge_ioloop_close(self.ioloop_handle, 1)
             self.ioloop_handle = None
         self.stop()
         self.load()
@@ -487,7 +489,8 @@ class debug_bridge(object):
                 return self.qrcmd_help(cmd, buf, buf_len, commands)
             else:
                 handler = getattr(self, 'qrcmd_'+cmd_selected)
-                return handler(cmd, buf, buf_len)
+                res = handler(cmd, buf, buf_len)
+                return res
         except:
             return self.encode_bytes("E00", buf, buf_len)
 
@@ -543,14 +546,25 @@ class debug_bridge(object):
                     return self.encode_bytes("E01", buf, buf_len)
 
                 return self.qrcmd_cb(cmd[1], buf, buf_len)
+            # disabled for the moment since this causes issues with breakpoints for an unknown reason
+            # elif cmd.startswith("__gdb_tgt_res"):
+            #     if self.ioloop_handle is not None:
+            #         self.module.bridge_ioloop_set_poll_delay(self.ioloop_handle, 1)
+            #         return 1
+            # elif cmd.startswith("__gdb_tgt_hlt"):
+            #     if self.ioloop_handle is not None:
+            #         self.module.bridge_ioloop_set_poll_delay(self.ioloop_handle, 0)
+            #         return 1
             elif cmd.startswith("__is_started"):
                 return self.is_started and 1 or 0
             elif cmd.startswith("__start_target"):
                 return self.start()
             elif cmd.startswith("__stop_target"):
                 return self.stop()
-
-            return self.encode_bytes("", buf, buf_len)
+            if buf_len > 0:
+                return self.encode_bytes("", buf, buf_len)
+            else:
+                return 0
         except:
             print("Unexpected error:", sys.exc_info()[0])
             return self.encode_bytes("E00", buf, buf_len)

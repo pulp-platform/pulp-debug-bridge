@@ -120,6 +120,8 @@ public:
   void halt();
   void flush();
   void init();
+  void clear_resume();
+  void prepare_resume(bool step);
   int get_id() { return cluster_id; }
   virtual Target_core * check_stopped(uint32_t *stopped_cause);
 protected:
@@ -134,6 +136,7 @@ protected:
   uint32_t cluster_addr;
   uint32_t xtrigger_addr;
   Target_cache *cache = NULL;
+  bool resume_prepared = false;
 };
 
 
