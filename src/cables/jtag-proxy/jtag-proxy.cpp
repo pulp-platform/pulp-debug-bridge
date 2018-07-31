@@ -53,7 +53,13 @@ bool Jtag_proxy::connect(js::config *config)
   }
 
   int m_port = proxy_config->get("port")->get_int();
-  char *m_server = (char *)"localhost";
+
+
+  const char *m_server;
+  if (proxy_config->get("host") == NULL)
+    m_server = "localhost";
+  else
+    m_server = proxy_config->get("host")->get_str().c_str();
 
   if((m_socket = socket(PF_INET, SOCK_STREAM, 0)) < 0) {
     fprintf(stderr, "Unable to create socket (%s)\n", strerror(errno));
@@ -64,6 +70,7 @@ bool Jtag_proxy::connect(js::config *config)
     perror("gethostbyname");
     return false;
   }
+  fprintf(stdout, "Connecting to (%s:%d)\n", m_server, m_port);
 
   addr.sin_family = AF_INET;
   addr.sin_port = htons(m_port);
@@ -75,6 +82,7 @@ bool Jtag_proxy::connect(js::config *config)
             strerror(errno));
     return false;
   }
+  fprintf(stdout, "Connected to (%s:%d)\n", m_server, m_port);
   return true;
 }
 
