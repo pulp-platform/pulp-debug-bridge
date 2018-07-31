@@ -90,6 +90,15 @@ void Log::user(const char *str, ...)
   va_end(va);
 }
 
+void Log::detail(const char *str, ...)
+{
+  if (this->log_level <= LOG_DETAIL) return;
+  va_list va;
+  va_start(va, str);
+  vprintf(str, va);
+  va_end(va);
+}
+
 void Log::debug(const char *str, ...)
 {
   if (this->log_level <= LOG_DEBUG) return;

@@ -30,7 +30,8 @@ typedef enum
   LOG_ERROR = 0,
   LOG_WARNING = 1,
   LOG_INFO = 2,
-  LOG_DEBUG = 3
+  LOG_DEBUG = 3,
+  LOG_DETAIL = 4
 } log_level_e;
 
 class Log {
@@ -42,6 +43,7 @@ class Log {
     void warning(const char *str, ...) ;
     void user(const char *str, ...) ;
     void debug(const char *str, ...) ;
+    void detail(const char *str, ...) ;
     static int log_level;
     static char last_error[MAX_LOG_LINE];
   private:
