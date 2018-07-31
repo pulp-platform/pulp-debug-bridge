@@ -49,7 +49,7 @@ bool Tcp_listener::set_blocking(int fd, bool blocking)
 
 void Tcp_listener::listener_routine()
 {
-  while(running)
+  while(is_running)
   {
     socket_t socket_client;
     func_ret_t ret;
@@ -81,10 +81,10 @@ void Tcp_listener::listener_routine()
       set_blocking(socket_client, false);
       client = new Tcp_socket(this, socket_client);
 
-      c_cb(client);
+      if (c_cb) c_cb(client);
       log->print(LOG_INFO, "Tcp_listener: client finished\n");
     } else if (ret == SOCKET_ERROR) {
-      if (running) {
+      if (is_running) {
         log->print(LOG_ERROR, "Tcp_listener: error on listening socket: %s\n", strerror(errno));
       }
       break;
@@ -115,35 +115,38 @@ int Tcp_listener::socket_deinit()
 void Tcp_listener::client_disconnected()
 {
   if (client) {
-    d_cb(client);
+    if (d_cb) d_cb(client);
     delete client;
     client = NULL;
   }
 }
 
-bool Tcp_listener::stop()
+void Tcp_listener::stop()
 {
-  log->debug("Tcp_listener stopped (running %d)\n", this->running);
-  if (this->running) {
+  if (this->is_stopping) return;
+  this->is_stopping = true;
+  log->debug("Tcp_listener stopped (running %d)\n", this->is_running);
+  if (this->is_running) {
     if (client) {
       client->close();
     }
-    this->running = false;
+    this->is_running = false;
     ::close(socket_in);
     listener_thread->join();
   }
   this->socket_deinit();
+  this->is_stopping = false;
 }
 
 bool Tcp_listener::start()
 {
-  if (running) {
+  if (is_running) {
     return true;
   }
   struct sockaddr_in addr;
   int yes = 1;
 
-  log->debug("Tcp_listener started (running %d)\n", this->running);
+  log->debug("Tcp_listener started (running %d)\n", this->is_running);
 
   this->socket_init();
   addr.sin_family = AF_INET;
@@ -173,22 +176,17 @@ bool Tcp_listener::start()
     return false;
   }
 
-//   top->target->halt();
-  this->running = true;
+  this->is_running = true;
+  this->is_stopping = false;
   listener_thread = new std::thread(&Tcp_listener::listener_routine, this);
 
   log->print(LOG_INFO, "RSP server opened on port %d\n", port);
 
-  return running;
+  return is_running;
 }
 
 Tcp_listener::Tcp_socket::Tcp_socket(Tcp_listener *listener, socket_t socket) : listener(listener), socket(socket)
 {
-}
-
-void Tcp_listener::Tcp_socket::set_finished_cb(finished_cb_t finished_cb)
-{
-  f_cb = finished_cb;
 }
 
 ssize_t Tcp_listener::Tcp_socket::check_error(func_ret_t ret)
@@ -249,6 +247,8 @@ void Tcp_listener::Tcp_socket::shutdown()
 void Tcp_listener::Tcp_socket::close()
 {
   if (!is_closed) {
+    if (is_closing) return;
+    is_closing = true;
     listener->log->debug("Close client socket %d\n", is_shutdown);
     if (!is_shutdown) {
       this->shutdown();
@@ -262,8 +262,8 @@ void Tcp_listener::Tcp_socket::close()
 #else
     ::close(socket);
 #endif
-    if (f_cb != nullptr) f_cb();
     listener->client_disconnected();
+    this->is_closing = false;
   }
 }
 
@@ -313,14 +313,14 @@ func_ret_t Tcp_listener::Tcp_socket::recvsend(bool send, void * buf, size_t buf_
   while (1) {
     func_ret_t ret;
 
-    if (!listener->running) {
+    if (!listener->is_running) {
       this->close();
       return -1;
     }
 
     ret = select(socket+1, &rfds, &wfds, NULL, &tv);
 
-    if (!listener->running) {
+    if (!listener->is_running) {
       this->close();
       return -1;
     }
@@ -332,7 +332,7 @@ func_ret_t Tcp_listener::Tcp_socket::recvsend(bool send, void * buf, size_t buf_
         ret = recv(socket, buf, cnt<=0?buf_len:cnt, flags);
       }
 
-      if (!listener->running) {
+      if (!listener->is_running) {
         this->close();
         return -1;
       }

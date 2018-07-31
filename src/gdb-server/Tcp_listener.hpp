@@ -96,15 +96,15 @@ public:
     socket_t socket;
     Tcp_listener *listener;
     int block_timeout = 100;
-    finished_cb_t f_cb = nullptr;
-    bool is_closed = false, is_shutdown = false;
+    finished_cb_t f_cb;
+    bool is_closed = false, is_shutdown = false, is_closing = false;
   };
 
   typedef std::function<void(Tcp_listener::Tcp_socket *)> socket_cb_t;
 
   Tcp_listener(Log *log, port_t port, socket_cb_t connected_cb, socket_cb_t disconnected_cb);
   bool start();
-  bool stop();
+  void stop();
 
 private:
   void client_disconnected();
@@ -117,7 +117,7 @@ private:
   port_t port;
   socket_cb_t c_cb, d_cb;
   socket_t socket_in;
-  bool running = false;
+  bool is_running = false, is_stopping = false;
   Tcp_socket *client;
   std::thread *listener_thread;
 };
