@@ -148,6 +148,8 @@ bool Adv_dbg_itf::access(bool wr, unsigned int addr, int size, char* buffer)
   else
     result = read(addr, size, buffer);
 
+  // log->debug ("access: %s 0x%08x size: %d res:%d\n", wr?"write":"read", addr, size, result);
+
   pthread_mutex_unlock(&mutex);
 
   return result;
@@ -763,7 +765,6 @@ bool Adv_dbg_itf::jtag_axi_select()
 bool Adv_dbg_itf::jtag_auto_discovery()
 {
   char recv_buf[MAX_CHAIN_LEN/8];
-  char send_buf[MAX_CHAIN_LEN/8];
   int ir_len;
   int dr_len;
 
@@ -794,7 +795,7 @@ bool Adv_dbg_itf::jtag_auto_discovery()
   m_dev->jtag_write_tms(0); // capture DR scan
   m_dev->jtag_write_tms(0); // shift DR scan
 
-  m_dev->stream_inout(recv_buf, send_buf, dr_len, true);
+  m_dev->stream_inout(recv_buf, NULL, dr_len, true);
 
   m_jtag_devices.clear();
 
