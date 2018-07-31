@@ -22,10 +22,13 @@
 #include <thread>
 #include <mutex>
 #include <condition_variable>
+#include <atomic>
 #include "cable.hpp"
 #include "debug_bridge/debug_bridge.h"
 #include <unistd.h>
 
+#define DEFAULT_LOOP_DELAY 50000
+#define DEFAULT_SLOW_LOOP_DELAY 100000 * 1000
 
 class Ioloop
 {
@@ -34,13 +37,16 @@ public:
   void ioloop_routine();
   int stop(bool kill);
   hal_debug_struct_t *activate();
+  void set_poll_delay(int delay);
 
 private:
   std::thread *thread;
   Cable *cable;
   bool end = false;
   unsigned int debug_struct_addr;
-  int status;
+  int status = 0;
+  std::atomic<int> delay;
+  Log *log;
 };
 
 int Ioloop::stop(bool kill)
@@ -100,7 +106,7 @@ void Ioloop::ioloop_routine()
       cable->access(false, (unsigned int)(long)&debug_struct->exit_status, 4, (char*)&value);
       if (value >> 31) {
         status = ((int)value << 1) >> 1;
-        printf("Detected end of application, exiting with status: %d\n", status);
+        log->user("Detected end of application, exiting with status: %d\n", status);
         return;
       }
 
@@ -119,12 +125,19 @@ void Ioloop::ioloop_routine()
       }
 
       // Small sleep to not poll too often
-      usleep(50000);
+      usleep(delay);
     }
   }
 }
 
-Ioloop::Ioloop(Cable *cable, unsigned int debug_struct_addr) : cable(cable), debug_struct_addr(debug_struct_addr)
+void Ioloop::set_poll_delay(int delay)
+{
+  log->debug("ioloop delay set to %d\n", delay);
+  this->delay = delay;
+}
+
+Ioloop::Ioloop(Cable *cable, unsigned int debug_struct_addr) : cable(cable),
+  debug_struct_addr(debug_struct_addr), delay(DEFAULT_LOOP_DELAY), log(new Log())
 {
   activate();
   thread = new std::thread(&Ioloop::ioloop_routine, this);
@@ -137,10 +150,21 @@ extern "C" void *bridge_ioloop_open(void *cable, unsigned int debug_struct_addr)
 
 extern "C" int bridge_ioloop_close(void *arg, int kill)
 {
+  
   Ioloop *ioloop = (Ioloop *)arg;
   int status = ioloop->stop(kill);
   delete(ioloop);
   return status;
+}
+
+extern "C" void bridge_ioloop_set_poll_delay(void *arg, int high_rate)
+{
+  Ioloop *ioloop = (Ioloop *)arg;
+  if (high_rate)
+    ioloop->set_poll_delay(DEFAULT_LOOP_DELAY);
+  else
+    ioloop->set_poll_delay(DEFAULT_SLOW_LOOP_DELAY);
+
 }
 
 
