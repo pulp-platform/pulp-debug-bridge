@@ -68,8 +68,10 @@ CFLAGS += -g -O0 -fPIC -std=gnu++11 -MMD -MP -Isrc -Iinclude -Wall -Werror \
  -Wno-delete-non-virtual-dtor -Wno-sign-compare -Wno-return-type \
  -Wno-reorder
 
-ifeq "$(shell uname -s)" "Darwin"
-  CFLAGS += -Wno-unused-private-field
+ifneq ($(OS),Windows_NT)
+  ifeq "$(shell uname -s)" "Darwin"
+    CFLAGS += -Wno-unused-private-field
+  endif
 endif
 
 CFLAGS += \
