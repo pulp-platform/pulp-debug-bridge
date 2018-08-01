@@ -349,14 +349,12 @@ bool Reqloop::handle_req_fb_open(hal_debug_struct_t *debug_struct, hal_bridge_re
   char name[req->fb_open.name_len+1];
   cable->access(false, (unsigned int)(long)req->fb_open.name, req->fb_open.name_len+1, (char*)name);
 
-  int res = 0;
   Framebuffer *fb = new Framebuffer(cable, name, req->fb_open.width, req->fb_open.height, req->fb_open.format);
 
 
 
   if (!fb->open()) 
   {
-    res = -1;
     delete fb;
     fb = NULL;
   }

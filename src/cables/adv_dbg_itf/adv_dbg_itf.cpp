@@ -227,7 +227,7 @@ bool Adv_dbg_itf::write(unsigned int addr, int size, char* buffer)
     addr   += 1;
   }
 
-  uint32_t error_addr;
+  uint32_t error_addr = 0;
   bool error = false;
   // retval = retval && read_error_reg(&error_addr, &error);
 
@@ -312,7 +312,7 @@ bool Adv_dbg_itf::read(unsigned int addr, int size, char* buffer)
     addr   += 1;
   }
 
-  uint32_t error_addr;
+  uint32_t error_addr = 0;
   bool error = false;
   // retval = retval && read_error_reg(&error_addr, &error);
 

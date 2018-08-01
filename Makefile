@@ -61,8 +61,8 @@ endif
 
 
 CFLAGS += -g -O0 -fPIC -std=gnu++11 -MMD -MP -Isrc -Iinclude -Wall -Werror \
- -Wno-unused-function -Wno-unused-variable -Wno-unused-but-set-variable \
- -Wno-delete-non-virtual-dtor -Wno-sign-compare -Wno-return-type -Wno-maybe-uninitialized \
+ -Wno-unused-function -Wno-unused-variable \
+ -Wno-delete-non-virtual-dtor -Wno-sign-compare -Wno-return-type \
  -Wno-reorder \
  -I$(INSTALL_DIR)/include $(FTDI_CFLAGS) $(SDL_CFLAGS)
 
