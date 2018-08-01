@@ -41,7 +41,7 @@ char Log::last_error[MAX_LOG_LINE] = "unknown error";
 int Log::log_level = LOG_ERROR;
 std::mutex Log::m_last_error;
 
-static Log *log;
+static Log *s_log;
 
 void Log::print(log_level_e level, const char *str, ...)
 {
@@ -151,7 +151,7 @@ extern "C" void *cable_new(const char *config_string, const char *system_config_
   }
 
   if (cable_name == NULL) {
-    log->error("No cable name specified\n");
+    s_log->error("No cable name specified\n");
     return NULL;
   }
 
@@ -160,20 +160,20 @@ extern "C" void *cable_new(const char *config_string, const char *system_config_
 #ifdef __USE_FTDI__
     Ftdi::FTDIDeviceID id = Ftdi::Olimex;
     if (strcmp(cable_name, "ftdi@digilent") == 0) id = Ftdi::Digilent;
-    Adv_dbg_itf *adu = new Adv_dbg_itf(system_config, new Log("FTDI"), new Ftdi(system_config, log, id));
+    Adv_dbg_itf *adu = new Adv_dbg_itf(system_config, new Log("FTDI"), new Ftdi(system_config, s_log, id));
     if (!adu->connect(config)) return NULL;
     int tap = 0;
     if (config->get("tap")) tap = config->get("tap")->get_int();
     adu->device_select(tap);
     return (void *)static_cast<Cable *>(adu);
 #else
-    log->error("Debug bridge has not been compiled with FTDI support\n");
+    s_log->error("Debug bridge has not been compiled with FTDI support\n");
     return NULL;
 #endif
   }
   else if (strcmp(cable_name, "jtag-proxy") == 0)
   {
-    Adv_dbg_itf *adu = new Adv_dbg_itf(system_config, new Log("JPROX"), new Jtag_proxy(log));
+    Adv_dbg_itf *adu = new Adv_dbg_itf(system_config, new Log("JPROX"), new Jtag_proxy(s_log));
     if (!adu->connect(config)) return NULL;
     int tap = 0;
     if (config->get("tap")) tap = config->get("tap")->get_int();
@@ -182,7 +182,7 @@ extern "C" void *cable_new(const char *config_string, const char *system_config_
   }
   else
   {
-    log->error("Unknown cable: %s\n", cable_name);
+    s_log->error("Unknown cable: %s\n", cable_name);
     return NULL;
   }
   
@@ -263,7 +263,7 @@ extern "C" void bridge_init(const char *config_string, int log_level)
   printf("Bridge init - log level %d\n", log_level);
 
   Log::log_level = log_level;
-  log = new Log();
+  s_log = new Log();
   system_config = js::import_config_from_string(std::string(config_string));
 
   // This should be the first C method called by python.
