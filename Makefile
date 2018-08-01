@@ -49,13 +49,13 @@ ifneq '$(FTDI_CFLAGS)$(FTDI_LDFLAGS)' ''
 USE_FTDI=1
 endif
 
-
-
 SDL_CFLAGS = $(shell sdl2-config --cflags)
 SDL_LDFLAGS = $(shell sdl2-config --libs)
 
 ifneq '$(SDL_CFLAGS)$(SDL_LDFLAGS)' ''
-USE_SDL=1
+  ifneq '$(DONT_USE_SDL)' ''
+    USE_SDL=1
+  endif
 endif
 
 
