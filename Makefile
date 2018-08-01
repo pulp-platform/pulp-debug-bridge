@@ -17,19 +17,22 @@ HEADER_FILES += $(shell find bin -type f)
 
 define declareInstallFile
 $(INSTALL_DIR)/$(1): $(1)
-	$(INSTALL) -D $(1) $$@
+	$(INSTALL) -d $$(dir $$@)
+	$(INSTALL) $(1) $$@
 INSTALL_HEADERS += $(INSTALL_DIR)/$(1)
 endef
 
 define declareTargetInstallFile
 $(TARGET_INSTALL_DIR)/$(1): $(1)
-	$(INSTALL) -D $(1) $$@
+	$(INSTALL) -d $$(dir $$@)
+	$(INSTALL) $(1) $$@
 INSTALL_HEADERS += $(TARGET_INSTALL_DIR)/$(1)
 endef
 
 define declareJsonInstallFile
 $(INSTALL_DIR)/$(1): json-tools/$(1)
-	$(INSTALL) -D json-tools/$(1) $$@
+	$(INSTALL) -d $$(dir $$@)
+	$(INSTALL) json-tools/$(1) $$@
 INSTALL_HEADERS += $(INSTALL_DIR)/$(1)
 endef
 
@@ -65,7 +68,7 @@ CFLAGS += -g -O0 -fPIC -std=gnu++11 -MMD -MP -Isrc -Iinclude -Wall -Werror \
  -Wno-delete-non-virtual-dtor -Wno-sign-compare -Wno-return-type \
  -Wno-reorder
 
-ifeq "$(BUILD_HOST_ARCH_NAME)" "darwin"
+ifeq "$(shell uname -s)" "Darwin"
   CFLAGS += -Wno-unused-private-field
 endif
 
@@ -125,7 +128,8 @@ $(BUILD_DIR)/libpulpdebugbridge.so: $(OBJS)
 	g++ -o $@ $^ $(LDFLAGS)
 
 $(INSTALL_DIR)/lib/libpulpdebugbridge.so: $(BUILD_DIR)/libpulpdebugbridge.so
-	$(INSTALL) -D $< $@
+	$(INSTALL) -d $(dir $@)
+	$(INSTALL) $< $@
 
 deps:
 	make -C $(DEP_SRC_DIR)/json-tools all BUILD_DIR=$(BUILD_DIR)/json-tools INSTALL_DIR=$(INSTALL_DIR)
