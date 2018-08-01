@@ -123,8 +123,10 @@ Ftdi::connect(js::config *config)
       struct ftdi_device_list* devlist;
       int n = ftdi_usb_find_all(&m_ftdic, &devlist, it->vid, it->pid);
 
+      log->debug("iterating %d devices\n", n);
       if (n > 0) {
         for(int i = 0; i < n; ++i) {
+          log->debug("try opening i:0x%X:0x%X:%d\n", it->vid, it->pid, i);
           if (dev_try_open(it->vid, it->pid, i)) {
             log->user("Found ftdi device i:0x%X:0x%X:%d\n",
                        it->vid, it->pid, i);
