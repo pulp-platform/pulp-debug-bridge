@@ -68,7 +68,7 @@ class Ftdi : public Cable {
 
     int flush();
 
-
+    bool purge();
 
     bool chip_reset(bool active);
 

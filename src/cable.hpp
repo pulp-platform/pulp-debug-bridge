@@ -34,6 +34,7 @@ public:
     virtual bool stream_inout(char* instream, char* outstream, unsigned int n_bits, bool last) { printf ("i am stream_inout virtual fct in cable class\n"); return false; }
 
     virtual int flush() { return -1; }
+    virtual bool purge() { return false; }
     virtual bool jtag_reset(bool active) { printf("JTAG\n"); return false; }
 
     virtual void device_select(unsigned int i) {}

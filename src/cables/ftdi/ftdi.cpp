@@ -234,6 +234,20 @@ fail:
   return false;
 }
 
+bool Ftdi::purge()
+{
+  int ret = 0;
+  m_params.send_buffered  = 0;
+  m_params.to_recv        = 0;
+  m_params.recv_write_idx = 0;
+  m_params.recv_read_idx  = 0;
+  ret = ftdi_usb_purge_buffers(&m_ftdic);
+  if (ret < 0) {
+    log->warning("ft2232: ftdi_usb_purge_buffers() failed\n");
+    return false;
+  }
+  return true;
+}
 
 bool Ftdi::chip_reset(bool active)
 {

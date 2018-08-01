@@ -98,6 +98,7 @@ bool Target_cluster_power_bypass::is_on()
 {
   uint32_t info = 0;
   top->cable->access(false, reg_addr, 4, (char*)&info);
+  top->log->debug("Cluster power bypass 0x%08x\n", info);
   return (info >> bit) & 1;
 }
 

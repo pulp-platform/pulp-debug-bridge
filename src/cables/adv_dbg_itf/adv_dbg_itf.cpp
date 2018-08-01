@@ -539,6 +539,7 @@ bool Adv_dbg_itf::read_internal(ADBG_OPCODES opcode, unsigned int addr, int size
 
     if (usec_elapsed > access_timeout) {
       log->warning("ft2232: did not get a start bit from the AXI module in 1s\n");
+      m_dev->purge();
       return false;
     }
   }
