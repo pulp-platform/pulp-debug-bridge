@@ -25,6 +25,8 @@ import code
 import imp
 import os.path
 import sys
+from time import sleep
+
 from bridge.misc.portable import to_bytes
 
 try:
@@ -204,6 +206,8 @@ commands = {
   'wait'    : ['Wait termination',                  wait],
   'reset'   : ['Chip reset',                        reset],
   'script'  : ['Execute user scripts',              script],
+  'loop'    : ['loop a sequence of commands. loop=times,delay times default is -1 - loop forever. delay is in ms.'],
+  'endloop'    : ['end previous loop'],
 }
 
 
@@ -320,8 +324,12 @@ if args.shell:
 #bridge.exec_config()
 
 
-
-
+def split_first_equals(str):
+    index = str.find('=')
+    if index == -1:
+        return None
+    else:
+        return [ str[0:index], str[index+1:len(str)] ]
 
 def handle_commands(bridge):
     if len(args.command) == 0:
@@ -329,25 +337,65 @@ def handle_commands(bridge):
         exit(0)
 
     else:
-        for cmd in args.command:
+        cmd_idx = 0
+        looper = None
+        while cmd_idx < len(args.command):
+            cmd = args.command[cmd_idx]
+            cmd_args = split_first_equals(cmd)
+            if cmd_args is not None:
+                cmd = cmd_args[0]
+                del cmd_args[0]
 
-            if commands.get(cmd) is None:
-                fatal_error('Unknown command: ' + cmd)
-                exit(1)
+            if cmd == "loop":
+                if cmd_args is None:
+                    repeat = -1
+                    delay = 1000
+                else:
+                    loop_args = cmd_args[0].split(',')
+                    if len(loop_args) > 1:
+                        delay = int(loop_args[1])
+                    if len(loop_args) > 0:
+                        repeat = int(loop_args[0])
+
+                cmd_idx = cmd_idx + 1
+                looper = { "start": cmd_idx, "repeat": repeat, "delay": delay, "looper": looper }
+                continue
+            elif cmd == "endloop":
+                if looper is None:
+                    print ()
+                    fatal_error('endloop without matching loop')
+                    exit(1)
+                looper['repeat'] = looper['repeat'] - 1
+                if looper['repeat'] == 0:
+                    cmd_idx = cmd_idx + 1
+                    looper = looper['looper']
+                else:
+                    if delay > 0:
+                        sleep(delay/1000)
+                    cmd_idx = looper['start']
+                continue
             else:
-                try:
-                    if commands.get(cmd)[1](bridge) != 0:
-                        print ()
-                        fatal_error('the command \'%s\' has failed' % (cmd))
-                        exit(1)
-                except Exception as e:
-                    fatal_error('the command \'%s\' has failed with an exception: %s' % (cmd, e))
-                    if args.debug:
-                        raise
+                if commands.get(cmd) is None:
+                    fatal_error('Unknown command: ' + cmd)
                     exit(1)
 
+            try:
+                if cmd_args is not None:
+                    ret = commands.get(cmd)[1](bridge, arguments=cmd_args)
+                else:
+                    ret = commands.get(cmd)[1](bridge)
 
+                if ret != 0:
+                    print ()
+                    fatal_error('the command \'%s\' has failed' % (cmd))
+                    exit(1)
+            except Exception as e:
+                fatal_error('the command \'%s\' has failed with an exception: %s' % (cmd, e))
+                if args.debug:
+                    raise
+                exit(1)
 
+            cmd_idx = cmd_idx + 1
 
 
 handle_commands(bridge)
