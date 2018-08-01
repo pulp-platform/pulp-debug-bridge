@@ -53,7 +53,7 @@ SDL_CFLAGS = $(shell sdl2-config --cflags)
 SDL_LDFLAGS = $(shell sdl2-config --libs)
 
 ifneq '$(SDL_CFLAGS)$(SDL_LDFLAGS)' ''
-  ifneq '$(DONT_USE_SDL)' ''
+  ifeq '$(DONT_USE_SDL)' ''
     USE_SDL=1
   endif
 endif
