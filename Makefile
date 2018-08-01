@@ -2,7 +2,7 @@ ifndef INSTALL_DIR
 STAND_ALONE_INSTALL=1
 endif
 
-
+INSTALL ?= install
 INSTALL_DIR ?= $(CURDIR)/install
 TARGET_INSTALL_DIR ?= $(CURDIR)/install
 BUILD_DIR   ?= $(CURDIR)/build
@@ -17,19 +17,19 @@ HEADER_FILES += $(shell find bin -type f)
 
 define declareInstallFile
 $(INSTALL_DIR)/$(1): $(1)
-	install -D $(1) $$@
+	$(INSTALL) -D $(1) $$@
 INSTALL_HEADERS += $(INSTALL_DIR)/$(1)
 endef
 
 define declareTargetInstallFile
 $(TARGET_INSTALL_DIR)/$(1): $(1)
-	install -D $(1) $$@
+	$(INSTALL) -D $(1) $$@
 INSTALL_HEADERS += $(TARGET_INSTALL_DIR)/$(1)
 endef
 
 define declareJsonInstallFile
 $(INSTALL_DIR)/$(1): json-tools/$(1)
-	install -D json-tools/$(1) $$@
+	$(INSTALL) -D json-tools/$(1) $$@
 INSTALL_HEADERS += $(INSTALL_DIR)/$(1)
 endef
 
@@ -125,7 +125,7 @@ $(BUILD_DIR)/libpulpdebugbridge.so: $(OBJS)
 	g++ -o $@ $^ $(LDFLAGS)
 
 $(INSTALL_DIR)/lib/libpulpdebugbridge.so: $(BUILD_DIR)/libpulpdebugbridge.so
-	install -D $< $@
+	$(INSTALL) -D $< $@
 
 deps:
 	make -C $(DEP_SRC_DIR)/json-tools all BUILD_DIR=$(BUILD_DIR)/json-tools INSTALL_DIR=$(INSTALL_DIR)
