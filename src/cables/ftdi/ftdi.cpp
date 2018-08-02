@@ -245,7 +245,7 @@ bool Ftdi::purge()
   m_params.recv_read_idx  = 0;
   ret = ftdi_usb_purge_buffers(&m_ftdic);
   if (ret < 0) {
-    log->warning("ft2232: ftdi_usb_purge_buffers() failed\n");
+    log->warning("ft2232: ftdi_usb_purge_buffers() failed - %s\n", ftdi_get_error_string(&m_ftdic));
     return false;
   }
   return true;
@@ -295,13 +295,13 @@ Ftdi::ft2232_seq_purge(int purge_rx, int purge_tx) {
 
   ret = ftdi_usb_purge_buffers(&m_ftdic);
   if (ret < 0) {
-    log->warning("ft2232: ftdi_usb_purge_buffers() failed\n");
+    log->warning("ft2232: ftdi_usb_purge_buffers() failed - %s\n", ftdi_get_error_string(&m_ftdic));
     return -1;
   }
 
   ret = ftdi_read_data(&m_ftdic, &buf, 1);
   if (ret < 0) {
-    log->warning("ft2232: ftdi_read_data() failed\n");
+    log->warning("ft2232: ftdi_read_data() failed - %s\n", ftdi_get_error_string(&m_ftdic));
     return -1;
   }
 
@@ -311,7 +311,7 @@ Ftdi::ft2232_seq_purge(int purge_rx, int purge_tx) {
 int
 Ftdi::ft2232_seq_reset() {
   if (ftdi_usb_reset(&m_ftdic) < 0) {
-    log->warning("ft2232: ftdi_usb_reset() failed\n");
+    log->warning("ft2232: ftdi_usb_reset() failed - %s\n", ftdi_get_error_string(&m_ftdic));
     return -1;
   }
 
@@ -357,7 +357,7 @@ Ftdi::flush() {
     while (recvd == 0) {
       recvd = ftdi_read_data(&m_ftdic, (uint8_t*)&(m_params.recv_buf[m_params.recv_write_idx]), m_params.to_recv);
       if (recvd < 0)
-        log->warning("Error from ftdi_read_data()\n");
+        log->warning("Error from ftdi_read_data() - %s\n", ftdi_get_error_string(&m_ftdic));
     }
 
     if (recvd < m_params.to_recv)
@@ -408,7 +408,7 @@ Ftdi::ft2232_read(char* buf, int len) {
     while (recvd == 0) {
       recvd = ftdi_read_data(&m_ftdic, (uint8_t*)&(buf[cpy_len]), len);
       if (recvd < 0)
-        log->warning("ft2232: Error from ftdi_read_data()\n");
+        log->warning("ft2232: Error from ftdi_read_data() - %s\n", ftdi_get_error_string(&m_ftdic));
     }
   }
 
