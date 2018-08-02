@@ -87,8 +87,6 @@ Ftdi::connect(js::config *config)
   char buf[256];
   std::list<struct device_desc> dev_desc = m_descriptors[m_id];
   int error;
-  bool result;
-  int err;
   const char *description = NULL;
 
   if (config && config->get("description") != NULL)
@@ -913,6 +911,7 @@ bool
 Ftdi::set_bit_direction(int bit, int isout)
 {
   bits_direction = (bits_direction & ~(1<<bit)) | (isout << bit);
+  return true;
 }
 
 bool

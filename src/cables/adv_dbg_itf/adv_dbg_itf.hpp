@@ -37,7 +37,7 @@ struct jtag_device {
 class Adv_dbg_itf : public Cable  {
   public:
     Adv_dbg_itf(js::config *system_config, Log* log, Cable *itf);
-    virtual ~Adv_dbg_itf();
+    ~Adv_dbg_itf();
 
     bool connect(js::config *config);
     void lock();
@@ -82,8 +82,10 @@ class Adv_dbg_itf : public Cable  {
     unsigned int debug_ir;
     int access_timeout;
 
+    typedef std::vector<jtag_device> jtag_devices_t;
+    typedef jtag_devices_t::size_type jtag_devices_size_t;
 
-    std::vector<jtag_device> m_jtag_devices;
+    jtag_devices_t m_jtag_devices;
     unsigned int             m_jtag_device_sel = 0;
 
     bool m_tms_on_last;

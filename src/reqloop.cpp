@@ -204,8 +204,6 @@ hal_debug_struct_t *Reqloop::activate()
 
   if (debug_struct != NULL) {
     // The binary has just started, we need to tell him we want to watch for requests
-    unsigned int value = 0;
-
     uint32_t connected = 1;
     cable->access(true, (unsigned int)(long)&debug_struct->bridge_connected, 4, (char*)&connected);
   }
@@ -228,6 +226,7 @@ void Reqloop::reply_req(hal_debug_struct_t *debug_struct, hal_bridge_req_t *targ
   cable->access(true, (unsigned int)(long)notif_req_addr, 4, (char*)&notif_req_value);
 }
 
+#if 0
 static int transpose_code(int code)
 {
   int alt = 0;
@@ -245,6 +244,7 @@ static int transpose_code(int code)
 
   return alt;
 }
+#endif
 
 bool Reqloop::handle_req_connect(hal_debug_struct_t *debug_struct, hal_bridge_req_t *req, hal_bridge_req_t *target_req)
 {
@@ -427,7 +427,7 @@ void Reqloop::reqloop_routine()
       // The target application should quickly dumps the characters, so we can loop on printf
       // until we don't find anything
       while(1) {
-        hal_bridge_req_t *first_bridge_req, *last_req, *next, *next_next;
+        hal_bridge_req_t *first_bridge_req;
 
         cable->access(false, (unsigned int)(long)&debug_struct->first_bridge_req, 4, (char*)&first_bridge_req);
 

@@ -65,6 +65,7 @@ int Gdb_server::stop(bool kill)
     rsp->close(!kill);
     rsp = NULL;
   }
+  return 1;
 }
 
 void Gdb_server::print(const char *format, ...)

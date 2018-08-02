@@ -101,11 +101,11 @@ public:
   Rsp *rsp;
   Log *log;
   Cable *cable;
+  js::config *config;
   Target *target;
   Breakpoints *bkp;
   cmd_cb_t cmd_cb;
   const char * capabilities;
-  js::config *config;
 };
 
 
@@ -151,10 +151,12 @@ public:
 
 private:
   Gdb_server *top;
-  bool is_on = false;
   uint32_t dbg_unit_addr;
-  uint32_t hartid;
+  Target_cluster_common * cluster;
   int core_id;
+
+  bool is_on = false;
+  uint32_t hartid;
   int thread_id;
   bool pc_is_cached = false;
   uint32_t pc_cached;
@@ -164,7 +166,6 @@ private:
   bool resume_prepared = false;
   bool on_trap = false;
   static int first_free_thread_id;
-  Target_cluster_common * cluster;
 };
 
 class Target {
@@ -270,8 +271,8 @@ public:
   static void parse(char * buf, size_t len, Rsp_capabilities *caps);
   bool is_supported() { return support == CAPABILITY_IS_SUPPORTED; }
 private:
-  capability_support support;
   std::string name, value;
+  capability_support support;
 };
 
 

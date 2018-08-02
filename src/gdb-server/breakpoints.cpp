@@ -90,7 +90,6 @@ Breakpoints::remove_it(breakpoints_map_t::iterator it) {
 bool
 Breakpoints::remove(unsigned int addr) {
   breakpoints_map_t::iterator it;
-  bool retval;
 
   if (!(FIND_IT(breakpoints, addr, it)))
   {

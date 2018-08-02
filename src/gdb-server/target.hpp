@@ -80,7 +80,7 @@ private:
 class Target_cluster_ctrl
 {
 public:
-  virtual bool init() {}
+  virtual bool init() { return true; }
   virtual bool has_xtrigger() { return false; }
 };
 
@@ -111,7 +111,7 @@ class Target_cluster_common
 
 public:
   Target_cluster_common(js::config *config, Gdb_server *top, uint32_t cluster_addr, uint32_t xtrigger_addr, int cluster_id);
-  ~Target_cluster_common();
+  virtual ~Target_cluster_common();
   int get_nb_core() { return nb_core; }
   Target_core *get_core(int i) { return cores[i]; }
   void update_power();

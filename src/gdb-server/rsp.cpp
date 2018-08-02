@@ -365,7 +365,7 @@ bool Rsp::Client::query(char* data, size_t len)
         strcpy(str, str_default);
 
       ret = 0;
-      for(int i = 0; i < strlen(str); i++)
+      for(size_t i = 0; i < strlen(str); i++)
         ret += snprintf(&reply[ret], REPLY_BUF_LEN - ret, "%02X", str[i]);
     }
 
@@ -420,7 +420,7 @@ bool Rsp::Client::mem_read(char* data, size_t len)
   uint32_t addr;
   uint32_t length;
   uint32_t rdata;
-  int i;
+  uint32_t i;
 
   if (sscanf(data, "%x,%x", &addr, &length) != 2) {
     top->log->print(LOG_ERROR, "Could not parse packet\n");
@@ -444,7 +444,7 @@ bool Rsp::Client::mem_write_ascii(char* data, size_t len)
   uint32_t addr;
   int length;
   uint32_t wdata;
-  int i, j;
+  size_t i, j;
 
   char* buffer;
   int buffer_len;
@@ -502,12 +502,8 @@ bool Rsp::Client::mem_write_ascii(char* data, size_t len)
 bool Rsp::Client::mem_write(char* data, size_t len)
 {
   uint32_t addr;
-  int length;
-  uint32_t wdata;
-  int i, j;
-
-  char* buffer;
-  int buffer_len;
+  unsigned int length;
+  size_t i;
 
   if (sscanf(data, "%x,%x:", &addr, &length) != 2) {
     top->log->print(LOG_ERROR, "Could not parse packet\n");
@@ -571,11 +567,10 @@ bool Rsp::Client::reg_write(char* data, size_t len)
 {
   uint32_t addr;
   uint32_t wdata;
-  char data_str[10];
   Target_core *core;
 
   if (sscanf(data, "%x=%08x", &addr, &wdata) != 2) {
-    top->log->print(LOG_ERROR, "Could not parse packet\n");
+    top->log->error("Could not parse packet\n");
     return false;
   }
 
@@ -597,8 +592,7 @@ bool Rsp::Client::reg_write(char* data, size_t len)
 bool Rsp::Client::regs_send()
 {
   uint32_t gpr[32];
-  uint32_t npc;
-  uint32_t ppc;
+  uint32_t pc;
   char regs_str[512];
   int i;
   Target_core * core;
@@ -611,8 +605,8 @@ bool Rsp::Client::regs_send()
   for(i = 0; i < 32; i++) {
     snprintf(&regs_str[i * 8], 9, "%08x", htonl(gpr[i]));
   }
-  core->actual_pc_read(&npc);
-  snprintf(&regs_str[32 * 8 + 0 * 8], 9, "%08x", htonl(npc));
+  core->actual_pc_read(&pc);
+  snprintf(&regs_str[32 * 8 + 0 * 8], 9, "%08x", htonl(pc));
 
   return this->send_str(regs_str);
 }
@@ -675,7 +669,6 @@ bool Rsp::Client::cont(char* data, size_t len)
   uint32_t sig;
   uint32_t addr;
   uint32_t npc;
-  int i;
   bool npc_found = false;
   Target_core *core;
 
@@ -711,7 +704,7 @@ bool Rsp::Client::step(char* data, size_t len)
 {
   uint32_t addr;
   uint32_t npc;
-  int i;
+  size_t i;
   Target_core *core;
 
   // strip signal first
@@ -746,9 +739,6 @@ bool Rsp::Client::wait()
   int ret;
   char pkt;
 
-  fd_set rfds;
-  struct timeval tv;
-
   while(1) {
     // Moved into target
     // // Check if a cluster power state has changed
@@ -773,7 +763,7 @@ bool Rsp::Client::wait()
       this->top->log->debug("!!!!!!!!!!!!!!!!!!!!!!! CTRL-C !!!!!!!!!!!!!!!!!!!!!!!!\n");
       rsp->halt_target();
     }
-    usleep(10000);
+    // usleep(10000);
   }
 
   return true;
@@ -991,7 +981,7 @@ bool Rsp::Client::get_packet(char* pkt, size_t* p_pkt_len) {
 bool Rsp::Client::send(const char* data, size_t len)
 {
   int ret;
-  int i;
+  size_t i;
   size_t raw_len = 0;
   char* raw = (char*)malloc(len * 2 + 4);
   unsigned int checksum = 0;
@@ -1026,7 +1016,7 @@ bool Rsp::Client::send(const char* data, size_t len)
   do {
     top->log->print(LOG_DEBUG, "Sending %.*s\n", raw_len, raw);
 
-    if (client->send(raw, raw_len) != raw_len) {
+    if (!client->send(raw, raw_len)) {
       free(raw);
       top->log->print(LOG_ERROR, "Unable to send data to client\n");
       return false;
@@ -1060,7 +1050,6 @@ bool Rsp::Client::bp_insert(char* data, size_t len)
 {
   enum mp_type type;
   uint32_t addr;
-  uint32_t data_bp;
   int bp_len;
 
   if (3 != sscanf(data, "Z%1d,%x,%1d", (int *)&type, &addr, &bp_len)) {
@@ -1089,7 +1078,6 @@ bool Rsp::Client::bp_remove(char* data, size_t len)
 {
   enum mp_type type;
   uint32_t addr;
-  uint32_t ppc;
   int bp_len;
 
   data[len] = 0;

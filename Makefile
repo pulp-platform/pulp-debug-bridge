@@ -64,17 +64,6 @@ endif
 
 
 CFLAGS += -g -O0 -fPIC -std=gnu++11 -MMD -MP -Isrc -Iinclude -Wall -Werror \
- -Wno-unused-function -Wno-unused-variable \
- -Wno-delete-non-virtual-dtor -Wno-sign-compare -Wno-return-type \
- -Wno-reorder
-
-ifneq ($(OS),Windows_NT)
-  ifeq "$(shell uname -s)" "Darwin"
-    CFLAGS += -Wno-unused-private-field
-  endif
-endif
-
-CFLAGS += \
  -I$(INSTALL_DIR)/include $(FTDI_CFLAGS) $(SDL_CFLAGS)
 
 LDFLAGS += -g -shared $(FTDI_LDFLAGS) $(SDL_LDFLAGS)

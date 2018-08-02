@@ -28,7 +28,8 @@ class Jtag_proxy : public Cable {
   public:
 
     Jtag_proxy(Log* log);
-
+    ~Jtag_proxy() = default;
+    
     bool connect(js::config *config);
 
     bool bit_inout(char* inbit, char outbit, bool last);

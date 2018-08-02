@@ -94,8 +94,9 @@ public:
     func_ret_t recvsend(bool send, void * buf, size_t buf_len, size_t cnt, int flags, int ms);
     func_ret_t recvsend_block(bool send, void * buf, size_t len, int flags);
     ssize_t check_error(func_ret_t ret);
-    socket_t socket;
+
     Tcp_listener *listener;
+    socket_t socket;
     int block_timeout = 100;
     finished_cb_t f_cb;
     bool is_closed = false, is_shutdown = false, is_closing = false;

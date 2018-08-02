@@ -55,8 +55,6 @@ Adv_dbg_itf::~Adv_dbg_itf()
 
 bool Adv_dbg_itf::connect(js::config *config)
 {
-  js::config *jtag_cable_config = NULL;
-
   access_timeout = config->get_int("**/access_timeout_us");
   if (access_timeout == 0)
     access_timeout = 1000000;
@@ -88,7 +86,7 @@ bool Adv_dbg_itf::jtag_reset(bool active)
 {
   pthread_mutex_lock(&mutex);
 
-  for (int i=0; i < m_jtag_devices.size(); i++)
+  for (jtag_devices_size_t i=0; i < m_jtag_devices.size(); i++)
   {
     m_jtag_devices[i].is_in_debug = false;
   }
@@ -537,7 +535,7 @@ bool Adv_dbg_itf::read_internal(ADBG_OPCODES opcode, unsigned int addr, int size
     assert(retval == 0);
     unsigned long usec_elapsed = (now.tv_sec - start.tv_sec) * 1000000 + (now.tv_usec - start.tv_usec);
 
-    if (usec_elapsed > access_timeout) {
+    if (usec_elapsed > (unsigned long) access_timeout) {
       log->warning("ft2232: did not get a start bit from the AXI module in 1s\n");
       m_dev->purge();
       return false;
@@ -728,6 +726,7 @@ bool Adv_dbg_itf::jtag_debug()
     dev.is_in_debug = jtag_set_selected_ir(this->debug_ir);
     return dev.is_in_debug;
   }
+  return false;
 }
 
 
@@ -907,7 +906,7 @@ bool Adv_dbg_itf::jtag_soft_reset()
 {
   pthread_mutex_lock(&mutex);
 
-  for (int i=0; i < m_jtag_devices.size(); i++)
+  for (jtag_devices_size_t i=0; i < m_jtag_devices.size(); i++)
   {
     m_jtag_devices[i].is_in_debug = false;
   }

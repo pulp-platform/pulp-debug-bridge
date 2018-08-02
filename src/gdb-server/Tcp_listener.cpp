@@ -21,7 +21,7 @@
 #include "Tcp_listener.hpp"
 
 Tcp_listener::Tcp_listener(Log *log, port_t port, socket_cb_t connected_cb, socket_cb_t disconnected_cb) : 
-    port(port), log(log), c_cb(connected_cb), d_cb(disconnected_cb)
+    log(log), port(port), c_cb(connected_cb), d_cb(disconnected_cb)
 {
 
 }
@@ -357,7 +357,7 @@ func_ret_t Tcp_listener::Tcp_socket::recvsend(bool send, void * buf, size_t buf_
       res += ret;
 
       // check if we should try for more characters
-      if (cnt>0 && res<cnt) {
+      if (cnt>0 && (size_t) res < cnt) {
         struct timeval new_now, used;
         gettimeofday(&new_now, NULL);
         timersub(&new_now, &now, &used);

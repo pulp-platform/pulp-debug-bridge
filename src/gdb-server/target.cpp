@@ -74,6 +74,7 @@ bool Target_cluster_ctrl_xtrigger::set_halt_mask(uint32_t mask)
     }
     return res;
   }
+  return false;
 }
 
 bool Target_cluster_ctrl_xtrigger::get_halt_mask(uint32_t *mask) { 
@@ -309,7 +310,6 @@ bool Target_core::actual_pc_read(unsigned int* pc)
   uint32_t npc;
   uint32_t ppc;
   uint32_t cause;
-  uint32_t hit;
   bool is_hit;
   bool is_sleeping;
 
@@ -731,7 +731,7 @@ Target_fc::Target_fc(js::config *config, Gdb_server *top, uint32_t fc_dbg_base, 
 
   ctrl = new Target_cluster_ctrl();
 
-  if (fc_cache_base != -1)
+  if (fc_cache_base != 0xffffffff)
     cache = new Target_fc_cache(top, fc_cache_base);
 
   this->update_power();

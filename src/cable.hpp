@@ -48,6 +48,7 @@ public:
     bool jtag_shift_ir(unsigned int ir);
     bool jtag_set_reg(unsigned int reg, int width, unsigned int value);
     bool jtag_get_reg(unsigned int reg, int width, unsigned int *out_value, unsigned int value);
+    virtual ~Cable_jtag_itf() = default;
 };
 
 
@@ -56,6 +57,7 @@ class Cable_io_itf
 {
 public:
   virtual bool access(bool write, unsigned int addr, int size, char* buffer) { return false; }
+  virtual ~Cable_io_itf() = default;
 };
 
 
@@ -64,6 +66,7 @@ class Cable_ctrl_itf
 {
 public:
   virtual bool chip_reset(bool active) { return false; }
+  virtual ~Cable_ctrl_itf() = default;
 };
 
 
@@ -76,7 +79,7 @@ public:
   virtual void lock() { }
 
   virtual void unlock() { }
-
+  virtual ~Cable() = default;
 };
 
 #endif
