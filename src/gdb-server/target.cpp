@@ -168,7 +168,10 @@ bool Target_core::gpr_write(unsigned int i, uint32_t data)
 }
 
 
-
+bool Target_core::ie_write(uint32_t data)
+{
+  return this->write(DBG_IE_REG, data);
+}
 
 
 void Target_core::set_power(bool is_on)
@@ -178,7 +181,6 @@ void Target_core::set_power(bool is_on)
     this->is_on = is_on;
     if (is_on) {
       top->log->print(LOG_DEBUG, "Core %d:%d on\n", this->get_cluster_id(), core_id);
-      is_on = true;
       // // // let's discover core id and cluster id
       // this->stop();
       // uint32_t hartid_tmp;
@@ -190,7 +192,7 @@ void Target_core::set_power(bool is_on)
       // // core_id = hartid & 0x1f;
 
       // top->log->print(LOG_DEBUG, "Found a core with id %X (cluster: %d, core: %d)\n", hartid, this->get_cluster_id(), core_id);
-      this->write(DBG_IE_REG, 1<<3);
+      is_on = this->ie_write(1<<3|1<<2); // traps on illegal instructions and ebrks
       // if (!stopped) resume();
     } else {
       top->log->print(LOG_DEBUG, "Core %d:%d off\n", this->get_cluster_id(), core_id);
@@ -635,14 +637,16 @@ void Target_cluster_common::set_power(bool is_on)
     }
   }
 
-  if (is_on && nb_on_cores != nb_core)
-  {
-    nb_on_cores=0;
-    this->top->log->debug("Set all on (is_on: %d, nb_on_cores: %d, nb_core: %d)\n", is_on, nb_on_cores, nb_core);
-    for(auto const& core: cores)
+  if (is_on) {
+    if (nb_on_cores != nb_core)
     {
-      core->set_power(is_on);
-      nb_on_cores++;
+      nb_on_cores=0;
+      this->top->log->debug("Set all on (is_on: %d, nb_on_cores: %d, nb_core: %d)\n", is_on, nb_on_cores, nb_core);
+      for(auto const& core: cores)
+      {
+        core->set_power(is_on);
+        nb_on_cores++;
+      }
     }
   }
   else
