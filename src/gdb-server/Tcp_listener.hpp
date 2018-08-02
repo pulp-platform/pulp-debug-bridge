@@ -51,6 +51,7 @@
 #include <functional>
 #include <thread>
 #include <mutex>
+#include <memory>
 #include <condition_variable>
 
 class Tcp_listener {
@@ -100,7 +101,8 @@ public:
     bool is_closed = false, is_shutdown = false, is_closing = false;
   };
 
-  typedef std::function<void(Tcp_listener::Tcp_socket *)> socket_cb_t;
+  typedef std::shared_ptr<Tcp_listener::Tcp_socket> tcp_socket_ptr_t;
+  typedef std::function<void(tcp_socket_ptr_t)> socket_cb_t;
 
   Tcp_listener(Log *log, port_t port, socket_cb_t connected_cb, socket_cb_t disconnected_cb);
   bool start();
@@ -118,7 +120,7 @@ private:
   socket_cb_t c_cb, d_cb;
   socket_t socket_in;
   bool is_running = false, is_stopping = false;
-  Tcp_socket *client;
+  tcp_socket_ptr_t client;
   std::thread *listener_thread;
 };
 

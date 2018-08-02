@@ -79,7 +79,7 @@ void Tcp_listener::listener_routine()
       log->print(LOG_INFO, "Tcp_listener: Client connected!\n");
 
       set_blocking(socket_client, false);
-      client = new Tcp_socket(this, socket_client);
+      client = std::make_shared<Tcp_socket>(this, socket_client);
 
       if (c_cb) c_cb(client);
       log->print(LOG_INFO, "Tcp_listener: client finished\n");
@@ -116,7 +116,6 @@ void Tcp_listener::client_disconnected()
 {
   if (client) {
     if (d_cb) d_cb(client);
-    delete client;
     client = NULL;
   }
 }

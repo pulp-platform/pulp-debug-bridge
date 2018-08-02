@@ -60,13 +60,13 @@ void Rsp::init()
   m_thread_init = main_core->get_thread_id();
 }
 
-void Rsp::client_connected(Tcp_listener::Tcp_socket *client)
+void Rsp::client_connected(Tcp_listener::tcp_socket_ptr_t client)
 {
   top->log->user("RSP: client connected\n");
 
   // Make sure target is halted
   this->halt_target();
-  this->client = new Rsp::Client(this, client);
+  this->client = std::make_shared<Rsp::Client>(this, client);
 
   // hang the listener until the client stops (i.e. gdb session completed)
   {
@@ -92,7 +92,7 @@ void Rsp::client_connected(Tcp_listener::Tcp_socket *client)
 
   // Clean up the client
   this->client->stop();
-  delete this->client;
+  top->log->debug("RSP: delete client\n");
   this->client = nullptr;
 
   top->log->debug("RSP: notify finished\n");
@@ -103,7 +103,7 @@ void Rsp::client_connected(Tcp_listener::Tcp_socket *client)
   top->log->debug("RSP: finished notified\n");
 }
 
-void Rsp::client_disconnected(Tcp_listener::Tcp_socket *client)
+void Rsp::client_disconnected(Tcp_listener::tcp_socket_ptr_t client)
 {
   top->log->user("RSP: TCP client disconnected\n");
 }
@@ -150,8 +150,8 @@ bool Rsp::open() {
   listener = new Tcp_listener(
     this->top->log,
     port,
-    [this](Tcp_listener::Tcp_socket *client) { return this->client_connected(client); }, 
-    [this](Tcp_listener::Tcp_socket *client) { return this->client_disconnected(client); }
+    [this](Tcp_listener::tcp_socket_ptr_t client) { return this->client_connected(client); }, 
+    [this](Tcp_listener::tcp_socket_ptr_t client) { return this->client_disconnected(client); }
   );
   return listener->start();
 }
@@ -192,7 +192,7 @@ void Rsp::resume_target(bool step, int tid)
 
 // Rsp::Client
 
-Rsp::Client::Client(Rsp *rsp, Tcp_listener::Tcp_socket *client) : top(rsp->top), rsp(rsp), client(client)
+Rsp::Client::Client(Rsp *rsp, Tcp_listener::tcp_socket_ptr_t client) : top(rsp->top), rsp(rsp), client(client)
 {
   thread_sel = rsp->m_thread_init;
   thread = new std::thread(&Rsp::Client::client_routine, this);

@@ -293,7 +293,7 @@ extern "C" int gdb_send_str(void *arg, const char * str)
 {
   Gdb_server *server = (Gdb_server *)arg;
   if (server->rsp) {
-    Rsp::Client *client = server->rsp->get_client();
+    std::shared_ptr<Rsp::Client> client = server->rsp->get_client();
     if (client) {
       return client->send_str(str);
     }
