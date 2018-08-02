@@ -16,6 +16,7 @@
 
 # Authors: Germain Haugou, ETH (germain.haugou@iis.ee.ethz.ch)
 
+from __future__ import print_function
 import ctypes
 import os
 import os.path
@@ -218,7 +219,7 @@ class debug_bridge(object):
 
     def log(self, level, *args):
         if self.verbose >= level:
-            print(*args)
+            print (*args)
 
     def get_cable(self):
         if self.cable is None:
@@ -605,6 +606,8 @@ class debug_bridge(object):
 
         if self.reqloop_handle is not None:
             self.module.bridge_reqloop_close(self.reqloop_handle, 0)
+
+        self.log(1, "Wait is exiting")
 
         return 0
 
