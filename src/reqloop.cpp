@@ -431,17 +431,17 @@ void Reqloop::reqloop_routine()
       while(1) {
         hal_bridge_req_t *first_bridge_req, *last_req, *next, *next_next;
 
-        cable->access(false, (unsigned int)(long)&debug_struct->first_bridge_req, 4, (char*)&first_bridge_req);
+        if (!cable->access(false, (unsigned int)(long)&debug_struct->first_bridge_req, 4, (char*)&first_bridge_req)) goto end;
 
         if (first_bridge_req == NULL)
           break;
 
         hal_bridge_req_t req;
-        this->cable->access(false, (unsigned int)(long)first_bridge_req, sizeof(hal_bridge_req_t), (char*)&req);
+        if (!this->cable->access(false, (unsigned int)(long)first_bridge_req, sizeof(hal_bridge_req_t), (char*)&req)) goto end;
 
         value = 1;
-        cable->access(true, (unsigned int)(long)&first_bridge_req->popped, sizeof(first_bridge_req->popped), (char*)&value);
-        cable->access(true, (unsigned int)(long)&debug_struct->first_bridge_req, 4, (char*)&req.next);
+        if (!cable->access(true, (unsigned int)(long)&first_bridge_req->popped, sizeof(first_bridge_req->popped), (char*)&value)) goto end;
+        if (!cable->access(true, (unsigned int)(long)&debug_struct->first_bridge_req, 4, (char*)&req.next)) goto end;
 
         if (this->handle_req(debug_struct, &req, first_bridge_req))
           return;
@@ -455,6 +455,9 @@ void Reqloop::reqloop_routine()
   {
     log->warning("Trying to launch request loop (command reqloop) while no binary is provided\n");
   }
+
+end:
+  log->warning("Got access error in reqloop\n");
 }
 
 Reqloop::Reqloop(Cable *cable, unsigned int debug_struct_addr) : cable(cable), debug_struct_addr(debug_struct_addr)
