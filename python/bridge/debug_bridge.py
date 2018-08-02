@@ -22,7 +22,7 @@ import bridge.chips.wolfe as wolfe
 import bridge.chips.fulmine as fulmine
 
 
-def get_bridge(config, binaries=[], verbose=False):
+def get_bridge(config, binaries=[], verbose=0):
 
     chip_config = config.get('**/board/chip')
     if chip_config is None:

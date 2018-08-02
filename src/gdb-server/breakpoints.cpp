@@ -181,8 +181,9 @@ Breakpoints::Breakpoint::Breakpoint(Gdb_server *top, uint32_t addr) : top(top), 
 bool Breakpoints::Breakpoint::enable()
 {
   bool retval;
- 
-  assert(!this->enabled);
+
+  if (this->enabled)
+    top->log->error("breakpoint at addr: 0x%08x was already enabled\n", addr);
 
   uint32_t insn_orig;
   retval = top->target->mem_read(addr, 4, (char*)&insn_orig);
@@ -212,21 +213,29 @@ bool Breakpoints::Breakpoint::disable()
   bool retval;
   uint32_t data_bp;
 
-  assert(this->enabled);
+  if (!this->enabled)
+    top->log->error("breakpoint at addr: 0x%08x was already disabled\n", addr);
 
   retval = top->target->mem_read(addr, 4, (char*)&data_bp);
 
   top->log->debug("Disable %sbreakpoint at addr: 0x%08x contents: 0x%08x\n", is_compressed?"compressed ":"", addr, data_bp);
 
-  assert(is_compressed == INSN_IS_COMPRESSED(data_bp));
-  assert(!is_compressed||(data_bp&0xffff) == INSN_BP_COMPRESSED);
-  assert(is_compressed||data_bp == INSN_BP);
+  if (is_compressed != INSN_IS_COMPRESSED(data_bp))
+    top->log->error("breakpoint at addr: 0x%08x compressed does not match actual instruction\n", addr);
+
+
+  if (is_compressed)
+  {
+    if ((data_bp&0xffff) != INSN_BP_COMPRESSED)
+      top->log->error("breakpoint at addr: 0x%08x contents 0x%08x is not a compressed ebrk\n", addr, data_bp);
+  } else {
+    if (data_bp != INSN_BP)
+      top->log->error("breakpoint at addr: 0x%08x contents 0x%08x is not an ebrk\n", addr, data_bp);
+  }
 
   if (is_compressed) {
-    data_bp = INSN_BP_COMPRESSED;
     retval = retval && top->target->mem_write(addr, 2, (char*)&insn_orig16);
   } else {
-    data_bp = INSN_BP;
     retval = retval && top->target->mem_write(addr, 4, (char*)&insn_orig32);
   }
 

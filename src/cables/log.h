@@ -31,7 +31,8 @@ typedef enum
   LOG_WARNING = 1,
   LOG_INFO = 2,
   LOG_DEBUG = 3,
-  LOG_DETAIL = 4
+  LOG_DETAIL = 4,
+  LOG_LEVEL_MAX = LOG_DETAIL
 } log_level_e;
 
 class Log {

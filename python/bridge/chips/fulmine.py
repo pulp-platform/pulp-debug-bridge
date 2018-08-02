@@ -21,7 +21,7 @@ from bridge.default_debug_bridge import *
 
 class fulmine_debug_bridge(debug_bridge):
 
-    def __init__(self, config, binaries=[], verbose=False):
+    def __init__(self, config, binaries=[], verbose=0):
         super(fulmine_debug_bridge, self).__init__(config=config, binaries=binaries, verbose=verbose)
 
         # We have to use the soc tap on fulmine

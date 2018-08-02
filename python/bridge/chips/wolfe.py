@@ -21,7 +21,7 @@ import time
 
 class wolfe_debug_bridge(debug_bridge):
 
-    def __init__(self, config, binaries=[], verbose=False):
+    def __init__(self, config, binaries=[], verbose=0):
 
         super(wolfe_debug_bridge, self).__init__(config=config, binaries=binaries, verbose=verbose)
 
@@ -30,14 +30,12 @@ class wolfe_debug_bridge(debug_bridge):
 
     def load_jtag(self):
 
-        if self.verbose:
-            print ('Loading binary through jtag')
+        self.log(1, 'Loading binary through jtag')
 
         # Reset the chip and tell him we want to load via jtag
         # We keep the reset active until the end so that it sees
         # the boot mode as soon as it boots from rom
-        if self.verbose:
-            print ("Stalling the FC")
+        self.log (1, "Stalling the FC")
         self.get_cable().chip_reset(True)
         self.get_cable().chip_reset(False)
 
@@ -45,8 +43,7 @@ class wolfe_debug_bridge(debug_bridge):
         self.write(0x1A110000, 4, [0, 0, 1, 0])
 
         # Load the binary through jtag
-        if self.verbose:
-            print ("Loading binaries")
+        self.log(1, "Loading binaries")
         for binary in self.binaries:
             if self.load_elf(binary=binary):
                 return 1

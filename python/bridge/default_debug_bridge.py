@@ -103,6 +103,8 @@ class Ctype_cable(object):
 
         self.module.gdb_server_refresh_target.argtypes = [ctypes.c_void_p]
 
+        self.module.get_max_log_level.restype = ctypes.c_int
+
         config_string = None
 
         if config is not None:
@@ -161,13 +163,13 @@ class Ctype_cable(object):
 class debug_bridge(object):
 
     def __init__(self, config, binaries=[], verbose=0):
+        self.verbose = verbose
         self.config = config
         self.cable = None
         self.cable_name = config.get('**/debug_bridge/cable/type').get()
         self.binaries = binaries
         self.ioloop_handle = None
         self.reqloop_handle = None
-        self.verbose = verbose
         self.gdb_handle = None
         self.cable_config = config.get('**/debug_bridge/cable')
         self.is_started = None
@@ -214,6 +216,10 @@ class debug_bridge(object):
             system_config = self.config
         )
 
+    def log(self, level, *args):
+        if self.verbose >= level:
+            print(*args)
+
     def get_cable(self):
         if self.cable is None:
             self.__mount_cable()
@@ -238,16 +244,15 @@ class debug_bridge(object):
                     addr = segment['p_paddr']
                     size = len(data)
 
-                    if self.verbose > 0:
-                        print ('Loading section (base: 0x%x, size: 0x%x)' % (addr, size))
+                    self.log(1, 'Loading section (base: 0x%x, size: 0x%x)' % (addr, size))
 
                     self.write(addr, size, data)
 
                     if segment['p_filesz'] < segment['p_memsz']:
                         addr = segment['p_paddr'] + segment['p_filesz']
                         size = segment['p_memsz'] - segment['p_filesz']
-                        if self.verbose > 0:
-                            print ('Init section to 0 (base: 0x%x, size: 0x%x)' % (addr, size))
+
+                        self.log(1, 'Init section to 0 (base: 0x%x, size: 0x%x)' % (addr, size))
                         self.write(
                             addr,
                             size,
@@ -264,8 +269,7 @@ class debug_bridge(object):
                 if set_pc_offset_config is not None:
                     entry += set_pc_offset_config.get_int()
 
-                if self.verbose > 0:
-                    print ('Setting PC (base: 0x%x, value: 0x%x)' % (set_pc_addr_config.get_int(), entry))
+                self.log(1, 'Setting PC (base: 0x%x, value: 0x%x)' % (set_pc_addr_config.get_int(), entry))
 
                 return self.write_32(set_pc_addr_config.get_int(), entry)
 
@@ -291,8 +295,8 @@ class debug_bridge(object):
         start_addr_config = self.config.get('**/debug_bridge/start_addr')
         if start_addr_config is not None:
             self.is_started = True
-            if self.verbose > 0:
-                print ('Starting (base: 0x%x, value: 0x%x)' % (start_addr_config.get_int(), self.config.get('**/debug_bridge/start_value').get_int()))
+
+            self.log(1, 'Starting (base: 0x%x, value: 0x%x)' % (start_addr_config.get_int(), self.config.get('**/debug_bridge/start_value').get_int()))
 
             self.write_32(start_addr_config.get_int(), self.config.get('**/debug_bridge/start_value').get_int())
         return 0
@@ -303,6 +307,13 @@ class debug_bridge(object):
             self.is_started = False
             self.write_32(stop_addr_config.get_int(), self.config.get('**/debug_bridge/stop_value').get_int()) != 0
         return 0
+
+    def decode_addr(self, taddr):
+        try:
+            addr = int(taddr, 0)
+        except:
+            addr = self._get_binary_symbol_addr(taddr)
+        return addr
 
     def read(self, addr, size):
         return self.get_cable().read(addr, size)
@@ -369,8 +380,8 @@ class debug_bridge(object):
         # First get address of the structure used to communicate between
         # the bridge and the runtime
         addr = self._get_binary_symbol_addr('__rt_debug_struct_ptr')
-        if self.verbose > 0:
-            print("debug address 0x{:x} contents 0x{:x}".format(addr, self.read_32(addr)))
+
+        self.log(1, "debug address 0x{:08x} contents 0x{:08x}".format(addr, self.read_32(addr)))
 
         if addr == 0:
             addr = self._get_binary_symbol_addr('debugStruct_ptr')
@@ -407,7 +418,7 @@ class debug_bridge(object):
 
     def qrcmd_debug_level(self, cmd, buf, buf_len):
         level = int(cmd.split()[1])
-        print("Log level set to "+level)
+        self.log(1, "Log level set to {}".format(level))
         self.module.bridge_set_log_level(level)
         return self.encode_bytes("OK", buf, buf_len)
 
@@ -467,14 +478,13 @@ class debug_bridge(object):
     def qrcmd_cb(self, cmd, buf, buf_len):
         commands = {
             u"reset":       "reset [run|halt]     - resets the target",
-            u"debug_level": "debug_level (0-6)    - sets bridge debug level",
+            u"debug_level": "debug_level (0-{})    - sets bridge debug level".format(self.module.get_max_log_level()),
             u"shutdown":    "shutdown             - shuts down the bridge",
             u"help":        "help                 - gets list of supported commands"
         }
         try:
             cmd = bytearray.fromhex(cmd).decode('ascii')
-            if (self.verbose > 0):
-                print("Receive rCmd: "+cmd)
+            self.log(2, "Receive rCmd: "+cmd)
             cmd_name = cmd.split(' ')[0].lower()
             cmd_selected = None
             for c in commands:

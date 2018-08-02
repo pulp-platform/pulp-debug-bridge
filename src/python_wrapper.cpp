@@ -134,6 +134,11 @@ void Log::error(const char *str, ...)
   va_end(va);
 }
 
+extern "C" int get_max_log_level()
+{
+  return LOG_LEVEL_MAX;
+}
+
 extern "C" void *cable_new(const char *config_string, const char *system_config_string)
 {
   const char *cable_name = NULL;

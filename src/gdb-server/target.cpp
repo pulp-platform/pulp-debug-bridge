@@ -909,12 +909,16 @@ void Target::update_power()
 
 bool Target::mem_read(uint32_t addr, uint32_t length, char * buffer)
 {
-  top->cable->access(false, addr, length, buffer);
+  bool ret = top->cable->access(false, addr, length, buffer);
+  top->log->detail("read memory (addr: 0x%08x, len: %d, ret: %d)", addr, length, ret);
+  return ret;
 }
 
 bool Target::mem_write(uint32_t addr, uint32_t length, char * buffer)
 {
-    top->cable->access(true, addr, length, buffer);
+  bool ret = top->cable->access(true, addr, length, buffer);
+  top->log->detail("write memory (addr: 0x%08x, len: %d, ret: %d)", addr, length, ret);
+  return ret;
 }
 
 void Target::halt()

@@ -62,7 +62,8 @@ def read(bridge):
     if args.addr == None:
         raise Exception('Access address must be given through option --addr when using command "read"')
 
-    addr = int(args.addr, 0)
+    addr = bridge.decode_addr(args.addr)
+
     size = int(args.size, 0)
     width = args.width
 
@@ -72,6 +73,7 @@ def read(bridge):
     data = bridge.read(addr=addr, size=size)
     while size > 0:
         line = [ '{:08x}'.format(addr) ]
+
         for _ in range(0, 16, width):
             line.append(' '+''.join('{:02x}'.format(ord(c)) for c in reversed(data[0:width])))
             size -= width
