@@ -113,10 +113,10 @@ Target_core::Target_core(Gdb_server *top, uint32_t dbg_unit_addr, Target_cluster
 
 
 
-void Target_core::init(bool is_on)
+void Target_core::init()
 {
-  top->log->print(LOG_DEBUG, "Init core (is_on: %d)\n", is_on);
-  this->is_on = is_on;
+  top->log->print(LOG_DEBUG, "Init core\n");
+  this->is_on = false;
   pc_is_cached = false;
   stopped = false;
   step = false;
@@ -490,20 +490,11 @@ Target_cluster_common::~Target_cluster_common()
 
 void Target_cluster_common::init()
 {
-  is_on = power->is_on();
-  if (is_on) {
-    nb_on_cores = nb_core;
-  } else {
-    nb_on_cores = 0;
-  }
-  top->log->print(LOG_DEBUG, "Init cluster %d (is_on: %d)\n", cluster_id, is_on);
+  top->log->print(LOG_DEBUG, "Init cluster %d\n", cluster_id);
+  this->is_on = false;
   for (auto &core: cores)
   {
-    core->init(is_on);
-  }
-  if (is_on)
-  {
-    ctrl->init();
+    core->init();
   }
 }
 

@@ -143,7 +143,7 @@ public:
   void commit_step_mode();
   void resume();
   void flush();
-  void init(bool is_on);
+  void init();
 
   bool gpr_read_all(uint32_t *data);
   bool gpr_read(unsigned int i, uint32_t *data);
