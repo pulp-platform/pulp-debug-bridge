@@ -29,7 +29,6 @@
 #endif
 
 #define JTAG_SOC_AXIREG  4
-#define IO_COUNT 10
 
 
 Adv_dbg_itf::Adv_dbg_itf(js::config *system_config, Log* log, Cable *m_dev) : config(system_config), log(log), m_dev(m_dev)
@@ -43,6 +42,12 @@ Adv_dbg_itf::Adv_dbg_itf(js::config *system_config, Log* log, Cable *m_dev) : co
 
   this->debug_ir = conf != NULL ? conf->get_int() : 0x4;
   log->debug("Using debug IR: 0x%x\n", this->debug_ir);
+
+  conf = system_config->get("**/adv_dbg_unit/retry_count");
+
+  this->retry_count = conf != NULL ? conf->get_int() : 0;
+  log->debug("Using retry count: %d\n", this->retry_count);
+
 }
 
 
@@ -244,7 +249,7 @@ bool Adv_dbg_itf::write(unsigned int _addr, int _size, char* _buffer)
     }
 
     return retval;
-  } while (count < IO_COUNT);
+  } while (count < this->retry_count);
 
   return false;
 }
@@ -340,7 +345,7 @@ bool Adv_dbg_itf::read(unsigned int _addr, int _size, char* _buffer)
     }
 
     return retval;
-  } while (count < IO_COUNT);
+  } while (count < retry_count);
 
   return false;
 }
