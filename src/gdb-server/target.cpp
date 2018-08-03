@@ -170,12 +170,14 @@ bool Target_core::gpr_write(unsigned int i, uint32_t data)
 
 bool Target_core::ie_write(uint32_t data)
 {
+  top->log->print(LOG_DEBUG, "%d:%d -----> TRAP ENABLED\n", this->get_cluster_id(), core_id);
   return this->write(DBG_IE_REG, data);
 }
 
 
 void Target_core::set_power(bool is_on)
 {
+  top->log->detail("Core %d:%d check power %d -> %d\n", this->get_cluster_id(), core_id, this->is_on, is_on);
   if (is_on != this->is_on)
   {
     this->pc_is_cached = false; // power state has changed - pc cannot be cached
@@ -484,7 +486,8 @@ Target_cluster_common::~Target_cluster_common()
 void Target_cluster_common::init()
 {
   top->log->print(LOG_DEBUG, "Init cluster %d\n", cluster_id);
-  this->is_on = false;
+  is_on = false;
+  nb_on_cores = 0;
   for (auto &core: cores)
   {
     core->init();
