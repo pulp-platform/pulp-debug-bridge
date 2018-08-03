@@ -262,6 +262,7 @@ class debug_bridge(object):
         return 0
 
     def stop(self):
+
         stop_addr_config = self.config.get('**/debug_bridge/stop_addr')
         if stop_addr_config is not None:
             self.write_32(stop_addr_config.get_int(), self.config.get('**/debug_bridge/stop_value').get_int()) != 0

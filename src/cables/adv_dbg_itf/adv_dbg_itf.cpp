@@ -43,10 +43,17 @@ Adv_dbg_itf::Adv_dbg_itf(js::config *system_config, Log* log, Cable *m_dev) : co
   this->debug_ir = conf != NULL ? conf->get_int() : 0x4;
   log->debug("Using debug IR: 0x%x\n", this->debug_ir);
 
+
   conf = system_config->get("**/adv_dbg_unit/retry_count");
 
   this->retry_count = conf != NULL ? conf->get_int() : 0;
   log->debug("Using retry count: %d\n", this->retry_count);
+
+
+  conf = system_config->get("**/adv_dbg_unit/check_errors");
+
+  this->check_errors = conf != NULL ? conf->get_bool() : false;
+  log->debug("Checking errors: %d\n", this->check_errors);
 
 }
 
@@ -238,14 +245,17 @@ bool Adv_dbg_itf::write(unsigned int _addr, int _size, char* _buffer)
       addr   += 1;
     }
 
-    uint32_t error_addr;
-    bool error = false;
-    retval = retval && read_error_reg(&error_addr, &error);
+    if (this->check_errors)
+    {
+      uint32_t error_addr;
+      bool error = false;
+      retval = retval && read_error_reg(&error_addr, &error);
 
-    if (error) {
-      log->debug("advdbg reports: Failed to write to addr %X\n", error_addr);
-      count++;
-      continue;
+      if (error) {
+        log->debug("advdbg reports: Failed to write to addr %X\n", error_addr);
+        count++;
+        continue;
+      }
     }
 
     return retval;
@@ -334,14 +344,17 @@ bool Adv_dbg_itf::read(unsigned int _addr, int _size, char* _buffer)
       addr   += 1;
     }
 
-    uint32_t error_addr;
-    bool error = false;
-    retval = retval && read_error_reg(&error_addr, &error);
+    if (this->check_errors)
+    {
+      uint32_t error_addr;
+      bool error = false;
+      retval = retval && read_error_reg(&error_addr, &error);
 
-    if (error) {
-      log->debug("advdbg reports: Failed to read from addr %X\n", error_addr);
-      count++;
-      continue;
+      if (error) {
+        log->debug("advdbg reports: Failed to read from addr %X\n", error_addr);
+        count++;
+        continue;
+      }
     }
 
     return retval;
@@ -641,6 +654,8 @@ bool Adv_dbg_itf::read_error_reg(uint32_t *addr, bool *error)
 
   jtag_pad_before();
 
+  memset(buf, 0, 5);
+
   if (!m_dev->stream_inout(buf, buf, 33, m_tms_on_last)) {
     log->warning("ft2232: failed to read AXI error register\n");
     return false;
@@ -677,12 +692,13 @@ bool Adv_dbg_itf::clear_error_reg()
   // write, it will fail (or at least look like it failed). The reason for this
   // is that the error register kind of keeps hanging in an error state. To
   // mitigate this problem, we perform one valid dummy access
-  read_internal(AXI_READ8, 0x10000000, 1, buf);
+  //read_internal(AXI_READ8, 0x10000000, 1, buf);
 
   jtag_axi_select();
 
   jtag_pad_before();
 
+#if 0
   // build internal register select
   // 63    = 0    (module_cmd)
   // 62:59 = 1001 (operation_in)
@@ -698,6 +714,14 @@ bool Adv_dbg_itf::clear_error_reg()
     log->warning("ft2232: failed to write internal register write to device\n");
     return false;
   }
+#else
+  buf[0] = (0x9 << 1) | 1;
+
+  if (!m_dev->stream_inout(NULL, buf, 5+1, m_tms_on_last)) {
+    log->warning("ft2232: failed to write internal register write to device\n");
+    return false;
+  }
+#endif
 
   jtag_pad_after(!m_tms_on_last);
 
