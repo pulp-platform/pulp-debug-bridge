@@ -100,7 +100,7 @@ bool Jtag_proxy::proxy_stream(char* instream, char* outstream, unsigned int n_bi
   if (n_bits >= (1<<16)) return false;
 
   uint8_t buffer[n_bits];
-  uint8_t value;
+  uint8_t value = 0;
   if (outstream)
   {
     for (size_t i=0; i<n_bits; i++)
