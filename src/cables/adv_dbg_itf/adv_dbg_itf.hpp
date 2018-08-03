@@ -80,6 +80,7 @@ class Adv_dbg_itf : public Cable  {
 
     pthread_mutex_t mutex;
     unsigned int debug_ir;
+    int retry_count;
     int access_timeout;
 
     typedef std::vector<jtag_device> jtag_devices_t;

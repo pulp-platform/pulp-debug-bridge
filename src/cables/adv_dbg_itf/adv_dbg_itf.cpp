@@ -42,6 +42,12 @@ Adv_dbg_itf::Adv_dbg_itf(js::config *system_config, Log* log, Cable *m_dev) : m_
 
   this->debug_ir = conf != NULL ? conf->get_int() : 0x4;
   log->debug("Using debug IR: 0x%x\n", this->debug_ir);
+
+  conf = system_config->get("**/adv_dbg_unit/retry_count");
+
+  this->retry_count = conf != NULL ? conf->get_int() : 0;
+  log->debug("Using retry count: %d\n", this->retry_count);
+
 }
 
 
@@ -155,171 +161,193 @@ bool Adv_dbg_itf::access(bool wr, unsigned int addr, int size, char* buffer)
 
 
 
-bool Adv_dbg_itf::write(unsigned int addr, int size, char* buffer)
+bool Adv_dbg_itf::write(unsigned int _addr, int _size, char* _buffer)
 {
-  bool retval = true;
+  int count = 0;
+  do
+  {
+    unsigned int addr = _addr;
+    int size = _size;
+    char *buffer = _buffer;
 
-  if (addr & 0x1 && size >= 1) {
-    retval = retval && write_internal(AXI_WRITE8, addr, 1, buffer);
-    size   -= 1;
-    buffer += 1;
-    addr   += 1;
-  }
+    bool retval = true;
 
-  if (addr & 0x2 && size >= 2) {
-    retval = retval && write_internal(AXI_WRITE16, addr, 2, buffer);
-    size   -= 2;
-    buffer += 2;
-    addr   += 2;
-  }
+    if (addr & 0x1 && size >= 1) {
+      retval = retval && write_internal(AXI_WRITE8, addr, 1, buffer);
+      size   -= 1;
+      buffer += 1;
+      addr   += 1;
+    }
 
-#if 0
+    if (addr & 0x2 && size >= 2) {
+      retval = retval && write_internal(AXI_WRITE16, addr, 2, buffer);
+      size   -= 2;
+      buffer += 2;
+      addr   += 2;
+    }
 
-  // TODO add 64 bits support and make sure it is not used on pulp targets
+  #if 0
 
-  if (addr & 0x4 && size >= 4) {
-    retval = retval && write_internal(AXI_WRITE32, addr, 4, buffer);
-    size   -= 4;
-    buffer += 4;
-    addr   += 4;
-  }
+    // TODO add 64 bits support and make sure it is not used on pulp targets
 
-  if (size >= 8) {
-    int local_size = size & (~0x7);
-    retval = retval && write_internal(AXI_WRITE64, addr, local_size, buffer);
-    size   -= local_size;
-    buffer += local_size;
-    addr   += local_size;
-  }
+    if (addr & 0x4 && size >= 4) {
+      retval = retval && write_internal(AXI_WRITE32, addr, 4, buffer);
+      size   -= 4;
+      buffer += 4;
+      addr   += 4;
+    }
 
-#else
+    if (size >= 8) {
+      int local_size = size & (~0x7);
+      retval = retval && write_internal(AXI_WRITE64, addr, local_size, buffer);
+      size   -= local_size;
+      buffer += local_size;
+      addr   += local_size;
+    }
 
-  if (size >= 4) {
-    int local_size = size & (~0x3);
+  #else
 
-     while (local_size)
-     {
-       int iter_size = local_size;
-       if (iter_size > 1024) iter_size = 1024;
+    if (size >= 4) {
+      int local_size = size & (~0x3);
 
-       retval = retval && write_internal(AXI_WRITE32, addr, iter_size, buffer);
-       local_size   -= iter_size;
-       size   -= iter_size;
-       buffer += iter_size;
-       addr   += iter_size;
+       while (local_size)
+       {
+         int iter_size = local_size;
+         if (iter_size > 1024) iter_size = 1024;
+
+         retval = retval && write_internal(AXI_WRITE32, addr, iter_size, buffer);
+         local_size   -= iter_size;
+         size   -= iter_size;
+         buffer += iter_size;
+         addr   += iter_size;
+       }
      }
-   }
-#endif
+  #endif
 
-  if (size >= 2) {
-    retval = retval && write_internal(AXI_WRITE16, addr, 2, buffer);
-    size   -= 2;
-    buffer += 2;
-    addr   += 2;
-  }
+    if (size >= 2) {
+      retval = retval && write_internal(AXI_WRITE16, addr, 2, buffer);
+      size   -= 2;
+      buffer += 2;
+      addr   += 2;
+    }
 
-  if (size >= 1) {
-    retval = retval && write_internal(AXI_WRITE8, addr, 1, buffer);
-    size   -= 1;
-    buffer += 1;
-    addr   += 1;
-  }
+    if (size >= 1) {
+      retval = retval && write_internal(AXI_WRITE8, addr, 1, buffer);
+      size   -= 1;
+      buffer += 1;
+      addr   += 1;
+    }
 
-  uint32_t error_addr = 0;
-  bool error = false;
-  // retval = retval && read_error_reg(&error_addr, &error);
+    // uint32_t error_addr = 0;
+    // bool error = false;
+    // retval = retval && read_error_reg(&error_addr, &error);
 
-  if (error) {
-    log->debug("advdbg reports: Failed to write to addr %X\n", error_addr);
-    return false;
-  }
+    // if (error) {
+    //   log->debug("advdbg reports: Failed to write to addr %X\n", error_addr);
+    //   count++;
+    //   continue;
+    // }
 
-  return retval;
+    return retval;
+  } while (count < this->retry_count);
+
+  return false;
 }
 
 
 
-bool Adv_dbg_itf::read(unsigned int addr, int size, char* buffer)
+bool Adv_dbg_itf::read(unsigned int _addr, int _size, char* _buffer)
 {
-  bool retval = true;
+  int count = 0;
+  do
+  {
+    unsigned int addr = _addr;
+    int size = _size;
+    char *buffer = _buffer;
 
-  if (addr & 0x1 && size >= 1) {
-    retval = retval && read_internal(AXI_READ8, addr, 1, buffer);
-    size   -= 1;
-    buffer += 1;
-    addr   += 1;
-  }
+    bool retval = true;
 
-  if (addr & 0x2 && size >= 2) {
-    retval = retval && read_internal(AXI_READ16, addr, 2, buffer);
-    size   -= 2;
-    buffer += 2;
-    addr   += 2;
-  }
-
-#if 0
-
-  // TODO add 64 bits support and make sure it is not used on pulp targets
-
-  if (addr & 0x4 && size >= 4) {
-    retval = retval && read_internal(AXI_READ32, addr, 4, buffer);
-    size   -= 4;
-    buffer += 4;
-    addr   += 4;
-  }
-
-  if (size >= 8) {
-    int local_size = size & (~0x7);
-    retval = retval && read_internal(AXI_READ64, addr, local_size, buffer);
-    size   -= local_size;
-    buffer += local_size;
-    addr   += local_size;
-  }
-  
-#else
-
-  if (size >= 4) {
-    int local_size = size & (~0x3);
-
-    while (local_size)
-    {
-      int iter_size = local_size;
-      if (iter_size > 2048) iter_size = 2048  ;
-
-      retval = retval && read_internal(AXI_READ32, addr, iter_size, buffer);
-      local_size   -= iter_size;
-      size   -= iter_size;
-      buffer += iter_size;
-      addr   += iter_size;
+    if (addr & 0x1 && size >= 1) {
+      retval = retval && read_internal(AXI_READ8, addr, 1, buffer);
+      size   -= 1;
+      buffer += 1;
+      addr   += 1;
     }
-  }
 
-#endif
+    if (addr & 0x2 && size >= 2) {
+      retval = retval && read_internal(AXI_READ16, addr, 2, buffer);
+      size   -= 2;
+      buffer += 2;
+      addr   += 2;
+    }
 
-  if (size >= 2) {
-    retval = retval && read_internal(AXI_READ16, addr, 2, buffer);
-    size   -= 2;
-    buffer += 2;
-    addr   += 2;
-  }
+  #if 0
 
-  if (size >= 1) {
-    retval = retval && read_internal(AXI_READ8, addr, 1, buffer);
-    size   -= 1;
-    buffer += 1;
-    addr   += 1;
-  }
+    // TODO add 64 bits support and make sure it is not used on pulp targets
 
-  uint32_t error_addr = 0;
-  bool error = false;
-  // retval = retval && read_error_reg(&error_addr, &error);
+    if (addr & 0x4 && size >= 4) {
+      retval = retval && read_internal(AXI_READ32, addr, 4, buffer);
+      size   -= 4;
+      buffer += 4;
+      addr   += 4;
+    }
 
-  if (error) {
-    log->debug("advdbg reports: Failed to read from addr %X\n", error_addr);
-    return false;
-  }
+    if (size >= 8) {
+      int local_size = size & (~0x7);
+      retval = retval && read_internal(AXI_READ64, addr, local_size, buffer);
+      size   -= local_size;
+      buffer += local_size;
+      addr   += local_size;
+    }
+    
+  #else
 
-  return retval;
+    if (size >= 4) {
+      int local_size = size & (~0x3);
+
+      while (local_size)
+      {
+        int iter_size = local_size;
+        if (iter_size > 2048) iter_size = 2048  ;
+
+        retval = retval && read_internal(AXI_READ32, addr, iter_size, buffer);
+        local_size   -= iter_size;
+        size   -= iter_size;
+        buffer += iter_size;
+        addr   += iter_size;
+      }
+    }
+
+  #endif
+
+    if (size >= 2) {
+      retval = retval && read_internal(AXI_READ16, addr, 2, buffer);
+      size   -= 2;
+      buffer += 2;
+      addr   += 2;
+    }
+
+    if (size >= 1) {
+      retval = retval && read_internal(AXI_READ8, addr, 1, buffer);
+      size   -= 1;
+      buffer += 1;
+      addr   += 1;
+    }
+
+    // uint32_t error_addr = 0;
+    // bool error = false;
+    // retval = retval && read_error_reg(&error_addr, &error);
+
+    // if (error) {
+    //   log->debug("advdbg reports: Failed to read from addr %X\n", error_addr);
+    //   count++;
+    //   continue;
+    // }
+
+    return retval;
+  } while (count < retry_count);
+
+  return false;
 }
 
 

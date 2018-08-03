@@ -19,24 +19,26 @@
 from bridge.default_debug_bridge import *
 import time
 
-class wolfe_debug_bridge(debug_bridge):
+class vega_debug_bridge(debug_bridge):
 
-    def __init__(self, config, binaries=[], verbose=0):
+    def __init__(self, config, binaries=[], verbose=False):
 
-        super(wolfe_debug_bridge, self).__init__(config=config, binaries=binaries, verbose=verbose)
+        super(vega_debug_bridge, self).__init__(config=config, binaries=binaries, verbose=verbose)
 
         self.start_cores = False
 
 
     def load_jtag(self):
 
-        self.log(1, 'Loading binary through jtag')
+        if self.verbose:
+            print ('Loading binary through jtag')
 
         if self.stop():
             return -1
 
         # Load the binary through jtag
-        self.log(1, "Loading binaries")
+        if self.verbose:
+            print ("Loading binaries")
         for binary in self.binaries:
             if self.load_elf(binary=binary):
                 return 1
@@ -71,7 +73,7 @@ class wolfe_debug_bridge(debug_bridge):
 
         # Stall the FC as when the reset is released it just tries to load from flash
         while True:
-            # on Wolfe, the core will start only after a while when the reset
+            # on vega, the core will start only after a while when the reset
             # is released, so the first accesses we do may not have any effect.
             # As a aworkaround we have to try stopping it several time.
             # Another issue on RTL simulation is that the core is not
