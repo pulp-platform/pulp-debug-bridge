@@ -178,6 +178,7 @@ void Target_core::set_power(bool is_on)
 {
   if (is_on != this->is_on)
   {
+    this->pc_is_cached = false; // power state has changed - pc cannot be cached
     this->is_on = is_on;
     if (is_on) {
       top->log->print(LOG_DEBUG, "Core %d:%d on\n", this->get_cluster_id(), core_id);
@@ -207,7 +208,7 @@ bool Target_core::read(uint32_t addr, uint32_t* rdata)
   uint32_t offset = dbg_unit_addr + addr;
   bool res = top->cable->access(false, offset, 4, (char*)rdata);
   if (res) {
-    top->log->detail("Reading register (addr: 0x%x) 0x%08x\n", offset, *rdata);
+    top->log->detail("Reading register (addr: 0x%x, contents: 0x%08x)\n", offset, *rdata);
   } else {
     top->log->error("Error reading register (addr: 0x%x)\n", offset);
   }
@@ -222,7 +223,7 @@ bool Target_core::write(uint32_t addr, uint32_t wdata)
   uint32_t offset = dbg_unit_addr + addr;
   bool res = top->cable->access(true, offset, 4, (char*)&wdata);
   if (res) {
-    top->log->detail("Writing register (addr: 0x%x, value: 0x%x) 0x%08x\n", offset, wdata);
+    top->log->detail("Writing register (addr: 0x%x, value: 0x%x)\n", offset, wdata);
   } else {
     top->log->error("Error writing register (addr: 0x%x)\n", offset);
   }
@@ -316,6 +317,8 @@ bool Target_core::actual_pc_read(unsigned int* pc)
   bool is_sleeping;
 
   if (pc_is_cached) {
+    this->top->log->debug("PC was cached at 0x%08x Core %d:%d (is_BP: %d)\n", 
+      pc_cached, this->get_cluster_id(), this->get_core_id(), on_trap);
     *pc = pc_cached;
     return true;
   }
@@ -419,6 +422,7 @@ void Target_core::prepare_resume(bool step)
 void Target_core::commit_resume()
 {
   this->stopped = false;
+  this->pc_is_cached = false;
 
   if (!this->is_on) return;
 
@@ -426,7 +430,7 @@ void Target_core::commit_resume()
     this->flush();
   }
 
-  this->pc_is_cached = false;
+  this->top->log->debug("Commit resume (cluster: %d, core: %d, step: %d)\n",  this->get_cluster_id(), core_id, step);
 
   this->commit_step_mode();
   // clear hit register, has to be done before CTRL
@@ -436,22 +440,12 @@ void Target_core::commit_resume()
 }
 
 
+
 void Target_core::resume()
 {
-  this->stopped = false;
-
   if (!is_on) return;
 
-  if (top->bkp->have_changed()) {
-    this->flush();
-  }
-
-  this->top->log->debug("Resuming core and committing step mode (cluster: %d, core: %d, step: %d)\n",  this->get_cluster_id(), core_id, step);
-
-  // clear hit register, has to be done before CTRL
-  if (!this->write(DBG_HIT_REG, 0)) {
-    top->log->error("Core %d:%d - unable to clear hit register\n", this->get_cluster_id(), this->get_core_id());
-  }
+  this->top->log->debug("Resuming (cluster: %d, core: %d, step: %d)\n",  this->get_cluster_id(), core_id, step);
 
   if (!this->write(DBG_CTRL_REG, step)) {
     top->log->error("Core %d:%d - unable to write ctrl register\n", this->get_cluster_id(), this->get_core_id());
@@ -465,9 +459,6 @@ void Target_core::resume()
   } else {
     top->log->debug("Core %d:%d - started ok\n", this->get_cluster_id(), this->get_core_id(), step, test);
   }
-
-  this->commit_step = false;
-  this->pc_is_cached = false;
 }
 
 
@@ -572,6 +563,30 @@ void Target_cluster_common::flush()
 }
 
 
+void Target_cluster_common::commit_resume()
+{
+  if (!is_on) {
+    this->top->log->debug("Cluster %d is off - not committing resume\n", cluster_id);
+    return;
+  }
+
+  if (!resume_prepared) {
+    this->top->log->debug("Cluster %d is not resuming - not committing resume\n", cluster_id);
+    return;
+  }
+
+  this->top->log->debug("Committing resume (cluster: %d)\n", cluster_id);
+
+  if (top->bkp->have_changed()) {
+    this->flush();
+  }
+
+  for (auto &core: cores) {
+    if (core->should_resume()) {
+      core->commit_resume();
+    }
+  }
+}
 
 void Target_cluster_common::resume()
 {
@@ -585,11 +600,7 @@ void Target_cluster_common::resume()
     return;
   }
 
-  if (top->bkp->have_changed()) {
-    this->flush();
-  }
-
-  this->top->log->debug("Resuming cluster (cluster: %d)\n", cluster_id);
+  this->top->log->debug("Resuming (cluster: %d)\n", cluster_id);
 
   if (this->ctrl->has_xtrigger()) {
 
@@ -601,7 +612,6 @@ void Target_cluster_common::resume()
     uint32_t xtrigger_mask = 0;
     for (auto &core: cores) {
       if (core->should_resume()) {
-        core->commit_resume();
         xtrigger_mask|=1<<core->get_core_id();
       }
     }
@@ -860,6 +870,10 @@ void Target::prepare_resume_all(bool step)
 void Target::resume_all()
 {
   started = true;
+  for (auto &cluster : this->clusters)
+  {
+    cluster->commit_resume();
+  }
   for (auto &cluster : this->clusters)
   {
     cluster->resume();

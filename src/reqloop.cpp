@@ -35,7 +35,7 @@
 class Reqloop
 {
 public:
-  Reqloop(Cable *cable, unsigned int debug_struct_addr);
+  Reqloop(Log *log, Cable *cable, unsigned int debug_struct_addr);
   void reqloop_routine();
   int stop(bool kill);
   hal_debug_struct_t *activate();
@@ -60,6 +60,7 @@ private:
   int status = 0;
 };
 
+#if defined(__USE_SDL__)
 class Framebuffer
 {
 public:
@@ -78,12 +79,10 @@ private:
   Cable *cable;
   std::thread *thread;
   uint32_t *pixels;
-#if defined(__USE_SDL__)
   SDL_Surface *screen;
   SDL_Texture * texture;
   SDL_Renderer *renderer;
   SDL_Window *window;
-#endif
 };
 
 Framebuffer::Framebuffer(Cable *cable, std::string name, int width, int height, int format)
@@ -93,7 +92,6 @@ Framebuffer::Framebuffer(Cable *cable, std::string name, int width, int height, 
 
 void Framebuffer::fb_routine()
 {
-#if defined(__USE_SDL__)
   bool quit = false;
   SDL_Event event;
 
@@ -110,13 +108,11 @@ void Framebuffer::fb_routine()
 
   SDL_DestroyWindow(window);
   SDL_Quit();
-#endif
 }
 
 
 bool Framebuffer::open()
 {
-#if defined(__USE_SDL__)
 
   if (format == HAL_BRIDGE_REQ_FB_FORMAT_GRAY)
   {
@@ -148,16 +144,10 @@ bool Framebuffer::open()
 
   thread = new std::thread(&Framebuffer::fb_routine, this);
   return true;
-
-#else
-  printf("Trying to open framebuffer while bridge has not been compiled with SDL support\n");
-  return false;
-#endif
 }
 
 void Framebuffer::update(uint32_t addr, int posx, int posy, int width, int height)
 {
-#if defined(__USE_SDL__)
 
   if (posx == -1)
   {
@@ -184,8 +174,8 @@ void Framebuffer::update(uint32_t addr, int posx, int posy, int width, int heigh
   SDL_RenderClear(renderer);
   SDL_RenderCopy(renderer, texture, NULL, NULL);
   SDL_RenderPresent(renderer);
-#endif
 }
+#endif
 
 
 
@@ -344,6 +334,7 @@ bool Reqloop::handle_req_close(hal_debug_struct_t *debug_struct, hal_bridge_req_
   return false;
 }
 
+#if defined(__USE_SDL__)
 bool Reqloop::handle_req_fb_open(hal_debug_struct_t *debug_struct, hal_bridge_req_t *req, hal_bridge_req_t *target_req)
 {
   char name[req->fb_open.name_len+1];
@@ -367,17 +358,27 @@ bool Reqloop::handle_req_fb_open(hal_debug_struct_t *debug_struct, hal_bridge_re
 
 bool Reqloop::handle_req_fb_update(hal_debug_struct_t *debug_struct, hal_bridge_req_t *req, hal_bridge_req_t *target_req)
 {
-#if defined(__USE_SDL__)
   Framebuffer *fb = (Framebuffer *)req->fb_update.screen;
 
   fb->update(
     req->fb_update.addr, req->fb_update.posx, req->fb_update.posy, req->fb_update.width, req->fb_update.height
   );
-#endif
 
   this->reply_req(debug_struct, target_req, req);
   return false;
 }
+#else
+bool Reqloop::handle_req_fb_update(hal_debug_struct_t *debug_struct, hal_bridge_req_t *req, hal_bridge_req_t *target_req)
+{
+  log->error("attempt to update framebuffer but bridge is not compiled with SDL");
+  return false;
+}
+bool Reqloop::handle_req_fb_open(hal_debug_struct_t *debug_struct, hal_bridge_req_t *req, hal_bridge_req_t *target_req)
+{
+  log->error("attempt to open framebuffer but bridge is not compiled with SDL");
+  return false;
+}
+#endif
 
 bool Reqloop::handle_req(hal_debug_struct_t *debug_struct, hal_bridge_req_t *req, hal_bridge_req_t *target_req)
 {
@@ -455,16 +456,15 @@ void Reqloop::reqloop_routine()
   }
 }
 
-Reqloop::Reqloop(Cable *cable, unsigned int debug_struct_addr) : cable(cable), debug_struct_addr(debug_struct_addr)
+Reqloop::Reqloop(Log* log, Cable *cable, unsigned int debug_struct_addr) : log(log), cable(cable), debug_struct_addr(debug_struct_addr)
 {
-  log = new Log();
   activate();
   thread = new std::thread(&Reqloop::reqloop_routine, this);
 }
 
 extern "C" void *bridge_reqloop_open(void *cable, unsigned int debug_struct_addr)
 {
-  return (void *)new Reqloop((Cable *)cable, debug_struct_addr);
+  return (void *)new Reqloop(new Log(), (Cable *)cable, debug_struct_addr);
 }
 
 extern "C" void bridge_reqloop_close(void *arg, int kill)

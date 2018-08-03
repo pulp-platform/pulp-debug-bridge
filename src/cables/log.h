@@ -40,6 +40,7 @@ class Log {
     Log(const char * module) {}
     Log() {}
     void print(log_level_e, const char *str, ...);
+    void print(log_level_e, const char *str, va_list va);
     void error(const char *str, ...) ;
     void warning(const char *str, ...) ;
     void user(const char *str, ...) ;

@@ -774,7 +774,6 @@ bool Rsp::Client::wait()
 bool Rsp::Client::multithread(char* data, size_t len)
 {
   int thread_id;
-
   top->log->debug("Subsequent %c operations on thread %s\n", data[0], &data[1]);
 
   switch (data[0]) {

@@ -43,12 +43,18 @@ std::mutex Log::m_last_error;
 
 static Log *s_log;
 
-void Log::print(log_level_e level, const char *str, ...)
+void Log::print(log_level_e level, const char *str, va_list va)
 {
   if (this->log_level <= level) return;
+  vprintf(str, va);
+  fflush(stdout);
+}
+
+void Log::print(log_level_e level, const char *str, ...)
+{
   va_list va;
   va_start(va, str);
-  vprintf(str, va);
+  this->print(level, str, va);
   va_end(va);
 }
 
@@ -83,38 +89,34 @@ void Log::print(log_level_e level, const char *str, ...)
 
 void Log::user(const char *str, ...)
 {
-  if (this->log_level <= LOG_INFO) return;
-  va_list va;
-  va_start(va, str);
-  vprintf(str, va);
-  va_end(va);
+  va_list args;
+  va_start(args, str);
+  this->print(LOG_INFO, str, args);
+  va_end(args);
 }
 
 void Log::detail(const char *str, ...)
 {
-  if (this->log_level <= LOG_DETAIL) return;
-  va_list va;
-  va_start(va, str);
-  vprintf(str, va);
-  va_end(va);
+  va_list args;
+  va_start(args, str);
+  this->print(LOG_DETAIL, str, args);
+  va_end(args);
 }
 
 void Log::debug(const char *str, ...)
 {
-  if (this->log_level <= LOG_DEBUG) return;
-  va_list va;
-  va_start(va, str);
-  vprintf(str, va);
-  va_end(va);
+  va_list args;
+  va_start(args, str);
+  this->print(LOG_DEBUG, str, args);
+  va_end(args);
 }
 
 void Log::warning(const char *str, ...)
 {
-  if (this->log_level <= LOG_WARNING) return;
-  va_list va;
-  va_start(va, str);
-  vprintf(str, va);
-  va_end(va);
+  va_list args;
+  va_start(args, str);
+  this->print(LOG_WARNING, str, args);
+  va_end(args);
 }
 
 void Log::error(const char *str, ...)
@@ -130,7 +132,7 @@ void Log::error(const char *str, ...)
   }
   if (this->log_level <= LOG_ERROR) return;
   va_start(va, str);
-  vprintf(str, va);
+  vfprintf(stderr, str, va);
   va_end(va);
 }
 
