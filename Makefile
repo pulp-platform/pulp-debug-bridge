@@ -66,6 +66,12 @@ endif
 CFLAGS += -g -O0 -fPIC -std=gnu++11 -MMD -MP -Isrc -Iinclude -Wall -Werror \
  -I$(INSTALL_DIR)/include $(FTDI_CFLAGS) $(SDL_CFLAGS)
 
+ifneq ($(OS),Windows_NT)
+  ifeq "$(shell uname -s)" "Darwin"
+    CFLAGS += -Wno-unused-private-field
+  endif
+endif
+
 LDFLAGS += -g -shared $(FTDI_LDFLAGS) $(SDL_LDFLAGS)
 
 SRCS = src/python_wrapper.cpp src/ioloop.cpp src/cables/jtag.cpp src/reqloop.cpp \
