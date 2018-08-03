@@ -179,9 +179,8 @@ class gap_debug_bridge(debug_bridge):
         return 0
 
 
-    def flash(self, fimages):
+    def flash(self, f_path):
         MAX_BUFF_SIZE = (350*1024)
-        f_path = fimages[0]
         addrHeader = self._get_binary_symbol_addr('flasherHeader')
         addrImgRdy = addrHeader
         addrFlasherRdy = addrHeader + 4

@@ -533,7 +533,7 @@ bool Rsp::Client::mem_write(char* data, size_t len)
 bool Rsp::Client::reg_read(char* data, size_t len)
 {
   uint32_t addr;
-  uint32_t rdata;
+  uint32_t rdata = 0;
   char data_str[10];
 
   if (sscanf(data, "%x", &addr) != 1) {
@@ -592,10 +592,12 @@ bool Rsp::Client::reg_write(char* data, size_t len)
 bool Rsp::Client::regs_send()
 {
   uint32_t gpr[32];
-  uint32_t pc;
+  uint32_t pc = 0;
   char regs_str[512];
   int i;
   Target_core * core;
+
+  memset(gpr, 0, sizeof(gpr));
 
   core = this->top->target->get_thread(thread_sel);
 

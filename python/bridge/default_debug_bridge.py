@@ -276,8 +276,10 @@ class debug_bridge(object):
 
         return 0
 
-    def load(self):
-        mode = self.config.get('**/debug_bridge/boot-mode').get()
+    def load(self, mode=None):
+        if mode is None:
+            mode = self.config.get('**/debug_bridge/boot-mode').get()
+
         if mode == 'jtag':
             return self.load_jtag()
         elif mode == 'jtag_hyper':
@@ -391,6 +393,9 @@ class debug_bridge(object):
             self.get_cable().get_instance(), addr)
 
         return 0
+
+    def is_ioloop_active():
+        return self.ioloop_handle is not None
 
     def reqloop(self):
 
@@ -593,19 +598,20 @@ class debug_bridge(object):
         return 0
 
     def wait(self):
+        exiting = 0
         if self.gdb_handle is not None:
-            self.module.gdb_server_close(self.gdb_handle, 0)
-            if self.do_exit:
-                return 0
+            self.module.gdb_server_close(self.gdb_handle, exiting)
+            exiting = 1
+            self.gdb_handle = None
 
-        # The wait function returns in case ioloop has been launched
-        # as it will check for end of application.
-        # Otherwise it will wait for reqloop for ever
         if self.ioloop_handle is not None:
-            return self.module.bridge_ioloop_close(self.ioloop_handle, 0)
+            res = self.module.bridge_ioloop_close(self.ioloop_handle, exiting)
+            exiting = 1
+            self.ioloop_handle = None
 
         if self.reqloop_handle is not None:
-            self.module.bridge_reqloop_close(self.reqloop_handle, 0)
+            self.module.bridge_reqloop_close(self.reqloop_handle, exiting)
+            self.reqloop_handle = None
 
         self.log(1, "Wait is exiting")
 

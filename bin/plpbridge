@@ -106,12 +106,15 @@ def write(bridge):
     return 0
 
 
-def load(bridge):
+def load(bridge, binaries=None, mode=None):
+    if binaries is None:
+        binaries = config.get('**/loader/binaries').get_dict()
 
     if args.verbose >= 4:
-        print ('Loading ELF binaries (path: %s)' % ' '.join(bridge.config.get('**/loader/binaries').get_dict()))
+        print ('Loading ELF binaries (path: %s)' % ' '.join(binaries))
 
-    return bridge.load()
+    bridge.binaries = binaries
+    return bridge.load(mode=mode)
 
 
 def ioloop(bridge):
@@ -157,15 +160,21 @@ def wait(bridge):
 
 def flash(bridge):
     # When using the flasher, the binaries should be the flasher
-    bridge.binaries= [os.environ["INSTALL_DIR"] + "/bin/flasher"]
+    if args.flasher is not None:
+        flasher = args.flasher
+    else:
+        flasher = os.environ["INSTALL_DIR"] + "/bin/flasher"
+
     if args.verbose >=4:
         print("Flashing the flash image")
 
-    load(bridge)
-    ioloop(bridge)
-    start(bridge)
-    return bridge.flash(args.fimages)
-
+    retval = load(bridge, binaries=[ flasher ], mode='jtag')
+    retval = retval==0 and ioloop(bridge)
+    retval = retval==0 and start(bridge)
+    retval = retval==0 and bridge.flash(args.flash_image)
+    retval = retval==0 and wait(bridge)
+    retval = retval==0 and stop(bridge)
+    return retval
 
 def reset(bridge):
     if args.verbose >= 4:
@@ -238,7 +247,8 @@ parser.add_argument("--help", dest="help", action='store_true', default=False, h
 parser.add_argument("--cable", dest="cable", default=None, help="Specify cable")
 parser.add_argument("--chip", dest="chip", default=None, help="Specify target chip")
 parser.add_argument("--binary", dest="binaries", default=[], action="append", help="Specify a binary to be loaded by the load command")
-parser.add_argument("--flash-image", dest="fimages", default=[], action="append", help="Specify a flash image to be flashed")
+parser.add_argument("--flash-image", dest="flash_image", default=None, help="Specify a flash image to be flashed")
+parser.add_argument("--flasher", dest="flasher", default=None, help="Specify absolute path of on chip flash program")
 
 [args, otherArgs] = parser.parse_known_args()
 

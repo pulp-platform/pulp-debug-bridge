@@ -170,6 +170,7 @@ bool Target_core::gpr_write(unsigned int i, uint32_t data)
 
 bool Target_core::ie_write(uint32_t data)
 {
+  if (!is_on) return false;
   top->log->print(LOG_DEBUG, "%d:%d -----> TRAP ENABLED\n", this->get_cluster_id(), core_id);
   return this->write(DBG_IE_REG, data);
 }
@@ -180,6 +181,7 @@ void Target_core::set_power(bool is_on)
   top->log->detail("Core %d:%d check power %d -> %d\n", this->get_cluster_id(), core_id, this->is_on, is_on);
   if (is_on != this->is_on)
   {
+    top->log->debug("Core %d:%d power state changed\n", this->get_cluster_id(), core_id, this->is_on, is_on);
     this->pc_is_cached = false; // power state has changed - pc cannot be cached
     this->is_on = is_on;
     if (is_on) {
@@ -325,6 +327,8 @@ bool Target_core::actual_pc_read(unsigned int* pc)
     return true;
   }
 
+  if (!is_on) return false;
+
   this->read(DBG_PPC_REG, &ppc);
   this->read(DBG_NPC_REG, &npc);
   this->read_hit(&is_hit, &is_sleeping);
@@ -346,6 +350,8 @@ bool Target_core::actual_pc_read(unsigned int* pc)
 
 bool Target_core::read_hit(bool *is_hit, bool *is_sleeping)
 {
+  if (!is_on) return false;
+
   uint32_t hit;
   if (this->read(DBG_HIT_REG, &hit)) {
     *is_hit = step && ((hit & 0x1) == 0x1);
@@ -361,6 +367,8 @@ bool Target_core::read_hit(bool *is_hit, bool *is_sleeping)
 
 uint32_t Target_core::get_cause()
 {
+  if (!is_on) return 0x1f;
+
   uint32_t cause;
   if (!this->read(DBG_CAUSE_REG, &cause)){
     top->log->debug("unable to read cause register\n");
@@ -641,8 +649,9 @@ void Target_cluster_common::update_power()
 
 void Target_cluster_common::set_power(bool is_on)
 {
-  this->top->log->debug("Set cluster power (cluster: %d, old_is_on: %d, new_is_on: %d)\n", cluster_id, this->is_on, is_on);
+  top->log->detail("Cluster %d check power %d -> %d\n", this->cluster_id, this->is_on, is_on);
   if (is_on != this->is_on) {
+    top->log->debug("Cluster %d power state changed\n", this->cluster_id, this->is_on, is_on);
     this->is_on = is_on;
     if (this-is_on) {
       this->top->log->debug("Do controller init\n");
