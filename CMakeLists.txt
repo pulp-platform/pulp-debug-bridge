@@ -1,0 +1,137 @@
+cmake_minimum_required(VERSION 3.5)
+project(plpbridge VERSION 1.0.0)
+set (CMAKE_CXX_STANDARD 11)
+set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake/")
+
+option(WithFrameBuffer "Build with framebuffer support" OFF)
+option(WithFTDI "Build with FTDI support" ON)
+
+include(ExternalProject)
+
+set(EXTERNAL_INSTALL_LOCATION ${CMAKE_BINARY_DIR}/external)
+
+ExternalProject_Add(
+    json-tools
+    PREFIX ${CMAKE_BINARY_DIR}/json-tools
+    GIT_REPOSITORY https://github.com/GreenWaves-Technologies/json-tools
+    CMAKE_ARGS -DCMAKE_INSTALL_PREFIX=${CMAKE_BINARY_DIR}/json-tools
+    LOG_DOWNLOAD ON
+    )
+
+ExternalProject_Get_Property(json-tools install_dir)
+set(JSON_TOOLS_INCLUDE_DIR ${install_dir}/include)
+set(JSON_TOOLS_LIB ${install_dir}/lib/${CMAKE_STATIC_LIBRARY_PREFIX}json${CMAKE_STATIC_LIBRARY_SUFFIX})
+set(JSON_TOOLS_PYDIR ${install_dir}/python)
+
+ExternalProject_Add(
+    pulp-configs
+    PREFIX ${CMAKE_BINARY_DIR}/pulp-configs
+    GIT_REPOSITORY https://github.com/pulp-platform/pulp-configs.git
+    BUILD_IN_SOURCE ON
+    CONFIGURE_COMMAND ""
+    BUILD_COMMAND make
+    INSTALL_COMMAND ""
+    LOG_DOWNLOAD ON
+    )
+
+ExternalProject_Get_Property(pulp-configs source_dir)
+set(PULP_CONFIGS_BIN ${source_dir}/bin)
+set(PULP_CONFIGS_CONFIGS ${source_dir}/configs)
+
+add_library(libplpbridge SHARED
+    src/cables/adv_dbg_itf/adv_dbg_itf.cpp
+    src/cables/jtag-proxy/jtag-proxy.cpp
+    src/cables/jtag.cpp
+    src/python_wrapper.cpp
+    src/reqloop.cpp
+    src/gdb-server/gdb-server.cpp
+    src/gdb-server/rsp.cpp
+    src/gdb-server/target.cpp
+    src/gdb-server/Tcp_listener.cpp
+    src/gdb-server/breakpoints.cpp
+    src/ioloop.cpp
+    ${JSON_TOOLS_SRC_DIR}
+)
+
+target_include_directories(libplpbridge PRIVATE 
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/cables/jtag-proxy
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/cables/adv_dbg_itf
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/cables/cables
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/gdb-server
+    ${JSON_TOOLS_INCLUDE_DIR}
+)
+
+target_link_libraries(libplpbridge PRIVATE ${JSON_TOOLS_LIB})
+
+if (WithFTDI)
+    find_package(FTDI REQUIRED)
+    if(FTDI_FOUND)
+        message(STATUS "Compiling in FTDI support")
+        target_compile_definitions(libplpbridge PUBLIC __USE_FTDI__)
+        target_sources(libplpbridge PRIVATE src/cables/ftdi/ftdi.cpp)
+        target_include_directories(libplpbridge
+            PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include/cables/ftdi
+                    ${FTDI_INCLUDE_DIR})
+        target_link_libraries(libplpbridge PRIVATE ${FTDI_LIBRARY})
+    else()
+        message(FATAL_ERROR "Can't find ftdi library")
+    endif()
+endif()
+
+if (WithFrameBuffer)
+    message(STATUS "Before")
+    find_package(SDL2 REQUIRED)
+    message(STATUS "After")
+    if (SDL2_LIBRARY)
+        message(STATUS "Compiling with framebuffer support")
+        target_compile_definitions(libplpbridge PUBLIC __USE_SDL__)
+        target_include_directories(libplpbridge PRIVATE ${SDL2_INCLUDE_DIR})
+        target_link_libraries(libplpbridge PRIVATE ${SDL2_LIBRARY})
+    else()
+        message(FATAL_ERROR "Can't find sdl2 library")
+    endif()
+endif()
+
+set_target_properties(libplpbridge PROPERTIES
+    VERSION ${PROJECT_VERSION}
+    OUTPUT_NAME "plpbridge")
+
+add_dependencies(libplpbridge json-tools)
+add_dependencies(libplpbridge pulp-configs)
+
+install(
+    DIRECTORY ${PULP_CONFIGS_BIN} DESTINATION .
+    FILE_PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE
+    FILES_MATCHING PATTERN "*.py"
+)
+
+install(
+    DIRECTORY ${PULP_CONFIGS_BIN} DESTINATION .
+    FILE_PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE
+    FILES_MATCHING PATTERN "pulp_*"
+)
+
+install(
+    DIRECTORY ${PULP_CONFIGS_CONFIGS} DESTINATION .
+    FILES_MATCHING PATTERN "*.json"
+)
+
+install(TARGETS libplpbridge DESTINATION lib)
+
+install(
+    DIRECTORY python DESTINATION .
+    FILE_PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE
+    FILES_MATCHING PATTERN "*.py"
+)
+
+install(
+    DIRECTORY bin DESTINATION .
+    FILE_PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE
+)
+
+install(
+    DIRECTORY ${JSON_TOOLS_PYDIR} DESTINATION .
+    FILE_PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE
+    FILES_MATCHING PATTERN "*.py"
+)
