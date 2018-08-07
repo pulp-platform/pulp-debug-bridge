@@ -250,14 +250,16 @@ bool Reqloop::handle_req_disconnect(hal_debug_struct_t *debug_struct, hal_bridge
 
 bool Reqloop::handle_req_open(hal_debug_struct_t *debug_struct, hal_bridge_req_t *req, hal_bridge_req_t *target_req)
 {
-  char name[req->open.name_len+1];
-  cable->access(false, (unsigned int)(long)req->open.name, req->open.name_len+1, (char*)name);
+  std::vector<char> name(req->open.name_len+1);
 
-  int res = open(name, req->open.flags, req->open.mode);
+  cable->access(false, (unsigned int)(long)req->open.name, req->open.name_len+1, &(name[0]));
+
+  int res = open(&(name[0]), req->open.flags, req->open.mode);
 
   cable->access(true, (unsigned int)(long)&target_req->open.retval, 4, (char*)&res);
 
   this->reply_req(debug_struct, target_req, req);
+
   return false;
 }
 

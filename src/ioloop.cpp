@@ -116,8 +116,8 @@ void Ioloop::ioloop_routine()
       while(1) {
         cable->access(false, (unsigned int)(long)&debug_struct->pending_putchar, 4, (char*)&value);
         if (value == 0) break;
-        char buff[value+1];
-        cable->access(false, (unsigned int)(long)&debug_struct->putc_buffer, value, (char*)buff);
+        std::vector<char> buff(value + 1);
+        cable->access(false, (unsigned int)(long)&debug_struct->putc_buffer, value, &(buff[0]));
         unsigned int zero = 0;
         cable->access(true, (unsigned int)(long)&debug_struct->pending_putchar, 4, (char*)&zero);
         for (uint i=0; i<value; i++) putchar(buff[i]);

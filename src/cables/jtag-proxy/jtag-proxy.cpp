@@ -93,13 +93,14 @@ bool Jtag_proxy::bit_inout(char* inbit, char outbit, bool last)
 
 bool Jtag_proxy::proxy_stream(char* instream, char* outstream, unsigned int n_bits, bool last, int bit)
 {
-  proxy_req_t req = { .type=DEBUG_BRIDGE_JTAG_REQ };
+  proxy_req_t req;
+  req.type=DEBUG_BRIDGE_JTAG_REQ;
   req.jtag.bits = n_bits;
   req.jtag.tdo = instream != NULL;
 
   if (n_bits >= (1<<16)) return false;
 
-  uint8_t buffer[n_bits];
+  std::vector<uint8_t> buffer(n_bits, 0);
   uint8_t value = 0;
   if (outstream)
   {
@@ -118,10 +119,6 @@ bool Jtag_proxy::proxy_stream(char* instream, char* outstream, unsigned int n_bi
       value >>= 1;
     }
   }
-  else
-  {
-    ::memset(buffer, 0, n_bits); 
-  }
 
   if (last)
   {
@@ -129,7 +126,7 @@ bool Jtag_proxy::proxy_stream(char* instream, char* outstream, unsigned int n_bi
   }
 
   ::send(m_socket, (void *)&req, sizeof(req), 0);
-  ::send(m_socket, (void *)buffer, n_bits, 0);
+  ::send(m_socket, (void *)(&(buffer[0])), n_bits, 0);
   if (instream != NULL)
   {
 
@@ -158,7 +155,8 @@ int Jtag_proxy::flush()
 
 bool Jtag_proxy::chip_reset(bool active)
 {
-  proxy_req_t req = { .type=DEBUG_BRIDGE_RESET_REQ };
+  proxy_req_t req;
+  req.type=DEBUG_BRIDGE_RESET_REQ;
   req.reset.active = active;
   ::send(m_socket, (void *)&req, sizeof(req), 0);
   return true;

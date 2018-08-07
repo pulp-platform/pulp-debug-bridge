@@ -65,11 +65,11 @@
 Ftdi::Ftdi(js::config *config, Log* log, FTDIDeviceID id) : log (log), m_id (id), config(config)
 {
   // add all our known devices to the map
-  m_descriptors[Olimex].push_back((struct device_desc){0x15ba, 0x002a});
-  m_descriptors[Olimex].push_back((struct device_desc){0x15ba, 0x002b});
+  m_descriptors[Olimex].push_back(device_desc(0x15ba, 0x002a));
+  m_descriptors[Olimex].push_back(device_desc(0x15ba, 0x002b));
 
-  m_descriptors[Digilent].push_back((struct device_desc){0x0403, 0x6010}); // ftdi2232 Gapuino
-  m_descriptors[Digilent].push_back((struct device_desc){0x1d6b, 0x0002}); // ftdi2232 Gapuino
+  m_descriptors[Digilent].push_back(device_desc(0x0403, 0x6010)); // ftdi2232 Gapuino
+  m_descriptors[Digilent].push_back(device_desc(0x1d6b, 0x0002)); // ftdi2232 Gapuino
 }
 
 Ftdi::~Ftdi()
@@ -84,7 +84,7 @@ Ftdi::~Ftdi()
 bool
 Ftdi::connect(js::config *config)
 {
-  char buf[256];
+  unsigned char buf[256];
   std::list<struct device_desc> dev_desc = m_descriptors[m_id];
   int error;
   const char *description = NULL;
@@ -114,7 +114,7 @@ Ftdi::connect(js::config *config)
   // Device Selection
   if (description == NULL) {
     std::list<struct device_desc> dev_available;
-    struct device_desc dev;
+    struct device_desc *dev = nullptr;
 
     for (std::list<struct device_desc>::iterator it = dev_desc.begin();
          it != dev_desc.end(); it++) {
@@ -128,7 +128,7 @@ Ftdi::connect(js::config *config)
           if (dev_try_open(it->vid, it->pid, i)) {
             log->user("Found ftdi device i:0x%X:0x%X:%d\n",
                        it->vid, it->pid, i);
-            dev_available.push_back({.vid = it->vid, .pid = it->pid, .index = (unsigned int)i});
+            dev_available.push_back(device_desc(it->vid, it->pid, (unsigned int)i));
             break;
           }
         }
@@ -142,10 +142,10 @@ Ftdi::connect(js::config *config)
       goto fail;
     }
 
-    dev = dev_available.front();
+    dev = &dev_available.front();
     log->user("Connecting to ftdi device i:0x%X:0x%X:%d\n",
-               dev.vid, dev.pid, dev.index);
-    error = ftdi_usb_open_desc_index(&m_ftdic, dev.vid, dev.pid, NULL, NULL, dev.index);
+               dev->vid, dev->pid, dev->index);
+    error = ftdi_usb_open_desc_index(&m_ftdic, dev->vid, dev->pid, NULL, NULL, dev->index);
   } else {
     log->user("Connecting to ftdi device %s\n", description);
     error = ftdi_usb_open_string(&m_ftdic, description);
@@ -218,7 +218,7 @@ Ftdi::connect(js::config *config)
     goto fail;
   }
 
-  if(ft2232_write(buf, 7, 0) != 7) {
+  if(ft2232_write((char *)buf, 7, 0) != 7) {
     log->error("ft2232: Initial write failed\n");
     goto fail;
   }
@@ -259,7 +259,7 @@ bool Ftdi::chip_reset(bool active)
     {
       if (active)
       {
-        char buf[256];
+        unsigned char buf[256];
         buf[0] = SET_BITS_HIGH;
         buf[1] = ~0x01;
         buf[2] = 0x3;
@@ -268,7 +268,7 @@ bool Ftdi::chip_reset(bool active)
         buf[5] = 0x3;
         buf[6] = SEND_IMMEDIATE;
 
-        if(ft2232_write(buf, 7, 0) != 7) return false;
+        if(ft2232_write((char *)buf, 7, 0) != 7) return false;
       }
       return true;
     }
@@ -456,7 +456,7 @@ Ftdi::ft2232_write(char *buf, int len, int recv) {
 
 bool
 Ftdi::ft2232_mpsse_open() {
-  char buf[3];
+  unsigned char buf[3];
   int ret;
 
   // This sequence might seem weird and containing superfluous stuff.
@@ -515,7 +515,7 @@ Ftdi::ft2232_mpsse_open() {
   buf[0] = TCK_DIVISOR;
   buf[1] = 0x2;
   buf[2] = 0x0;
-  ret = ft2232_write(buf, 3, 0 );
+  ret = ft2232_write((char *)buf, 3, 0);
   if (ret < 0) {
     log->warning("ft2232: Failed to set TCK divisor\n");
     goto fail;
@@ -523,7 +523,7 @@ Ftdi::ft2232_mpsse_open() {
 
   // switch off loopback
   buf[0] = LOOPBACK_END;
-  ret = ft2232_write(buf, 1, 0);
+  ret = ft2232_write((char *)buf, 1, 0);
   if (ret < 0) {
     log->warning("ft2232: Failed to switch off loopback\n");
     goto fail;
@@ -680,9 +680,8 @@ Ftdi::stream_inout(char* instream, char* outstream, unsigned int n_bits, bool la
   else
   {
     int bytes = (n_bits + 7) / 8;
-    char buffer[bytes];
-    ::memset(buffer, 0, bytes);
-    if (!stream_out_internal(buffer, n_bits, instream != NULL, last)) {
+    std::vector<char> buffer(bytes, 0);
+    if (!stream_out_internal(&(buffer[0]), n_bits, instream != NULL, last)) {
       log->warning("ft2232: ftdi_stream_inout has failed\n");
       return false;
     }
@@ -884,7 +883,7 @@ bool
 Ftdi::set_bit_value(int bit, int value)
 {
 
-  char buf[4];
+  unsigned char buf[4];
 
   bits_value = (bits_value & ~(1<<bit)) | (value << bit);
   if (bit >= 8)
@@ -902,7 +901,7 @@ Ftdi::set_bit_value(int bit, int value)
     buf[3] = SEND_IMMEDIATE;
   }
 
-  if (ft2232_write(buf, 4, 0) != 4) return false;
+  if (ft2232_write((char *)buf, 4, 0) != 4) return false;
   flush();
   return true;
 }
@@ -924,7 +923,7 @@ Ftdi::jtag_reset(bool active)
     {
       if (active)
       {
-        char buf[256];
+        unsigned char buf[256];
         buf[0] = SET_BITS_HIGH;
         buf[1] = ~0x01;
         buf[2] = 0x3;
@@ -933,7 +932,7 @@ Ftdi::jtag_reset(bool active)
         buf[5] = 0x3;
         buf[6] = SEND_IMMEDIATE;
 
-        if(ft2232_write(buf, 7, 0) != 7) return false;
+        if(ft2232_write((char *)buf, 7, 0) != 7) return false;
       }
       return true;
     }    

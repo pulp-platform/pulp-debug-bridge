@@ -21,6 +21,7 @@
 
 #include <vector>
 #include <stdint.h>
+#include <memory>
 
 #include "cables/log.h"
 #include "cable.hpp"

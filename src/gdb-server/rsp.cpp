@@ -353,7 +353,7 @@ bool Rsp::Client::query(char* data, size_t len)
     const char* str_default = "Unknown Core";
     char str[REPLY_BUF_LEN];
     unsigned int thread_id;
-    if (sscanf(data, "qThreadExtraInfo,%d", &thread_id) != 1) {
+    if (sscanf(data, "qThreadExtraInfo,%x", &thread_id) != 1) {
       top->log->print(LOG_ERROR, "Could not parse qThreadExtraInfo packet\n");
       return this->send_str("");
     }

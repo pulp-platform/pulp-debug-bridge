@@ -50,7 +50,6 @@ typedef struct {
       int32_t active;
     } reset;
   };
-
 } proxy_req_t;
 
 

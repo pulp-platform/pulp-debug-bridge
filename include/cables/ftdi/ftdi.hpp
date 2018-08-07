@@ -77,6 +77,9 @@ class Ftdi : public Cable {
       unsigned int vid;
       unsigned int pid;
       unsigned int index;
+
+      device_desc(int vid, int pid, int index) : vid(vid), pid(pid), index(index) {}
+      device_desc(int vid, int pid) : vid(vid), pid(pid), index(0) {}
     };
 
     bool set_bit_value(int bit, int value);

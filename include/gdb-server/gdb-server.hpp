@@ -27,11 +27,10 @@
 #include <stdlib.h>
 #include <errno.h>
 
-
-
 #include <fcntl.h>
 #include <string.h>
 #include <sys/select.h>
+
 #include <thread>
 #include <unordered_map>
 

@@ -469,8 +469,6 @@ bool Adv_dbg_itf::write_internal(ADBG_OPCODES opcode, unsigned int addr, int siz
 
 bool Adv_dbg_itf::read_internal(ADBG_OPCODES opcode, unsigned int addr, int size, char* buffer)
 {
-  char recv[size];
-  char buf[size < 8 ? 8 : size];
   int bytewidth;
   int nwords;
   uint32_t crc = 0xFFFFFFFF;
@@ -497,6 +495,9 @@ bool Adv_dbg_itf::read_internal(ADBG_OPCODES opcode, unsigned int addr, int size
       return false;
   }
 
+  std::vector<char> buf(size < 8 ? 8 : size);
+  std::vector<char> recv(size);
+
   int factor = 1;
 
   // Increase the word size in case we have big burst with good multiple
@@ -517,6 +518,7 @@ bool Adv_dbg_itf::read_internal(ADBG_OPCODES opcode, unsigned int addr, int size
 
   jtag_pad_before();
 
+
   // build burst setup command
   // bit 52: 0
   // bit 51-48: opcode
@@ -530,7 +532,7 @@ bool Adv_dbg_itf::read_internal(ADBG_OPCODES opcode, unsigned int addr, int size
   buf[1] = (nwords * factor) >> 8;
   buf[0] = (nwords * factor) >> 0;
 
-  if (!m_dev->stream_inout(NULL, buf, 53, m_tms_on_last)) {
+  if (!m_dev->stream_inout(NULL, &(buf[0]), 53, m_tms_on_last)) {
     log->warning("ft2232: failed to write opcode stream to device\n");
     return false;
   }
@@ -551,7 +553,7 @@ bool Adv_dbg_itf::read_internal(ADBG_OPCODES opcode, unsigned int addr, int size
 
   while (true) {
     buf[0] = 0x0;
-    if (!m_dev->bit_inout(buf, 0x0, false)) {
+    if (!m_dev->bit_inout(&(buf[0]), 0x0, false)) {
       log->warning("ft2232: failed to read start bit from device\n");
       return false;
     }
@@ -571,24 +573,24 @@ bool Adv_dbg_itf::read_internal(ADBG_OPCODES opcode, unsigned int addr, int size
   }
 
   // make sure we only send 0's to the device
-  memset(buf, 0, size);
+  memset(&(buf[0]), 0, size);
 
   // receive data
   crc = 0xFFFFFFFF;
   for (int i = 0; i < nwords; i++) {
-    if (!m_dev->stream_inout(recv, buf, bytewidth*8, false)) {
+    if (!m_dev->stream_inout(&(recv[0]), &(buf[0]), bytewidth*8, false)) {
       log->warning("ft2232: failed to receive data from device\n");
       return false;
     }
 
-    memcpy(buffer, recv, bytewidth);
-    crc = crc_compute(crc, recv, bytewidth*8);
+    memcpy(buffer, &(recv[0]), bytewidth);
+    crc = crc_compute(crc, &(recv[0]), bytewidth*8);
 
     buffer = buffer + bytewidth;
   }
 
   // receive crc
-  if (!m_dev->stream_inout(recv, buf, 33, m_tms_on_last)) {
+  if (!m_dev->stream_inout(&(recv[0]), &(buf[0]), 33, m_tms_on_last)) {
     log->warning("ft2232: failed to read crc from device\n");
     return false;
   }
@@ -599,7 +601,7 @@ bool Adv_dbg_itf::read_internal(ADBG_OPCODES opcode, unsigned int addr, int size
   m_dev->jtag_write_tms(0); // run test idle
 
   uint32_t recv_crc;
-  memcpy(&recv_crc, recv, 4);
+  memcpy(&recv_crc, &(recv[0]), 4);
   if (crc != recv_crc) {
     log->warning ("ft2232: crc from adv dbg unit did not match for request to addr %08X\n", addr);
     log->debug ("ft2232: Got %08X, expected %08X\n", recv_crc, crc);
@@ -727,7 +729,7 @@ bool Adv_dbg_itf::jtag_set_selected_ir(char ir)
     if(i == m_jtag_device_sel)
       buf[0] = ir;
     else
-      buf[0] = 0xFF;
+      buf[0] = (char) 0xFF;
 
     is_last = (m_jtag_devices.size() - 1 == i);
 
