@@ -28,6 +28,10 @@ $(info #### Release type is $(RELEASE_TYPE))
 $(info #### Installing to $(INSTALL_DIR))
 # $(info #### Installing target files to $(TARGET_INSTALL_DIR))
 
+ifeq ($(DONT_USE_SDL),"")
+  EXTRA_CMAKE_ARGS+=-DWithFrameBuffer
+endif
+
 MAKEFILE_DIR = $(dir $(realpath $(firstword $(MAKEFILE_LIST))))
 
 all: $(BUILD_DIR)/CMakeCache.txt
@@ -45,4 +49,4 @@ $(BUILD_DIR):
 $(BUILD_DIR)/CMakeCache.txt: $(BUILD_DIR)
 	( cd $(BUILD_DIR) ; \
 	  cmake -DCMAKE_BUILD_TYPE=$(RELEASE_TYPE) -DCMAKE_INSTALL_PREFIX=$(INSTALL_DIR) \
-		$(MAKEFILE_DIR) )
+		$(EXTRA_CMAKE_ARGS) $(MAKEFILE_DIR) )

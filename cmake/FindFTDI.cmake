@@ -10,7 +10,8 @@ FIND_PATH(FTDI_INCLUDE_DIR
 NAMES   ftdi.h
 PATHS   /usr/local/include
         /usr/include
-	/opt/local/include
+    /opt/local/include
+    /libftdi/include
 PATH_SUFFIXES libftdi libftdi1
 )
 
@@ -19,6 +20,7 @@ NAMES ftdi ftdi1
 PATHS /usr/lib
       /usr/local/lib
       /opt/local/lib
+      /libftdi/lib64
 )
 
 IF (FTDI_LIBRARY)
