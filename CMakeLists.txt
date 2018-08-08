@@ -121,11 +121,11 @@ if (WithFTDI)
             LOG_DOWNLOAD ON
         )
         ExternalProject_Get_Property(ftdi source_dir)
-        link_directories(${source_dir}/lib64)
+        link_directories(${source_dir}/bin64)
         target_include_directories(libplpbridge
             PRIVATE
                 ${CMAKE_CURRENT_SOURCE_DIR}/include/cables/ftdi
-                ${source_dir}/include)
+                ${source_dir}/include/libftdi)
         target_link_libraries(libplpbridge PRIVATE libftdi1.dll)
 
         add_dependencies(libplpbridge ftdi)
