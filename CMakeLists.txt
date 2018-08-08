@@ -21,12 +21,33 @@ project(plpbridge VERSION 1.0.0)
 set (CMAKE_CXX_STANDARD 11)
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake/")
 
+set(FTDI_DEVKIT_NAME, "libftdi1-1.4git_devkit_x86_x64_14June2018")
+set(FTDI_DEVKIT_URL, "https://sourceforge.net/projects/picusb/files/${FTDI_DEVKIT_NAME}.zip/download")
+
 option(WithFrameBuffer "Build with framebuffer support" OFF)
 option(WithFTDI "Build with FTDI support" ON)
 
 include(ExternalProject)
 
 set(EXTERNAL_INSTALL_LOCATION ${CMAKE_BINARY_DIR}/external)
+
+# Download LibFTDI SDK if on windows
+
+if(WIN32)
+    ExternalProject_Add(
+        ftdi
+        PREFIX ${CMAKE_BINARY_DIR}/ftdi
+        URL "https://sourceforge.net/projects/picusb/files/libftdi1-1.4git_devkit_x86_x64_14June2018.zip/download"
+        DOWNLOAD_NAME "libftdi1-1.4git_devkit_x86_x64_14June2018.zip"
+        CONFIGURE_COMMAND ""
+        BUILD_COMMAND ""
+        INSTALL_COMMAND ""
+        LOG_DOWNLOAD ON
+    )
+    ExternalProject_Get_Property(ftdi source_dir)
+    set(FTDI_LIB_SEARCH ${source_dir})    
+endif()
+
 
 # Add in JSON-TOOLS
 ExternalProject_Add(
@@ -91,6 +112,10 @@ add_dependencies(libplpbridge json-tools)
 # Compile configs
 add_dependencies(libplpbridge pulp-configs)
 
+if(WIN32)
+  add_dependencies(libplpbridge ftdi)
+endif()
+
 # Enable all warnings as errors
 if(MSVC)
     target_compile_options(libplpbridge PRIVATE /W4 /WX)
@@ -104,7 +129,7 @@ endif(MSVC)
 
 # Optionally add in FTDI support
 if (WithFTDI)
-    find_package(FTDI REQUIRED)
+    find_package(FTDI REQUIRED PATHS ${FTDI_LIB_SEARCH})
     if(FTDI_FOUND)
         message(STATUS "Compiling in FTDI support")
         target_compile_definitions(libplpbridge PUBLIC __USE_FTDI__)
