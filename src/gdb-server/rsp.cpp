@@ -103,7 +103,7 @@ void Rsp::client_connected(Tcp_listener::tcp_socket_ptr_t client)
   top->log->debug("RSP: finished notified\n");
 }
 
-void Rsp::client_disconnected(Tcp_listener::tcp_socket_ptr_t client)
+void Rsp::client_disconnected(Tcp_listener::tcp_socket_ptr_t)
 {
   top->log->user("RSP: TCP client disconnected\n");
 }
@@ -239,7 +239,7 @@ void Rsp::Client::client_routine()
 bool Rsp::Client::v_packet(char* data, size_t len)
 {
   top->log->print(LOG_DEBUG, "V Packet: %s\n", data);
-  if (strncmp ("vKill", data, strlen ("vKill")) == 0)
+  if (strncmp ("vKill", data, std::min(strlen ("vKill"), len)) == 0)
   {
     rsp->halt_target();
     return this->send_str("OK");
@@ -250,16 +250,17 @@ bool Rsp::Client::v_packet(char* data, size_t len)
   //   top->log->print(LOG_DEBUG, "Run: %s\n", filename);
   //   return this->send_str("X09;process:a410");
   // }
-  else if (strncmp ("vCont?", data, strlen ("vCont?")) == 0)
+  else if (strncmp ("vCont?", data, std::min(strlen ("vCont?"), len)) == 0)
   {
     return this->send_str("vCont;c;s;C;S");
   }
-  else if (strncmp ("vCont", data, strlen ("vCont")) == 0)
+  else if (strncmp ("vCont", data, std::min(strlen ("vCont"), len)) == 0)
   {
 
     this->top->target->clear_resume_all();
 
     // vCont can contains several commands, handle them in sequence
+    // TODO - this could use strtok_s to be more robust
     char *str = strtok(&data[6], ";");
     while(str != NULL) {
       // Extract command and thread ID
@@ -413,7 +414,7 @@ bool Rsp::Client::query(char* data, size_t len)
 }
 
 
-bool Rsp::Client::mem_read(char* data, size_t len)
+bool Rsp::Client::mem_read(char* data, size_t)
 {
   unsigned char buffer[512];
   char reply[512];
@@ -530,7 +531,7 @@ bool Rsp::Client::mem_write(char* data, size_t len)
 
 
 
-bool Rsp::Client::reg_read(char* data, size_t len)
+bool Rsp::Client::reg_read(char* data, size_t)
 {
   uint32_t addr;
   uint32_t rdata = 0;
@@ -563,7 +564,7 @@ bool Rsp::Client::reg_read(char* data, size_t len)
 
 
 
-bool Rsp::Client::reg_write(char* data, size_t len)
+bool Rsp::Client::reg_write(char* data, size_t)
 {
   uint32_t addr;
   uint32_t wdata;
@@ -666,7 +667,7 @@ int Rsp::Client::get_signal(Target_core *core)
   }
 }
 
-bool Rsp::Client::cont(char* data, size_t len)
+bool Rsp::Client::cont(char* data, size_t)
 {
   uint32_t sig;
   uint32_t addr;
@@ -708,6 +709,8 @@ bool Rsp::Client::step(char* data, size_t len)
   uint32_t npc;
   size_t i;
   Target_core *core;
+
+  if (len < 1) return false;
 
   // strip signal first
   if (data[0] == 'S') {
@@ -777,6 +780,8 @@ bool Rsp::Client::multithread(char* data, size_t len)
 {
   int thread_id;
   top->log->debug("Subsequent %c operations on thread %s\n", data[0], &data[1]);
+
+  if (len < 1) return false;
 
   switch (data[0]) {
     case 'c':
@@ -1052,6 +1057,8 @@ bool Rsp::Client::bp_insert(char* data, size_t len)
   enum mp_type type;
   uint32_t addr;
   int bp_len;
+
+  if (len < 1) return false;
 
   if (3 != sscanf(data, "Z%1d,%x,%1d", (int *)&type, &addr, &bp_len)) {
     top->log->error("Could not get three arguments\n");

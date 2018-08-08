@@ -188,7 +188,7 @@ Tcp_listener::Tcp_socket::Tcp_socket(Tcp_listener *listener, socket_t socket) : 
 {
 }
 
-ssize_t Tcp_listener::Tcp_socket::check_error(func_ret_t ret)
+ssize_t Tcp_listener::Tcp_socket::check_error(func_ret_t)
 {
 #ifdef _WIN32
   int err_num;
@@ -399,7 +399,7 @@ func_ret_t Tcp_listener::Tcp_socket::receive(void * buf, size_t len, int ms, boo
   return this->recvsend(false, buf, len, await_all?len:0, flags, ms);
 }
 
-func_ret_t Tcp_listener::Tcp_socket::receive(void * buf, size_t len, bool await_all, int flags)
+func_ret_t Tcp_listener::Tcp_socket::receive(void * buf, size_t len, bool, int flags)
 {
   return this->recvsend_block(false, buf, len, flags);
 }

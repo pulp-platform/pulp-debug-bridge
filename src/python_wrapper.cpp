@@ -251,7 +251,7 @@ extern "C" void cable_unlock(void *handler)
   cable->unlock();
 }
 
-static void init_sigint_handler(int s) {
+static void init_sigint_handler(int) {
   raise(SIGTERM);
 }
 

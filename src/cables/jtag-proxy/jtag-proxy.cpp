@@ -35,7 +35,7 @@
 #include "jtag-proxy.hpp"
 #include "debug_bridge/proxy.hpp"
 
-Jtag_proxy::Jtag_proxy(Log* log)
+Jtag_proxy::Jtag_proxy(Log* log) : log(log)
 {
 }   
 
@@ -48,7 +48,7 @@ bool Jtag_proxy::connect(js::config *config)
 
   if (proxy_config == NULL || proxy_config->get("port") == NULL)
   {
-    fprintf(stderr, "Didn't find any information for JTAG proxy\n");
+    log->error("Didn't find any information for JTAG proxy\n");
     return false;
   }
 
@@ -62,7 +62,7 @@ bool Jtag_proxy::connect(js::config *config)
     m_server = proxy_config->get("host")->get_str().c_str();
 
   if((m_socket = socket(PF_INET, SOCK_STREAM, 0)) < 0) {
-    fprintf(stderr, "Unable to create socket (%s)\n", strerror(errno));
+    log->error("Unable to create socket (%s)\n", strerror(errno));
     return false;
   }
 
@@ -70,7 +70,7 @@ bool Jtag_proxy::connect(js::config *config)
     perror("gethostbyname");
     return false;
   }
-  fprintf(stdout, "Connecting to (%s:%d)\n", m_server, m_port);
+  log->user("Connecting to (%s:%d)\n", m_server, m_port);
 
   addr.sin_family = AF_INET;
   addr.sin_port = htons(m_port);
@@ -78,11 +78,11 @@ bool Jtag_proxy::connect(js::config *config)
   memset(addr.sin_zero, '\0', sizeof(addr.sin_zero));
 
   if(::connect(m_socket, (struct sockaddr *)&addr, sizeof(addr)) == -1) {
-    fprintf(stderr, "Unable to connect to %s port %d (%s)\n", m_server, m_port,
+    log->error("Unable to connect to %s port %d (%s)\n", m_server, m_port,
             strerror(errno));
     return false;
   }
-  fprintf(stdout, "Connected to (%s:%d)\n", m_server, m_port);
+  log->user("Connected to (%s:%d)\n", m_server, m_port);
   return true;
 }
 

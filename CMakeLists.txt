@@ -1,3 +1,21 @@
+#
+# Copyright (C) 2018 ETH Zurich and University of Bologna and GreenWaves Technologies SAS
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+
+# Authors: Martin Croome, GreenWaves Technologies
+
 cmake_minimum_required(VERSION 3.5)
 project(plpbridge VERSION 1.0.0)
 set (CMAKE_CXX_STANDARD 11)
@@ -10,19 +28,21 @@ include(ExternalProject)
 
 set(EXTERNAL_INSTALL_LOCATION ${CMAKE_BINARY_DIR}/external)
 
+# Add in JSON-TOOLS
 ExternalProject_Add(
     json-tools
     PREFIX ${CMAKE_BINARY_DIR}/json-tools
     GIT_REPOSITORY https://github.com/GreenWaves-Technologies/json-tools
     CMAKE_ARGS -DCMAKE_INSTALL_PREFIX=${CMAKE_BINARY_DIR}/json-tools
     LOG_DOWNLOAD ON
-    )
+)
 
 ExternalProject_Get_Property(json-tools install_dir)
 set(JSON_TOOLS_INCLUDE_DIR ${install_dir}/include)
 set(JSON_TOOLS_LIB ${install_dir}/lib/${CMAKE_STATIC_LIBRARY_PREFIX}json${CMAKE_STATIC_LIBRARY_SUFFIX})
 set(JSON_TOOLS_PYDIR ${install_dir}/python)
 
+# Add in PULP CONFIGS
 ExternalProject_Add(
     pulp-configs
     PREFIX ${CMAKE_BINARY_DIR}/pulp-configs
@@ -32,12 +52,13 @@ ExternalProject_Add(
     BUILD_COMMAND make
     INSTALL_COMMAND ""
     LOG_DOWNLOAD ON
-    )
+)
 
 ExternalProject_Get_Property(pulp-configs source_dir)
 set(PULP_CONFIGS_BIN ${source_dir}/bin)
 set(PULP_CONFIGS_CONFIGS ${source_dir}/configs)
 
+# Create library
 add_library(libplpbridge SHARED
     src/cables/adv_dbg_itf/adv_dbg_itf.cpp
     src/cables/jtag-proxy/jtag-proxy.cpp
@@ -53,6 +74,7 @@ add_library(libplpbridge SHARED
     ${JSON_TOOLS_SRC_DIR}
 )
 
+# All include directories for libplpbridge
 target_include_directories(libplpbridge PRIVATE 
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${CMAKE_CURRENT_SOURCE_DIR}/include/cables/jtag-proxy
@@ -62,8 +84,25 @@ target_include_directories(libplpbridge PRIVATE
     ${JSON_TOOLS_INCLUDE_DIR}
 )
 
+# link with json-tools
 target_link_libraries(libplpbridge PRIVATE ${JSON_TOOLS_LIB})
+add_dependencies(libplpbridge json-tools)
 
+# Compile configs
+add_dependencies(libplpbridge pulp-configs)
+
+# Enable all warnings as errors
+if(MSVC)
+    target_compile_options(libplpbridge PRIVATE /W4 /WX)
+else(MSVC)
+    if (APPLE)
+        target_compile_options(libplpbridge PUBLIC -Wall -Wextra -pedantic -Werror -Wno-unused-private-field)
+    else(APPLE)
+        target_compile_options(libplpbridge PRIVATE -Wall -Wextra -pedantic -Werror)
+    endif(APPLE)
+endif(MSVC)
+
+# Optionally add in FTDI support
 if (WithFTDI)
     find_package(FTDI REQUIRED)
     if(FTDI_FOUND)
@@ -79,10 +118,9 @@ if (WithFTDI)
     endif()
 endif()
 
+# Optionally add in SDL/Framebuffer support
 if (WithFrameBuffer)
-    message(STATUS "Before")
     find_package(SDL2 REQUIRED)
-    message(STATUS "After")
     if (SDL2_LIBRARY)
         message(STATUS "Compiling with framebuffer support")
         target_compile_definitions(libplpbridge PUBLIC __USE_SDL__)
@@ -95,10 +133,10 @@ endif()
 
 set_target_properties(libplpbridge PROPERTIES
     VERSION ${PROJECT_VERSION}
-    OUTPUT_NAME "plpbridge")
+    OUTPUT_NAME "pulpdebugbridge" # lib will be added as appropriate
+)
 
-add_dependencies(libplpbridge json-tools)
-add_dependencies(libplpbridge pulp-configs)
+# python tool binaries
 
 install(
     DIRECTORY ${PULP_CONFIGS_BIN} DESTINATION .
@@ -113,21 +151,30 @@ install(
 )
 
 install(
+    DIRECTORY bin DESTINATION .
+    FILE_PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE
+)
+
+# IP configs
+
+install(
     DIRECTORY ${PULP_CONFIGS_CONFIGS} DESTINATION .
     FILES_MATCHING PATTERN "*.json"
 )
 
-install(TARGETS libplpbridge DESTINATION lib)
+# PULP bridge library
+
+install(
+    TARGETS libplpbridge
+    DESTINATION lib
+)
+
+# Python module files
 
 install(
     DIRECTORY python DESTINATION .
     FILE_PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE
     FILES_MATCHING PATTERN "*.py"
-)
-
-install(
-    DIRECTORY bin DESTINATION .
-    FILE_PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE
 )
 
 install(

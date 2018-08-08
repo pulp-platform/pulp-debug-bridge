@@ -49,5 +49,6 @@ class Jtag_proxy : public Cable {
     int m_socket;
 
     bool proxy_stream(char* instream, char* outstream, unsigned int n_bits, bool last, int bit);
+    Log * log;
 
 };

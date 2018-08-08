@@ -37,7 +37,7 @@ typedef enum
 
 class Log {
   public:
-    Log(const char * module) {}
+    Log(const char * module) : module(module) {}
     Log() {}
     void print(log_level_e, const char *str, ...);
     void print(log_level_e, const char *str, va_list va);
@@ -50,6 +50,7 @@ class Log {
     static char last_error[MAX_LOG_LINE];
   private:
     static std::mutex m_last_error;
+    const char * module;
 };
 
 #endif

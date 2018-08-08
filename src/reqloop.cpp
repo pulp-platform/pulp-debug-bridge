@@ -203,7 +203,7 @@ hal_debug_struct_t *Reqloop::activate()
 
 
 
-void Reqloop::reply_req(hal_debug_struct_t *debug_struct, hal_bridge_req_t *target_req, hal_bridge_req_t *req)
+void Reqloop::reply_req(hal_debug_struct_t *debug_struct, hal_bridge_req_t *target_req, hal_bridge_req_t *)
 {
   uint32_t value = 1;
   this->cable->access(true, (unsigned int)(long)&target_req->done, sizeof(target_req->done), (char*)&value);
@@ -370,12 +370,12 @@ bool Reqloop::handle_req_fb_update(hal_debug_struct_t *debug_struct, hal_bridge_
   return false;
 }
 #else
-bool Reqloop::handle_req_fb_update(hal_debug_struct_t *debug_struct, hal_bridge_req_t *req, hal_bridge_req_t *target_req)
+bool Reqloop::handle_req_fb_update(hal_debug_struct_t *, hal_bridge_req_t *, hal_bridge_req_t *)
 {
   log->error("attempt to update framebuffer but bridge is not compiled with SDL");
   return false;
 }
-bool Reqloop::handle_req_fb_open(hal_debug_struct_t *debug_struct, hal_bridge_req_t *req, hal_bridge_req_t *target_req)
+bool Reqloop::handle_req_fb_open(hal_debug_struct_t *, hal_bridge_req_t *, hal_bridge_req_t *)
 {
   log->error("attempt to open framebuffer but bridge is not compiled with SDL");
   return false;

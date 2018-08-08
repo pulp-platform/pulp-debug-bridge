@@ -29,15 +29,15 @@ class Cable_jtag_itf
 {
 public:
 
-    virtual bool bit_inout(char* inbit, char outbit, bool last) { printf ("i am bit_inout virtual fct in cable class\n"); return false; }
+    virtual bool bit_inout(char*, char, bool) { printf ("i am bit_inout virtual fct in cable class\n"); return false; }
 
-    virtual bool stream_inout(char* instream, char* outstream, unsigned int n_bits, bool last) { printf ("i am stream_inout virtual fct in cable class\n"); return false; }
+    virtual bool stream_inout(char*, char*, unsigned int, bool) { printf ("i am stream_inout virtual fct in cable class\n"); return false; }
 
     virtual int flush() { return -1; }
     virtual bool purge() { return false; }
-    virtual bool jtag_reset(bool active) { printf("JTAG\n"); return false; }
+    virtual bool jtag_reset(bool) { printf("JTAG\n"); return false; }
 
-    virtual void device_select(unsigned int i) {}
+    virtual void device_select(unsigned int) {}
 
     bool jtag_soft_reset();
     bool jtag_write_tms(int val);
@@ -56,7 +56,7 @@ public:
 class Cable_io_itf
 {
 public:
-  virtual bool access(bool write, unsigned int addr, int size, char* buffer) { return false; }
+  virtual bool access(bool, unsigned int, int, char*) { return false; }
   virtual ~Cable_io_itf() = default;
 };
 
@@ -65,7 +65,7 @@ public:
 class Cable_ctrl_itf
 {
 public:
-  virtual bool chip_reset(bool active) { return false; }
+  virtual bool chip_reset(bool) { return false; }
   virtual ~Cable_ctrl_itf() = default;
 };
 
@@ -74,7 +74,7 @@ public:
 class Cable : public Cable_io_itf, public Cable_jtag_itf, public Cable_ctrl_itf
 {
 public:
-  virtual bool connect(js::config *config) { return true; }
+  virtual bool connect(js::config *) { return true; }
 
   virtual void lock() { }
 

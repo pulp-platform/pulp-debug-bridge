@@ -287,7 +287,7 @@ bool Ftdi::chip_reset(bool active)
 }
 
 int
-Ftdi::ft2232_seq_purge(int purge_rx, int purge_tx) {
+Ftdi::ft2232_seq_purge(int /* purge_rx */, int /* purge_tx */) {
   int ret = 0;
   unsigned char buf;
 
@@ -323,8 +323,8 @@ Ftdi::ft2232_seq_reset() {
 
 int
 Ftdi::flush() {
-  unsigned int xferred;
-  unsigned int recvd = 0;
+  int xferred;
+  int recvd = 0;
 
   if (m_params.send_buffered == 0)
     return 0;
@@ -334,7 +334,7 @@ Ftdi::flush() {
     return -1;
   }
 
-  if (xferred < m_params.send_buffered) {
+  if ((unsigned int) xferred < m_params.send_buffered) {
     log->warning("Written fewer bytes than requested.\n");
     return -1;
   }
@@ -358,7 +358,7 @@ Ftdi::flush() {
         log->warning("Error from ftdi_read_data() - %s\n", ftdi_get_error_string(&m_ftdic));
     }
 
-    if (recvd < m_params.to_recv)
+    if ((unsigned int) recvd < m_params.to_recv)
       log->warning("Received less bytes than requested.\n");
 
     m_params.to_recv -= recvd;

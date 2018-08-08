@@ -473,7 +473,7 @@ void Target_core::resume()
 
 
 
-Target_cluster_common::Target_cluster_common(js::config *config, Gdb_server *top, uint32_t cluster_addr, uint32_t xtrigger_addr, int cluster_id)
+Target_cluster_common::Target_cluster_common(js::config *, Gdb_server *top, uint32_t cluster_addr, uint32_t xtrigger_addr, int cluster_id)
 : top(top), cluster_id(cluster_id), cluster_addr(cluster_addr), xtrigger_addr(xtrigger_addr)
 {
     this->top->log->debug("Instantiating cluster %d\n",  cluster_id);
