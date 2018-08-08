@@ -63,7 +63,7 @@ endif
 
 
 
-CFLAGS += -g -O0 -fPIC -std=gnu++11 -MMD -MP -Isrc -Iinclude -Wall -Werror \
+CFLAGS += -g -O0 -fPIC -std=c++11 -MMD -MP -Isrc -Iinclude -Wall -Werror -pedantic \
  -I$(INSTALL_DIR)/include $(FTDI_CFLAGS) $(SDL_CFLAGS)
 
 ifneq ($(OS),Windows_NT)
