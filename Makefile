@@ -1,138 +1,48 @@
-ifndef INSTALL_DIR
-STAND_ALONE_INSTALL=1
-endif
+#
+# Copyright (C) 2018 ETH Zurich and University of Bologna and GreenWaves Technologies SAS
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
 
-INSTALL ?= install
+# Authors: Martin Croome, GreenWaves Technologies
+
 INSTALL_DIR ?= $(CURDIR)/install
-TARGET_INSTALL_DIR ?= $(CURDIR)/install
+# TARGET_INSTALL_DIR ?= $(CURDIR)/install
 BUILD_DIR   ?= $(CURDIR)/build
-DEP_SRC_DIR ?= $(BUILD_DIR)/dep_src
+RELEASE_TYPE ?= Debug
+# propagate verbose for debugging
+VERBOSE ?= 0
 
+$(info #### Building in $(BUILD_DIR))
+$(info #### Release type is $(RELEASE_TYPE))
+$(info #### Installing to $(INSTALL_DIR))
+# $(info #### Installing target files to $(TARGET_INSTALL_DIR))
 
+MAKEFILE_DIR = $(dir $(realpath $(firstword $(MAKEFILE_LIST))))
 
-HEADER_FILES += $(shell find include -name *.hpp)
-TARGET_HEADER_FILES += $(shell find include -name *.h)
-HEADER_FILES += $(shell find include -name *.h)
-HEADER_FILES += $(shell find bin -type f)
+all: $(BUILD_DIR)/CMakeCache.txt
+	( cd $(BUILD_DIR) ; make all $(DBG_CMAKE) VERBOSE=$(VERBOSE) )
 
-define declareInstallFile
-$(INSTALL_DIR)/$(1): $(1)
-	$(INSTALL) -d $$(dir $$@)
-	$(INSTALL) $(1) $$@
-INSTALL_HEADERS += $(INSTALL_DIR)/$(1)
-endef
-
-define declareTargetInstallFile
-$(TARGET_INSTALL_DIR)/$(1): $(1)
-	$(INSTALL) -d $$(dir $$@)
-	$(INSTALL) $(1) $$@
-INSTALL_HEADERS += $(TARGET_INSTALL_DIR)/$(1)
-endef
-
-define declareJsonInstallFile
-$(INSTALL_DIR)/$(1): json-tools/$(1)
-	$(INSTALL) -d $$(dir $$@)
-	$(INSTALL) json-tools/$(1) $$@
-INSTALL_HEADERS += $(INSTALL_DIR)/$(1)
-endef
-
-HEADER_FILES += $(shell find python -name *.py)
-
-
-
-FTDI_CFLAGS = $(shell libftdi1-config --cflags)
-FTDI_LDFLAGS = $(shell libftdi1-config --libs)
-
-ifeq '$(FTDI_CFLAGS)$(FTDI_LDFLAGS)' ''
-FTDI_CFLAGS = $(shell libftdi-config --cflags)
-FTDI_LDFLAGS = $(shell libftdi-config --libs)
-endif
-
-ifneq '$(FTDI_CFLAGS)$(FTDI_LDFLAGS)' ''
-USE_FTDI=1
-endif
-
-SDL_CFLAGS = $(shell sdl2-config --cflags)
-SDL_LDFLAGS = $(shell sdl2-config --libs)
-
-ifneq '$(SDL_CFLAGS)$(SDL_LDFLAGS)' ''
-  ifeq '$(DONT_USE_SDL)' ''
-    USE_SDL=1
-  endif
-endif
-
-
-
-CFLAGS += -g -O0 -fPIC -std=c++11 -MMD -MP -Isrc -Iinclude -Wall -Werror -pedantic \
- -I$(INSTALL_DIR)/include $(FTDI_CFLAGS) $(SDL_CFLAGS)
-
-ifneq ($(OS),Windows_NT)
-  ifeq "$(shell uname -s)" "Darwin"
-    CFLAGS += -Wno-unused-private-field
-  endif
-endif
-
-LDFLAGS += -g -shared $(FTDI_LDFLAGS) $(SDL_LDFLAGS)
-
-SRCS = src/python_wrapper.cpp src/ioloop.cpp src/cables/jtag.cpp src/reqloop.cpp \
-src/cables/adv_dbg_itf/adv_dbg_itf.cpp src/gdb-server/gdb-server.cpp \
-src/gdb-server/rsp.cpp src/gdb-server/target.cpp src/gdb-server/breakpoints.cpp \
-src/gdb-server/Tcp_listener.cpp
-
-ifdef STAND_ALONE_INSTALL
-LDFLAGS += -L$(INSTALL_DIR)/lib
-else
-LDFLAGS += $(foreach dir,$(DEP_DIRS),-L$(dir)/lib)
-endif
-LDFLAGS += -ljson
-
-ifneq '$(USE_FTDI)' ''
-CFLAGS += -D__USE_FTDI__
-SRCS += src/cables/ftdi/ftdi.cpp
-endif
-
-ifneq '$(USE_SDL)' ''
-CFLAGS += -D__USE_SDL__
-endif
-
-SRCS += src/cables/jtag-proxy/jtag-proxy.cpp
-
-OBJS = $(patsubst %.cpp,$(BUILD_DIR)/%.o,$(SRCS))
-
-$(foreach file, $(HEADER_FILES), $(eval $(call declareInstallFile,$(file))))
-$(foreach file, $(TARGET_HEADER_FILES), $(eval $(call declareTargetInstallFile,$(file))))
-
-
-all: checkout deps build
-
-$(DEP_SRC_DIR)/json-tools:
-	mkdir -p $(DEP_SRC_DIR)
-	cd $(DEP_SRC_DIR) && git clone https://github.com/pulp-platform/json-tools.git
-
-$(DEP_SRC_DIR)/pulp-configs:
-	mkdir -p $(DEP_SRC_DIR)
-	cd $(DEP_SRC_DIR) && git clone https://github.com/pulp-platform/pulp-configs.git
-
-checkout: $(DEP_SRC_DIR)/json-tools $(DEP_SRC_DIR)/pulp-configs
-
--include $(OBJS:.o=.d)
-
-$(BUILD_DIR)/%.o: %.cpp
-	@mkdir -p $(basename $@)
-	g++ $(CFLAGS) -o $@ -c $<
-
-$(BUILD_DIR)/libpulpdebugbridge.so: $(OBJS)
-	g++ -o $@ $^ $(LDFLAGS)
-
-$(INSTALL_DIR)/lib/libpulpdebugbridge.so: $(BUILD_DIR)/libpulpdebugbridge.so
-	$(INSTALL) -d $(dir $@)
-	$(INSTALL) $< $@
-
-deps:
-	make -C $(DEP_SRC_DIR)/json-tools all BUILD_DIR=$(BUILD_DIR)/json-tools INSTALL_DIR=$(INSTALL_DIR)
-	make -C $(DEP_SRC_DIR)/pulp-configs all BUILD_DIR=$(BUILD_DIR)/pulp-configs INSTALL_DIR=$(INSTALL_DIR)
-
-build: $(INSTALL_HEADERS) $(INSTALL_DIR)/lib/libpulpdebugbridge.so
+install: $(BUILD_DIR)/CMakeCache.txt
+	( cd $(BUILD_DIR) ; make install $(DBG_CMAKE) VERBOSE=$(VERBOSE) )
 
 clean:
 	rm -rf $(BUILD_DIR)
+
+$(BUILD_DIR):
+	mkdir -p $(BUILD_DIR)
+
+$(BUILD_DIR)/CMakeCache.txt: $(BUILD_DIR)
+	( cd $(BUILD_DIR) ; \
+	  cmake -DCMAKE_BUILD_TYPE=$(RELEASE_TYPE) -DCMAKE_INSTALL_PREFIX=$(INSTALL_DIR) \
+		$(MAKEFILE_DIR) )
