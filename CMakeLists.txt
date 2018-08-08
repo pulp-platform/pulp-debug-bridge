@@ -45,7 +45,8 @@ if(WIN32)
         LOG_DOWNLOAD ON
     )
     ExternalProject_Get_Property(ftdi source_dir)
-    set(FTDI_LIB_SEARCH ${source_dir})    
+    link_directories(${source_dir}/lib64)
+    set(FTDI_INCLUDE_DIR ${source_dir}/include)    
 endif()
 
 
@@ -112,10 +113,6 @@ add_dependencies(libplpbridge json-tools)
 # Compile configs
 add_dependencies(libplpbridge pulp-configs)
 
-if(WIN32)
-  add_dependencies(libplpbridge ftdi)
-endif()
-
 # Enable all warnings as errors
 if(MSVC)
     target_compile_options(libplpbridge PRIVATE /W4 /WX)
@@ -129,15 +126,20 @@ endif(MSVC)
 
 # Optionally add in FTDI support
 if (WithFTDI)
-    find_package(FTDI REQUIRED PATHS ${FTDI_LIB_SEARCH})
+    if (WIN32)
+        message(STATUS "Compiling in FTDI support")
+        add_dependencies(libplpbridge ftdi)
+    endif()
+    find_package(FTDI REQUIRED)
     if(FTDI_FOUND)
         message(STATUS "Compiling in FTDI support")
         target_compile_definitions(libplpbridge PUBLIC __USE_FTDI__)
+        target_compile_options(libplpbridge PUBLIC ${FTDI_CFLAGS_OTHER})
         target_sources(libplpbridge PRIVATE src/cables/ftdi/ftdi.cpp)
         target_include_directories(libplpbridge
             PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include/cables/ftdi
                     ${FTDI_INCLUDE_DIR})
-        target_link_libraries(libplpbridge PRIVATE ${FTDI_LIBRARY})
+        target_link_libraries(libplpbridge PRIVATE ${FTDI_LIBRARIES})
     else()
         message(FATAL_ERROR "Can't find ftdi library")
     endif()
