@@ -31,25 +31,6 @@ include(ExternalProject)
 
 set(EXTERNAL_INSTALL_LOCATION ${CMAKE_BINARY_DIR}/external)
 
-# Download LibFTDI SDK if on windows
-
-if(WIN32)
-    ExternalProject_Add(
-        ftdi
-        PREFIX ${CMAKE_BINARY_DIR}/ftdi
-        URL "https://sourceforge.net/projects/picusb/files/libftdi1-1.4git_devkit_x86_x64_14June2018.zip/download"
-        DOWNLOAD_NAME "libftdi1-1.4git_devkit_x86_x64_14June2018.zip"
-        CONFIGURE_COMMAND ""
-        BUILD_COMMAND ""
-        INSTALL_COMMAND ""
-        LOG_DOWNLOAD ON
-    )
-    ExternalProject_Get_Property(ftdi source_dir)
-    link_directories(${source_dir}/lib64)
-    set(FTDI_INCLUDE_DIR ${source_dir}/include)    
-endif()
-
-
 # Add in JSON-TOOLS
 ExternalProject_Add(
     json-tools
@@ -126,23 +107,43 @@ endif(MSVC)
 
 # Optionally add in FTDI support
 if (WithFTDI)
+    message(STATUS "Compiling in FTDI support")
     if (WIN32)
-        message(STATUS "Compiling in FTDI support")
-        add_dependencies(libplpbridge ftdi)
-    endif()
-    find_package(FTDI REQUIRED)
-    if(FTDI_FOUND)
-        message(STATUS "Compiling in FTDI support")
-        target_compile_definitions(libplpbridge PUBLIC __USE_FTDI__)
-        target_compile_options(libplpbridge PUBLIC ${FTDI_CFLAGS_OTHER})
-        target_sources(libplpbridge PRIVATE src/cables/ftdi/ftdi.cpp)
+        # Download LibFTDI SDK if on windows
+        ExternalProject_Add(
+            ftdi
+            PREFIX ${CMAKE_BINARY_DIR}/ftdi
+            URL "https://sourceforge.net/projects/picusb/files/libftdi1-1.4git_devkit_x86_x64_14June2018.zip/download"
+            DOWNLOAD_NAME "libftdi1-1.4git_devkit_x86_x64_14June2018.zip"
+            CONFIGURE_COMMAND ""
+            BUILD_COMMAND ""
+            INSTALL_COMMAND ""
+            LOG_DOWNLOAD ON
+        )
+        ExternalProject_Get_Property(ftdi source_dir)
+        link_directories(${source_dir}/lib64)
         target_include_directories(libplpbridge
-            PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include/cables/ftdi
-                    ${FTDI_INCLUDE_DIR})
-        target_link_libraries(libplpbridge PRIVATE ${FTDI_LIBRARIES})
+            PRIVATE
+                ${CMAKE_CURRENT_SOURCE_DIR}/include/cables/ftdi
+                ${source_dir}/include)
+        target_link_libraries(libplpbridge PRIVATE libftdi1.dll)
+
+        add_dependencies(libplpbridge ftdi)
     else()
-        message(FATAL_ERROR "Can't find ftdi library")
+        find_package(FTDI REQUIRED)
+        if(FTDI_FOUND)
+            target_compile_options(libplpbridge PUBLIC ${FTDI_CFLAGS_OTHER})
+            target_include_directories(libplpbridge
+                PRIVATE
+                    ${CMAKE_CURRENT_SOURCE_DIR}/include/cables/ftdi
+                    ${FTDI_INCLUDE_DIR})
+            target_link_libraries(libplpbridge PRIVATE ${FTDI_LIBRARIES})
+        else()
+            message(FATAL_ERROR "Can't find ftdi library")
+        endif()
     endif()
+    target_sources(libplpbridge PRIVATE src/cables/ftdi/ftdi.cpp)
+    target_compile_definitions(libplpbridge PUBLIC __USE_FTDI__)
 endif()
 
 # Optionally add in SDL/Framebuffer support
