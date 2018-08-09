@@ -32,6 +32,9 @@
 #include <SDL.h>
 #endif
 
+#define PTR_2_INT(__addr) ((unsigned int)(reinterpret_cast<std::uintptr_t>(__addr)&0xffffffff))
+#define INT_2_PTR(__addr) (reinterpret_cast<std::uintptr_t>((size_t)__addr))
+
 class Reqloop
 {
 public:
@@ -177,8 +180,6 @@ void Framebuffer::update(uint32_t addr, int posx, int posy, int width, int heigh
 }
 #endif
 
-#define PTR_2_INT(__addr) (((unsigned int)__addr)&0xffffffff)
-
 int Reqloop::stop(bool kill)
 {
   if (kill) end = true;
@@ -267,7 +268,7 @@ bool Reqloop::handle_req_read(hal_debug_struct_t *debug_struct, hal_bridge_req_t
 {
   char buffer[4096];
   int size = req->read.len;
-  char *ptr = (char *)(long)req->read.ptr;
+  char *ptr = (char *)INT_2_PTR(req->read.ptr);
   int res = 0;
   while (size)
   {
@@ -299,7 +300,7 @@ bool Reqloop::handle_req_write(hal_debug_struct_t *debug_struct, hal_bridge_req_
 {
   char buffer[4096];
   int size = req->write.len;
-  char *ptr = (char *)(long)req->write.ptr;
+  char *ptr = (char *)INT_2_PTR(req->write.ptr);
   int res = 0;
   while (size)
   {

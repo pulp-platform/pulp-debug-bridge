@@ -24,13 +24,8 @@
 #include <stdio.h>
 #include <stdbool.h>
 #include <stdlib.h>
-#include <errno.h>
-#include <netinet/in.h>
-#include <netdb.h>
-#include <arpa/inet.h>
-#include <fcntl.h>
 #include <string.h>
-#include <sys/select.h>
+#include <strings.h>
 #include "gdb-server.hpp"
 
 #define REPLY_BUF_LEN 256
@@ -606,10 +601,10 @@ bool Rsp::Client::regs_send()
 
   // now build the string to send back
   for(i = 0; i < 32; i++) {
-    snprintf(&regs_str[i * 8], 9, "%08x", htonl(gpr[i]));
+    snprintf(&regs_str[i * 8], 9, "%08x", (unsigned int)htonl(gpr[i]));
   }
   core->actual_pc_read(&pc);
-  snprintf(&regs_str[32 * 8 + 0 * 8], 9, "%08x", htonl(pc));
+  snprintf(&regs_str[32 * 8 + 0 * 8], 9, "%08x", (unsigned int)htonl(pc));
 
   return this->send_str(regs_str);
 }
