@@ -105,6 +105,15 @@ else(MSVC)
     endif(APPLE)
 endif(MSVC)
 
+# link windows sockets
+if (WIN32)
+	if (_WIN64)
+		target_link_libraries(libplpbridge PRIVATE wsock64 ws2_64)
+	else()
+		target_link_libraries(libplpbridge PRIVATE wsock32 ws2_32)
+	endif()
+endif()
+
 # Optionally add in FTDI support
 if (WithFTDI)
     message(STATUS "Compiling in FTDI support")
@@ -121,12 +130,11 @@ if (WithFTDI)
             LOG_DOWNLOAD ON
         )
         ExternalProject_Get_Property(ftdi source_dir)
-        link_directories(${source_dir}/bin64)
         target_include_directories(libplpbridge
             PRIVATE
                 ${CMAKE_CURRENT_SOURCE_DIR}/include/cables/ftdi
                 ${source_dir}/include/libftdi)
-        target_link_libraries(libplpbridge PRIVATE libftdi1.dll)
+        target_link_libraries(libplpbridge PRIVATE ${source_dir}/bin64/libftdi1.dll)
 
         add_dependencies(libplpbridge ftdi)
     else()

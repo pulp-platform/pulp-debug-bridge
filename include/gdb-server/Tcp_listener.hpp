@@ -106,7 +106,7 @@ class Tcp_socket_owner {
     static int instances;
 
   #ifdef _WIN32
-    WSADATA wsa_data;
+    static WSADATA wsa_data;
   #endif
 };
 

@@ -259,7 +259,7 @@ bool Rsp::Client::v_packet(char* data, size_t len)
     char *str = strtok(&data[6], ";");
     while(str != NULL) {
       // Extract command and thread ID
-      char *delim = index(str, ':');
+      char *delim = strchr(str, ':');
       int tid = -1;
       if (delim != NULL) {
         tid = atoi(delim+1);

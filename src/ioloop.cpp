@@ -27,6 +27,9 @@
 #include "debug_bridge/debug_bridge.h"
 #include <unistd.h>
 
+#define PTR_2_INT(__addr) ((unsigned int)(reinterpret_cast<std::uintptr_t>(__addr)&0xffffffff))
+#define INT_2_PTR(__addr) (reinterpret_cast<std::uintptr_t>((size_t)__addr))
+
 #define DEFAULT_LOOP_DELAY 50000
 #define DEFAULT_SLOW_LOOP_DELAY 100000 * 1000
 
@@ -71,7 +74,7 @@ hal_debug_struct_t *Ioloop::activate()
   if (debug_struct != NULL) {
     // The binary has just started, we need to tell him we want to watch for printf
     unsigned int value = 0;
-    cable->access(true, (unsigned int)(long)&debug_struct->use_internal_printf, 4, (char*)&value);
+    cable->access(true, PTR_2_INT(&debug_struct->use_internal_printf), 4, (char*)&value);
   }
 
   return debug_struct;
@@ -103,7 +106,7 @@ void Ioloop::ioloop_routine()
       }
 
       // First check if the application has exited
-      cable->access(false, (unsigned int)(long)&debug_struct->exit_status, 4, (char*)&value);
+      cable->access(false, PTR_2_INT(&debug_struct->exit_status), 4, (char*)&value);
       if (value >> 31) {
         status = ((int)value << 1) >> 1;
         log->user("Detected end of application, exiting with status: %d\n", status);
@@ -114,13 +117,13 @@ void Ioloop::ioloop_routine()
       // The target application should quickly dumps the characters, so we can loop on printf
       // until we don't find anything
       while(1) {
-        cable->access(false, (unsigned int)(long)&debug_struct->pending_putchar, 4, (char*)&value);
+        cable->access(false, PTR_2_INT(&debug_struct->pending_putchar), 4, (char*)&value);
         if (value == 0) break;
         std::vector<char> buff(value + 1);
-        cable->access(false, (unsigned int)(long)&debug_struct->putc_buffer, value, &(buff[0]));
+        cable->access(false, PTR_2_INT(&debug_struct->putc_buffer), value, &(buff[0]));
         unsigned int zero = 0;
-        cable->access(true, (unsigned int)(long)&debug_struct->pending_putchar, 4, (char*)&zero);
-        for (uint i=0; i<value; i++) putchar(buff[i]);
+        cable->access(true, PTR_2_INT(&debug_struct->pending_putchar), 4, (char*)&zero);
+        for (unsigned int i=0; i<value; i++) putchar(buff[i]);
         fflush(NULL);
       }
 

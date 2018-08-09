@@ -49,6 +49,10 @@ bool Tcp_socket_owner::set_blocking(int fd, bool blocking)
 
 int Tcp_socket_owner::instances = 0;
 
+#ifdef _WIN32
+WSADATA Tcp_socket_owner::wsa_data;
+#endif
+
 bool Tcp_socket_owner::socket_init()
 {
   instances++;
@@ -245,7 +249,7 @@ bool Tcp_listener::start()
     return false;
   }
 
-  if(setsockopt(socket_in, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(int)) == -1) {
+  if(setsockopt(socket_in, SOL_SOCKET, SO_REUSEADDR, (const char*) &yes, sizeof(int)) == -1) {
     print_error("Unable to setsockopt on the socket: %d\n");
     return false;
   }
@@ -278,7 +282,7 @@ ssize_t Tcp_socket::check_error(func_ret_t)
 #ifdef _WIN32
   int err_num;
   if ((err_num = WSAGetLastError()) != WSAEWOULDBLOCK) {
-    listener->log->error("Error on client socket %d - closing\n", err_num);
+    owner->log->error("Error on client socket %d - closing\n", err_num);
 #else
   if (errno != EWOULDBLOCK) {
     owner->log->error("Error on client socket %d - closing\n", errno);
@@ -362,10 +366,6 @@ inline void timersub(const timeval* tvp, const timeval* uvp, timeval* vvp)
      vvp->tv_usec += 1000000;
   }
 }
-
-#define timercmp(tvp, uvp, cmp) \
-        ((tvp)->tv_sec cmp (uvp)->tv_sec || \
-         (tvp)->tv_sec == (uvp)->tv_sec && (tvp)->tv_usec cmp (uvp)->tv_usec)
 #endif
 
 // recv/send buf which must be buf_cnt in size. If cnt < 0 then send/recv as much as possible. 
@@ -411,9 +411,9 @@ func_ret_t Tcp_socket::recvsend(bool send, void * buf, size_t buf_len, size_t cn
 
     if (ret > 0) {
       if (send) {
-        ret = ::send(socket, buf, cnt, flags);
+        ret = ::send(socket, (const char *)buf, cnt, flags);
       } else {
-        ret = recv(socket, buf, cnt<=0?buf_len:cnt, flags);
+        ret = recv(socket, (char*)buf, cnt<=0?buf_len:cnt, flags);
       }
 
       if (!owner->is_running) {
