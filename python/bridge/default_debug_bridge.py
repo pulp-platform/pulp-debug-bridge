@@ -26,6 +26,7 @@ import time
 from bridge.misc.portable import to_bytes
 import struct
 import sys
+import platform
 
 class DebugBridgeException(Exception):
     pass
@@ -177,9 +178,13 @@ class debug_bridge(object):
         self.do_exit = False
         # Load the library which provides generic services through
         # python / C++ bindings
-        lib_path = os.path.join('libpulpdebugbridge' + (os.name == 'nt' and '.dll' or '.so'))
-        
-        self.module = ctypes.CDLL(lib_path)
+
+        if platform.system() == "Windows":
+            lib_path = os.path.dirname(os.path.realpath(sys.path[0]))
+            os.environ['PATH'] = lib_path + ';' + os.environ['PATH']
+            self.module = ctypes.windll.LoadLibrary('libpulpdebugbridge.dll')
+        else:
+            self.module = ctypes.CDLL('libpulpdebugbridge.so')
 
         self.module.bridge_ioloop_open.argtypes = [ctypes.c_void_p, ctypes.c_uint]
         self.module.bridge_ioloop_open.restype = ctypes.c_void_p
