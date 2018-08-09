@@ -28,8 +28,10 @@
   #include <winsock2.h>
   #include <Ws2tcpip.h>
   #include <Windef.h>
+  #include <windows.h>
   typedef int port_t;
   typedef SOCKET socket_t;
+  typedef int func_ret_t;
   #define LST_SHUT_RDWR SD_BOTH
 #else
   #include <sys/socket.h>
