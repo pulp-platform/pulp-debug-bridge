@@ -176,7 +176,7 @@ set_target_properties(libplpbridge PROPERTIES
 if(StandaloneApp)
     set(DEST_BIN "")
     set(DEST_CONFIGS "configs")
-    set(DEST_LIBS "")
+    set(DEST_LIBS "bridge")
     set(DEST_MODULES "")
 else()
     set(DEST_BIN "bin")

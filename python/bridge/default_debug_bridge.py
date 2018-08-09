@@ -28,595 +28,594 @@ import struct
 import sys
 
 class DebugBridgeException(Exception):
-	pass
+    pass
 
 class XferInvalidObjectException(DebugBridgeException):
-	pass
+    pass
 
 class XferInvalidAnnexException(DebugBridgeException):
-	pass
+    pass
 
 class XferErrorException(DebugBridgeException):
 
-	def __init__(self, error_code):
-		self.error_code = error_code
+    def __init__(self, error_code):
+        self.error_code = error_code
 
-	def __str__(self):
-		return "E {0:02X}".format(self.error_code)
+    def __str__(self):
+        return "E {0:02X}".format(self.error_code)
 
 class Ctype_cable(object):
 
-	def __init__(self, module, config, system_config):
+    def __init__(self, module, config, system_config):
 
-		self.module = module
-		self.gdb_handle = None
+        self.module = module
+        self.gdb_handle = None
 
-		# Register entry points with appropriate arguments
-		self.module.cable_new.argtypes = [ctypes.c_char_p, ctypes.c_char_p]
-		self.module.cable_new.restype = ctypes.c_void_p
+        # Register entry points with appropriate arguments
+        self.module.cable_new.argtypes = [ctypes.c_char_p, ctypes.c_char_p]
+        self.module.cable_new.restype = ctypes.c_void_p
 
-		self.module.cable_write.argtypes = \
-			[ctypes.c_void_p, ctypes.c_int, ctypes.c_int, ctypes.c_char_p]
+        self.module.cable_write.argtypes = \
+            [ctypes.c_void_p, ctypes.c_int, ctypes.c_int, ctypes.c_char_p]
 
-		self.module.cable_read.argtypes = \
-			[ctypes.c_void_p, ctypes.c_int, ctypes.c_int, ctypes.c_char_p]
+        self.module.cable_read.argtypes = \
+            [ctypes.c_void_p, ctypes.c_int, ctypes.c_int, ctypes.c_char_p]
 
-		self.module.chip_reset.argtypes = \
-			[ctypes.c_void_p, ctypes.c_bool]
+        self.module.chip_reset.argtypes = \
+            [ctypes.c_void_p, ctypes.c_bool]
 
-		self.module.jtag_reset.argtypes = \
-			[ctypes.c_void_p, ctypes.c_bool]
+        self.module.jtag_reset.argtypes = \
+            [ctypes.c_void_p, ctypes.c_bool]
 
-		self.module.jtag_soft_reset.argtypes = \
-			[ctypes.c_void_p]
+        self.module.jtag_soft_reset.argtypes = \
+            [ctypes.c_void_p]
 
-		self.module.cable_jtag_set_reg.argtypes = \
-			[ctypes.c_void_p, ctypes.c_int, ctypes.c_int, ctypes.c_uint]
-		self.module.cable_jtag_set_reg.restype = ctypes.c_bool
+        self.module.cable_jtag_set_reg.argtypes = \
+            [ctypes.c_void_p, ctypes.c_int, ctypes.c_int, ctypes.c_uint]
+        self.module.cable_jtag_set_reg.restype = ctypes.c_bool
 
-		self.module.cable_jtag_get_reg.argtypes = \
-			[ctypes.c_void_p, ctypes.c_int, ctypes.c_int, ctypes.POINTER(ctypes.c_int)]
-		self.module.cable_jtag_get_reg.restype = ctypes.c_bool
+        self.module.cable_jtag_get_reg.argtypes = \
+            [ctypes.c_void_p, ctypes.c_int, ctypes.c_int, ctypes.POINTER(ctypes.c_int)]
+        self.module.cable_jtag_get_reg.restype = ctypes.c_bool
 
-		self.module.cable_lock.argtypes = \
-			[ctypes.c_void_p]
+        self.module.cable_lock.argtypes = \
+            [ctypes.c_void_p]
 
-		self.module.cable_unlock.argtypes = \
-			[ctypes.c_void_p]
+        self.module.cable_unlock.argtypes = \
+            [ctypes.c_void_p]
 
-		self.module.bridge_get_error.argtypes = []
-		self.module.bridge_get_error.restype = ctypes.c_char_p
+        self.module.bridge_get_error.argtypes = []
+        self.module.bridge_get_error.restype = ctypes.c_char_p
 
-		self.module.bridge_init.argtypes = [ctypes.c_char_p, ctypes.c_int]
+        self.module.bridge_init.argtypes = [ctypes.c_char_p, ctypes.c_int]
 
-		self.module.bridge_set_log_level.argtypes = [ctypes.c_int]
+        self.module.bridge_set_log_level.argtypes = [ctypes.c_int]
 
-		self.cmd_func_typ = ctypes.CFUNCTYPE(ctypes.c_int, ctypes.c_char_p,
-		  ctypes.POINTER(ctypes.c_char), ctypes.c_int)
-		self.module.gdb_server_open.argtypes = [ctypes.c_void_p, ctypes.c_int,
-		  self.cmd_func_typ, ctypes.c_char_p]
-		self.module.gdb_server_open.restype = ctypes.c_void_p
+        self.cmd_func_typ = ctypes.CFUNCTYPE(ctypes.c_int, ctypes.c_char_p,
+          ctypes.POINTER(ctypes.c_char), ctypes.c_int)
+        self.module.gdb_server_open.argtypes = [ctypes.c_void_p, ctypes.c_int,
+          self.cmd_func_typ, ctypes.c_char_p]
+        self.module.gdb_server_open.restype = ctypes.c_void_p
 
-		self.module.gdb_send_str.argtypes = [ctypes.c_void_p, ctypes.c_char_p]
-		self.module.gdb_send_str.restype = ctypes.c_bool
+        self.module.gdb_send_str.argtypes = [ctypes.c_void_p, ctypes.c_char_p]
+        self.module.gdb_send_str.restype = ctypes.c_bool
 
-		self.module.gdb_server_close.argtypes = [ctypes.c_void_p, ctypes.c_int]
+        self.module.gdb_server_close.argtypes = [ctypes.c_void_p, ctypes.c_int]
 
-		self.module.gdb_server_refresh_target.argtypes = [ctypes.c_void_p]
+        self.module.gdb_server_refresh_target.argtypes = [ctypes.c_void_p]
 
-		self.module.get_max_log_level.restype = ctypes.c_int
+        self.module.get_max_log_level.restype = ctypes.c_int
 
-		config_string = None
+        config_string = None
 
-		if config is not None:
-			config_string = config.dump_to_string().encode('utf-8')
+        if config is not None:
+            config_string = config.dump_to_string().encode('utf-8')
 
-		self.instance = self.module.cable_new(config_string, system_config.dump_to_string().encode('utf-8'))
+        self.instance = self.module.cable_new(config_string, system_config.dump_to_string().encode('utf-8'))
 
-		if self.instance is None:
-			raise Exception('Failed to initialize cable with error: ' +
-				self.module.bridge_get_error().decode('utf-8'))
+        if self.instance is None:
+            raise Exception('Failed to initialize cable with error: ' +
+                self.module.bridge_get_error().decode('utf-8'))
 
 
-	def get_instance(self):
-		return self.instance
+    def get_instance(self):
+        return self.instance
 
-	def write(self, addr, size, buffer):
-		data = (ctypes.c_char * size).from_buffer(bytearray(buffer))
-		self.module.cable_write(self.instance, addr, size, data)
+    def write(self, addr, size, buffer):
+        data = (ctypes.c_char * size).from_buffer(bytearray(buffer))
+        self.module.cable_write(self.instance, addr, size, data)
 
-	def read(self, addr, size):
-		data = (ctypes.c_char * size)()
-		self.module.cable_read(self.instance, addr, size, data)
+    def read(self, addr, size):
+        data = (ctypes.c_char * size)()
+        self.module.cable_read(self.instance, addr, size, data)
 
-		result = []
-		for elem in data:
-			result.append(elem)
+        result = []
+        for elem in data:
+            result.append(elem)
 
-		return result
+        return result
 
-	def chip_reset(self, value):
-		self.module.chip_reset(self.instance, value)
+    def chip_reset(self, value):
+        self.module.chip_reset(self.instance, value)
 
-	def jtag_reset(self, value):
-		self.module.jtag_reset(self.instance, value)
+    def jtag_reset(self, value):
+        self.module.jtag_reset(self.instance, value)
 
-	def jtag_soft_reset(self):
-		self.module.jtag_soft_reset(self.instance)
+    def jtag_soft_reset(self):
+        self.module.jtag_soft_reset(self.instance)
 
-	def jtag_set_reg(self, reg, width, value):
-		self.module.cable_jtag_set_reg(self.instance, reg, width, value)
+    def jtag_set_reg(self, reg, width, value):
+        self.module.cable_jtag_set_reg(self.instance, reg, width, value)
 
-	def jtag_get_reg(self, reg, width, value):
-		out_value = ctypes.c_int()
-		self.module.cable_jtag_get_reg(self.instance, reg, width, ctypes.byref(out_value), value)
-		return out_value.value
+    def jtag_get_reg(self, reg, width, value):
+        out_value = ctypes.c_int()
+        self.module.cable_jtag_get_reg(self.instance, reg, width, ctypes.byref(out_value), value)
+        return out_value.value
 
-	def lock(self):
-		self.module.cable_lock(self.instance)
+    def lock(self):
+        self.module.cable_lock(self.instance)
 
-	def unlock(self):
-		self.module.cable_unlock(self.instance)
+    def unlock(self):
+        self.module.cable_unlock(self.instance)
 
 
 
 
 class debug_bridge(object):
 
-	def __init__(self, config, binaries=[], verbose=0):
-		self.verbose = verbose
-		self.config = config
-		self.cable = None
-		self.cable_name = config.get('**/debug_bridge/cable/type').get()
-		self.binaries = binaries
-		self.ioloop_handle = None
-		self.reqloop_handle = None
-		self.gdb_handle = None
-		self.cable_config = config.get('**/debug_bridge/cable')
-		self.is_started = None
-		self.do_exit = False
-		# Load the library which provides generic services through
-		# python / C++ bindings
-		lib_path = os.path.join('libpulpdebugbridge' + os.name == 'nt' and '.dll' or '.so')
-		
-		print(lib_path)
-		self.module = ctypes.CDLL(lib_path)
+    def __init__(self, config, binaries=[], verbose=0):
+        self.verbose = verbose
+        self.config = config
+        self.cable = None
+        self.cable_name = config.get('**/debug_bridge/cable/type').get()
+        self.binaries = binaries
+        self.ioloop_handle = None
+        self.reqloop_handle = None
+        self.gdb_handle = None
+        self.cable_config = config.get('**/debug_bridge/cable')
+        self.is_started = None
+        self.do_exit = False
+        # Load the library which provides generic services through
+        # python / C++ bindings
+        lib_path = os.path.join('libpulpdebugbridge' + (os.name == 'nt' and '.dll' or '.so'))
+        
+        self.module = ctypes.CDLL(lib_path)
 
-		self.module.bridge_ioloop_open.argtypes = [ctypes.c_void_p, ctypes.c_uint]
-		self.module.bridge_ioloop_open.restype = ctypes.c_void_p
+        self.module.bridge_ioloop_open.argtypes = [ctypes.c_void_p, ctypes.c_uint]
+        self.module.bridge_ioloop_open.restype = ctypes.c_void_p
 
-		self.module.bridge_ioloop_close.argtypes = [ctypes.c_void_p, ctypes.c_int]
-		self.module.bridge_ioloop_close.restype = ctypes.c_int
+        self.module.bridge_ioloop_close.argtypes = [ctypes.c_void_p, ctypes.c_int]
+        self.module.bridge_ioloop_close.restype = ctypes.c_int
 
-		self.module.bridge_ioloop_set_poll_delay.argtypes = [ctypes.c_void_p, ctypes.c_int]
+        self.module.bridge_ioloop_set_poll_delay.argtypes = [ctypes.c_void_p, ctypes.c_int]
 
-		self.module.bridge_reqloop_open.argtypes = [ctypes.c_void_p, ctypes.c_uint]
-		self.module.bridge_reqloop_open.restype = ctypes.c_void_p
+        self.module.bridge_reqloop_open.argtypes = [ctypes.c_void_p, ctypes.c_uint]
+        self.module.bridge_reqloop_open.restype = ctypes.c_void_p
 
-		self.module.bridge_reqloop_close.argtypes = [ctypes.c_void_p, ctypes.c_int]
+        self.module.bridge_reqloop_close.argtypes = [ctypes.c_void_p, ctypes.c_int]
 
-		self.module.bridge_init(config.dump_to_string().encode('utf-8'), verbose)
+        self.module.bridge_init(config.dump_to_string().encode('utf-8'), verbose)
 
-		self.capabilities("")
+        self.capabilities("")
 
 #self.module.jtag_shift.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.POINTER(ctypes.c_char_p), ctypes.POINTER(ctypes.c_char_p)]
 
-	def __mount_cable(self):
-		if self.cable_name is None:
-			raise Exception("Trying to mount cable while no cable was specified")
+    def __mount_cable(self):
+        if self.cable_name is None:
+            raise Exception("Trying to mount cable while no cable was specified")
 
-		if self.cable_name.split('@')[0] in ['ftdi', 'jtag-proxy']:
-			self.__mount_ctype_cable()
-			pass
-		else:
-			raise Exception('Unknown cable: ' + self.cable_name)
+        if self.cable_name.split('@')[0] in ['ftdi', 'jtag-proxy']:
+            self.__mount_ctype_cable()
+            pass
+        else:
+            raise Exception('Unknown cable: ' + self.cable_name)
 
-	def __mount_ctype_cable(self):
+    def __mount_ctype_cable(self):
 
-		self.cable = Ctype_cable(module = self.module, config = self.cable_config, system_config = self.config)
+        self.cable = Ctype_cable(module = self.module, config = self.cable_config, system_config = self.config)
 
-	def log(self, level, *args):
-		if self.verbose >= level:
-			print (*args)
+    def log(self, level, *args):
+        if self.verbose >= level:
+            print (*args)
 
-	def get_cable(self):
-		if self.cable is None:
-			self.__mount_cable()
+    def get_cable(self):
+        if self.cable is None:
+            self.__mount_cable()
 
-		return self.cable
+        return self.cable
 
-	def load_jtag(self):
-		raise Exception('JTAG boot is not supported on this target')
+    def load_jtag(self):
+        raise Exception('JTAG boot is not supported on this target')
 
-	def load_jtag_hyper(self):
-		raise Exception('JTAG boot is not supported on this target')
+    def load_jtag_hyper(self):
+        raise Exception('JTAG boot is not supported on this target')
 
-	def load_elf(self, binary):
-		with open(binary, 'rb') as file_stream:
-			elffile = ELFFile(file_stream)
+    def load_elf(self, binary):
+        with open(binary, 'rb') as file_stream:
+            elffile = ELFFile(file_stream)
 
-			for segment in elffile.iter_segments():
+            for segment in elffile.iter_segments():
 
-				if segment['p_type'] == 'PT_LOAD':
+                if segment['p_type'] == 'PT_LOAD':
 
-					data = segment.data()
-					addr = segment['p_paddr']
-					size = len(data)
+                    data = segment.data()
+                    addr = segment['p_paddr']
+                    size = len(data)
 
-					self.log(1, 'Loading section (base: 0x%x, size: 0x%x)' % (addr, size))
+                    self.log(1, 'Loading section (base: 0x%x, size: 0x%x)' % (addr, size))
 
-					self.write(addr, size, data)
+                    self.write(addr, size, data)
 
-					if segment['p_filesz'] < segment['p_memsz']:
-						addr = segment['p_paddr'] + segment['p_filesz']
-						size = segment['p_memsz'] - segment['p_filesz']
+                    if segment['p_filesz'] < segment['p_memsz']:
+                        addr = segment['p_paddr'] + segment['p_filesz']
+                        size = segment['p_memsz'] - segment['p_filesz']
 
-						self.log(1, 'Init section to 0 (base: 0x%x, size: 0x%x)' % (addr, size))
-						self.write(
-							addr,
-							size,
-							[0] * size
-						)
+                        self.log(1, 'Init section to 0 (base: 0x%x, size: 0x%x)' % (addr, size))
+                        self.write(
+                            addr,
+                            size,
+                            [0] * size
+                        )
 
 
-			set_pc_addr_config = self.config.get('**/debug_bridge/set_pc_addr')
+            set_pc_addr_config = self.config.get('**/debug_bridge/set_pc_addr')
 
-			if set_pc_addr_config is not None:
-				set_pc_offset_config = self.config.get('**/debug_bridge/set_pc_offset')
-				entry = elffile.header['e_entry']
+            if set_pc_addr_config is not None:
+                set_pc_offset_config = self.config.get('**/debug_bridge/set_pc_offset')
+                entry = elffile.header['e_entry']
 
-				if set_pc_offset_config is not None:
-					entry += set_pc_offset_config.get_int()
+                if set_pc_offset_config is not None:
+                    entry += set_pc_offset_config.get_int()
 
-				self.log(1, 'Setting PC (base: 0x%x, value: 0x%x)' % (set_pc_addr_config.get_int(), entry))
+                self.log(1, 'Setting PC (base: 0x%x, value: 0x%x)' % (set_pc_addr_config.get_int(), entry))
 
-				return self.write_32(set_pc_addr_config.get_int(), entry)
+                return self.write_32(set_pc_addr_config.get_int(), entry)
 
-		return 0
+        return 0
 
-	def load(self, mode=None):
-		if mode is None:
-			mode = self.config.get('**/debug_bridge/boot-mode').get()
+    def load(self, mode=None):
+        if mode is None:
+            mode = self.config.get('**/debug_bridge/boot-mode').get()
 
-		if mode == 'jtag':
-			return self.load_jtag()
-		elif mode == 'jtag_hyper':
-			return self.load_jtag_hyper()
-		else:
-			return self.load_default()
+        if mode == 'jtag':
+            return self.load_jtag()
+        elif mode == 'jtag_hyper':
+            return self.load_jtag_hyper()
+        else:
+            return self.load_default()
 
-	def load_default(self):
-		for binary in self.binaries:
-			if self.load_elf(binary=binary):
-				return 1
+    def load_default(self):
+        for binary in self.binaries:
+            if self.load_elf(binary=binary):
+                return 1
 
-		return 0
+        return 0
 
-	def start(self):
-		start_addr_config = self.config.get('**/debug_bridge/start_addr')
-		if start_addr_config is not None:
-			self.is_started = True
+    def start(self):
+        start_addr_config = self.config.get('**/debug_bridge/start_addr')
+        if start_addr_config is not None:
+            self.is_started = True
 
-			self.log(1, 'Starting (base: 0x%x, value: 0x%x)' % (start_addr_config.get_int(), self.config.get('**/debug_bridge/start_value').get_int()))
+            self.log(1, 'Starting (base: 0x%x, value: 0x%x)' % (start_addr_config.get_int(), self.config.get('**/debug_bridge/start_value').get_int()))
 
-			self.write_32(start_addr_config.get_int(), self.config.get('**/debug_bridge/start_value').get_int())
-		return 0
+            self.write_32(start_addr_config.get_int(), self.config.get('**/debug_bridge/start_value').get_int())
+        return 0
 
-	def stop(self):
-		stop_addr_config = self.config.get('**/debug_bridge/stop_addr')
-		if stop_addr_config is not None:
-			self.is_started = False
-			self.write_32(stop_addr_config.get_int(), self.config.get('**/debug_bridge/stop_value').get_int()) != 0
-		return 0
-
-	def decode_addr(self, taddr):
-		try:
-			addr = int(taddr, 0)
-		except:
-			addr = self._get_binary_symbol_addr(taddr)
-		return addr
-
-	def read(self, addr, size):
-		return self.get_cable().read(addr, size)
-
-	def write(self, addr, size, buffer):
-		return self.get_cable().write(addr, size, buffer)
-
-	def write_int(self, addr, value, size):
-		return self.write(addr, size, to_bytes(value, size, byteorder='little'))
-
-	def write_32(self, addr, value):
-		return self.write_int(addr, value, 4)
-
-	def write_16(self, addr, value):
-		return self.write_int(addr, value, 2)
-
-	def write_8(self, addr, value):
-		return self.write_int(addr, value, 1)
-
-	def read_int(self, addr, size):
-		byte_array = None
-		for byte in self.read(addr, size):
-			if byte_array == None:
-				byte_array = byte
-			else:
-				byte_array += byte
-		return struct.unpack(">i",byte_array)[0]
-			# int.from_bytes(byte_array, byteorder='little')
-
-	def read_32(self, addr):
-		return self.read_int(addr, 4)
-
-	def read_16(self, addr):
-		return self.read_int(addr, 2)
-
-	def read_8(self, addr):
-		return self.read_int(addr, 1)
-
-	def _get_binary_symbol_addr(self, name):
-		for binary in self.binaries:
-			with open(binary, 'rb') as file:
-				elf = ELFFile(file)
-				for section in elf.iter_sections():
-					if section.header['sh_type'] == 'SHT_SYMTAB':
-						for symbol in section.iter_symbols():
-							if symbol.name == name:
-								# t_section=symbol.entry['st_shndx']
-								t_vaddr=symbol.entry['st_value']
-								return t_vaddr
-		return 0
-
-	def reset(self):
-		self.get_cable().jtag_reset(True)
-		self.get_cable().jtag_reset(False)
-		self.get_cable().chip_reset(True)
-		self.get_cable().chip_reset(False)
-		return 0
-
-	def ioloop(self):
-		if self.ioloop_handle is not None:
-			print("close existing handle ....")
-			self.module.bridge_ioloop_close(self.ioloop_handle, 1)
-
-		# First get address of the structure used to communicate between
-		# the bridge and the runtime
-		addr = self._get_binary_symbol_addr('__rt_debug_struct_ptr')
-
-		self.log(1, "debug address 0x{:08x} contents 0x{:08x}".format(addr, self.read_32(addr)))
-
-		if addr == 0:
-			addr = self._get_binary_symbol_addr('debugStruct_ptr')
-
-		self.ioloop_handle = self.module.bridge_ioloop_open(
-			self.get_cable().get_instance(), addr)
-
-		return 0
-
-	def is_ioloop_active():
-		return self.ioloop_handle is not None
-
-	def reqloop(self):
-
-		# First get address of the structure used to communicate between
-		# the bridge and the runtime
-		addr = self._get_binary_symbol_addr('__rt_debug_struct_ptr')
-		if addr == 0:
-			addr = self._get_binary_symbol_addr('debugStruct_ptr')
-
-		self.reqloop_handle = self.module.bridge_reqloop_open(
-			self.get_cable().get_instance(), addr)
-
-		return 0
-
-	def flash(self):
-		raise Exception('Flash is not supported on this target')
-
-	def encode_bytes(self, sbuf, buf, buf_len, start=0):
-		enc = sbuf.encode('ascii')
-		if len(enc) + 1 > buf_len - start:
-			return -len(enc)
-		for i in range(len(enc)):
-			buf[i+start] = enc[i]
-		buf[len(enc)+start] = b'\000'
-		return len(enc) + start
-
-	def qrcmd_debug_level(self, cmd, buf, buf_len):
-		level = int(cmd.split()[1])
-		self.log(1, "Log level set to {}".format(level))
-		self.module.bridge_set_log_level(level)
-		return self.encode_bytes("OK", buf, buf_len)
-
-	def doreset(self, run):
-		do_ioloop = self.ioloop_handle is not None
-		if do_ioloop:
-			iores = self.module.bridge_ioloop_close(self.ioloop_handle, 1)
-			self.ioloop_handle = None
-		self.stop()
-		self.load()
-		self.module.gdb_server_refresh_target(self.gdb_handle)
-		if do_ioloop:
-			self.ioloop()
-		if run:
-			self.start()
-		return True
-
-	def qrcmd_reset(self, cmd, buf, buf_len):
-		cmd = cmd.split(' ')
-		if len(cmd) == 1:
-			cmd = "run"
-		elif len(cmd) == 2:
-			cmd = cmd[1]
-		else:
-			return self.encode_bytes("", buf, buf_len)
-		if "run".startswith(cmd):
-			cmd = "run"
-		elif "halt".startswith(cmd):
-			cmd = "halt"
-		else:
-			return self.encode_bytes("", buf, buf_len)
-
-		if self.doreset(cmd == "run"):
-			return self.encode_bytes("OK", buf, buf_len)
-		else:
-			return self.encode_bytes("E00", buf, buf_len)
-
-	def qrcmd_shutdown(self, cmd, buf, buf_len):
-		self.do_exit = True
-		self.module.gdb_server_close(self.gdb_handle, 1)
-		return self.encode_bytes("OK", buf, buf_len)
-
-	def hex_string(self, s):
-		res = []
-		for b in s:
-			res.append('{0:02x}'.format(ord(b)))
-		return ''.join(res)
-
-	def qrcmd_help(self, cmd, buf, buf_len, commands):
-		init = 'Command List\n'
-		for c in commands:
-			self.encode_bytes('O'+self.hex_string(init+commands[c]+'\n'), buf, buf_len)
-			self.module.gdb_send_str(self.gdb_handle, buf)
-			init = ''
-		return self.encode_bytes("OK", buf, buf_len)
-
-	def qrcmd_cb(self, cmd, buf, buf_len):
-		commands = {
-			u"reset":       "reset [run|halt]     - resets the target",
-			u"debug_level": "debug_level (0-{})    - sets bridge debug level".format(self.module.get_max_log_level()),
-			u"shutdown":    "shutdown             - shuts down the bridge",
-			u"help":        "help                 - gets list of supported commands"
-		}
-		try:
-			cmd = bytearray.fromhex(cmd).decode('ascii')
-			self.log(2, "Receive rCmd: "+cmd)
-			cmd_name = cmd.split(' ')[0].lower()
-			cmd_selected = None
-			for c in commands:
-				if c.startswith(cmd_name):
-					if cmd_selected is None:
-						cmd_selected = c
-					else:
-						return self.encode_bytes("", buf, buf_len)
-			if cmd_selected is None:
-				return self.encode_bytes("", buf, buf_len)
-			elif cmd_selected == "help":
-				return self.qrcmd_help(cmd, buf, buf_len, commands)
-			else:
-				handler = getattr(self, 'qrcmd_'+cmd_selected)
-				res = handler(cmd, buf, buf_len)
-				return res
-		except:
-			return self.encode_bytes("E00", buf, buf_len)
-
-	def qxfer_read_cb(self, obj, annex, offset, length, buf, buf_len):
-		try:
-			if obj == "exec-file":
-				if len(self.binaries) > 0:
-					obj_val = os.path.abspath(self.binaries[0])
-				else:
-					obj_val = ""
-			else:
-				obj_val = self.qxfer_read(obj, annex)
-
-			if offset >= len(obj_val):
-				obj_val = "l"
-			elif offset + length >= len(obj_val):
-				obj_val = "l" + obj_val[offset:]
-			else:
-				obj_val = "m" + obj_val[offset:offset+length-1]
-
-		except XferInvalidObjectException:
-			obj_val = ""
-		except XferInvalidAnnexException:
-			obj_val = "E00"
-		except XferErrorException as err:
-			obj_val = str(err)
-		except Exception:
-			obj_val = ""
-
-		return self.encode_bytes(obj_val, buf, buf_len)
-
-	def capabilities(self, extra):
-		capstr = "qXfer:exec-file:read+"
-		if len(extra) > 0:
-			capstr = capstr + ";" + extra
-		self.capabilities_str = capstr.encode('ascii')
-
-	def cmd_cb(self, cmd, buf, buf_len):
-		try:
-			cmd = cmd.decode('ascii')
-			if cmd.startswith("qXfer"):
-				cmd = cmd.split(":")
-				if len(cmd) != 5:
-					raise Exception()
-				offlen = cmd[4].split(',')
-				if cmd[2] == "read":
-					return self.qxfer_read_cb(cmd[1], cmd[3], int(offlen[0], base=16), int(offlen[1], base=16), buf, buf_len)
-			elif cmd.startswith("qRcmd"):
-				if len(cmd) < len("qRcmd") + 2:
-					return self.encode_bytes("E01", buf, buf_len)
-				cmd = cmd.split(',')
-				if len(cmd) != 2:
-					return self.encode_bytes("E01", buf, buf_len)
-
-				return self.qrcmd_cb(cmd[1], buf, buf_len)
-			# disabled for the moment since this causes issues with breakpoints for an unknown reason
-			# elif cmd.startswith("__gdb_tgt_res"):
-			#     if self.ioloop_handle is not None:
-			#         self.module.bridge_ioloop_set_poll_delay(self.ioloop_handle, 1)
-			#         return 1
-			# elif cmd.startswith("__gdb_tgt_hlt"):
-			#     if self.ioloop_handle is not None:
-			#         self.module.bridge_ioloop_set_poll_delay(self.ioloop_handle, 0)
-			#         return 1
-			elif cmd.startswith("__is_started"):
-				return self.is_started and 1 or 0
-			elif cmd.startswith("__start_target"):
-				return self.start()
-			elif cmd.startswith("__stop_target"):
-				return self.stop()
-			if buf_len > 0:
-				return self.encode_bytes("", buf, buf_len)
-			else:
-				return 0
-		except:
-			print("Unexpected error:", sys.exc_info()[0])
-			return self.encode_bytes("E00", buf, buf_len)
-
-	def gdb(self, port):
-		def cmd_cb_hook(cmd, buf, buf_len):
-			return self.cmd_cb(cmd, buf, buf_len)
-
-		self.cmd_func_ptr = self.get_cable().cmd_func_typ(cmd_cb_hook)
-		self.gdb_handle = self.module.gdb_server_open(
-			self.get_cable().get_instance(),
-			port,
-			self.cmd_func_ptr,
-			self.capabilities_str)
-		return 0
-
-	def wait(self):
-		exiting = 0
-		if self.gdb_handle is not None:
-			self.module.gdb_server_close(self.gdb_handle, exiting)
-			exiting = 1
-			self.gdb_handle = None
-
-		if self.ioloop_handle is not None:
-			res = self.module.bridge_ioloop_close(self.ioloop_handle, exiting)
-			exiting = 1
-			self.ioloop_handle = None
-
-		if self.reqloop_handle is not None:
-			self.module.bridge_reqloop_close(self.reqloop_handle, exiting)
-			self.reqloop_handle = None
-
-		self.log(1, "Wait is exiting")
-
-		return 0
-
-	def lock(self):
-		self.get_cable().lock()
-
-	def unlock(self):
-		self.get_cable().unlock()
+    def stop(self):
+        stop_addr_config = self.config.get('**/debug_bridge/stop_addr')
+        if stop_addr_config is not None:
+            self.is_started = False
+            self.write_32(stop_addr_config.get_int(), self.config.get('**/debug_bridge/stop_value').get_int()) != 0
+        return 0
+
+    def decode_addr(self, taddr):
+        try:
+            addr = int(taddr, 0)
+        except:
+            addr = self._get_binary_symbol_addr(taddr)
+        return addr
+
+    def read(self, addr, size):
+        return self.get_cable().read(addr, size)
+
+    def write(self, addr, size, buffer):
+        return self.get_cable().write(addr, size, buffer)
+
+    def write_int(self, addr, value, size):
+        return self.write(addr, size, to_bytes(value, size, byteorder='little'))
+
+    def write_32(self, addr, value):
+        return self.write_int(addr, value, 4)
+
+    def write_16(self, addr, value):
+        return self.write_int(addr, value, 2)
+
+    def write_8(self, addr, value):
+        return self.write_int(addr, value, 1)
+
+    def read_int(self, addr, size):
+        byte_array = None
+        for byte in self.read(addr, size):
+            if byte_array == None:
+                byte_array = byte
+            else:
+                byte_array += byte
+        return struct.unpack(">i",byte_array)[0]
+            # int.from_bytes(byte_array, byteorder='little')
+
+    def read_32(self, addr):
+        return self.read_int(addr, 4)
+
+    def read_16(self, addr):
+        return self.read_int(addr, 2)
+
+    def read_8(self, addr):
+        return self.read_int(addr, 1)
+
+    def _get_binary_symbol_addr(self, name):
+        for binary in self.binaries:
+            with open(binary, 'rb') as file:
+                elf = ELFFile(file)
+                for section in elf.iter_sections():
+                    if section.header['sh_type'] == 'SHT_SYMTAB':
+                        for symbol in section.iter_symbols():
+                            if symbol.name == name:
+                                # t_section=symbol.entry['st_shndx']
+                                t_vaddr=symbol.entry['st_value']
+                                return t_vaddr
+        return 0
+
+    def reset(self):
+        self.get_cable().jtag_reset(True)
+        self.get_cable().jtag_reset(False)
+        self.get_cable().chip_reset(True)
+        self.get_cable().chip_reset(False)
+        return 0
+
+    def ioloop(self):
+        if self.ioloop_handle is not None:
+            print("close existing handle ....")
+            self.module.bridge_ioloop_close(self.ioloop_handle, 1)
+
+        # First get address of the structure used to communicate between
+        # the bridge and the runtime
+        addr = self._get_binary_symbol_addr('__rt_debug_struct_ptr')
+
+        self.log(1, "debug address 0x{:08x} contents 0x{:08x}".format(addr, self.read_32(addr)))
+
+        if addr == 0:
+            addr = self._get_binary_symbol_addr('debugStruct_ptr')
+
+        self.ioloop_handle = self.module.bridge_ioloop_open(
+            self.get_cable().get_instance(), addr)
+
+        return 0
+
+    def is_ioloop_active():
+        return self.ioloop_handle is not None
+
+    def reqloop(self):
+
+        # First get address of the structure used to communicate between
+        # the bridge and the runtime
+        addr = self._get_binary_symbol_addr('__rt_debug_struct_ptr')
+        if addr == 0:
+            addr = self._get_binary_symbol_addr('debugStruct_ptr')
+
+        self.reqloop_handle = self.module.bridge_reqloop_open(
+            self.get_cable().get_instance(), addr)
+
+        return 0
+
+    def flash(self):
+        raise Exception('Flash is not supported on this target')
+
+    def encode_bytes(self, sbuf, buf, buf_len, start=0):
+        enc = sbuf.encode('ascii')
+        if len(enc) + 1 > buf_len - start:
+            return -len(enc)
+        for i in range(len(enc)):
+            buf[i+start] = enc[i]
+        buf[len(enc)+start] = b'\000'
+        return len(enc) + start
+
+    def qrcmd_debug_level(self, cmd, buf, buf_len):
+        level = int(cmd.split()[1])
+        self.log(1, "Log level set to {}".format(level))
+        self.module.bridge_set_log_level(level)
+        return self.encode_bytes("OK", buf, buf_len)
+
+    def doreset(self, run):
+        do_ioloop = self.ioloop_handle is not None
+        if do_ioloop:
+            iores = self.module.bridge_ioloop_close(self.ioloop_handle, 1)
+            self.ioloop_handle = None
+        self.stop()
+        self.load()
+        self.module.gdb_server_refresh_target(self.gdb_handle)
+        if do_ioloop:
+            self.ioloop()
+        if run:
+            self.start()
+        return True
+
+    def qrcmd_reset(self, cmd, buf, buf_len):
+        cmd = cmd.split(' ')
+        if len(cmd) == 1:
+            cmd = "run"
+        elif len(cmd) == 2:
+            cmd = cmd[1]
+        else:
+            return self.encode_bytes("", buf, buf_len)
+        if "run".startswith(cmd):
+            cmd = "run"
+        elif "halt".startswith(cmd):
+            cmd = "halt"
+        else:
+            return self.encode_bytes("", buf, buf_len)
+
+        if self.doreset(cmd == "run"):
+            return self.encode_bytes("OK", buf, buf_len)
+        else:
+            return self.encode_bytes("E00", buf, buf_len)
+
+    def qrcmd_shutdown(self, cmd, buf, buf_len):
+        self.do_exit = True
+        self.module.gdb_server_close(self.gdb_handle, 1)
+        return self.encode_bytes("OK", buf, buf_len)
+
+    def hex_string(self, s):
+        res = []
+        for b in s:
+            res.append('{0:02x}'.format(ord(b)))
+        return ''.join(res)
+
+    def qrcmd_help(self, cmd, buf, buf_len, commands):
+        init = 'Command List\n'
+        for c in commands:
+            self.encode_bytes('O'+self.hex_string(init+commands[c]+'\n'), buf, buf_len)
+            self.module.gdb_send_str(self.gdb_handle, buf)
+            init = ''
+        return self.encode_bytes("OK", buf, buf_len)
+
+    def qrcmd_cb(self, cmd, buf, buf_len):
+        commands = {
+            u"reset":       "reset [run|halt]     - resets the target",
+            u"debug_level": "debug_level (0-{})    - sets bridge debug level".format(self.module.get_max_log_level()),
+            u"shutdown":    "shutdown             - shuts down the bridge",
+            u"help":        "help                 - gets list of supported commands"
+        }
+        try:
+            cmd = bytearray.fromhex(cmd).decode('ascii')
+            self.log(2, "Receive rCmd: "+cmd)
+            cmd_name = cmd.split(' ')[0].lower()
+            cmd_selected = None
+            for c in commands:
+                if c.startswith(cmd_name):
+                    if cmd_selected is None:
+                        cmd_selected = c
+                    else:
+                        return self.encode_bytes("", buf, buf_len)
+            if cmd_selected is None:
+                return self.encode_bytes("", buf, buf_len)
+            elif cmd_selected == "help":
+                return self.qrcmd_help(cmd, buf, buf_len, commands)
+            else:
+                handler = getattr(self, 'qrcmd_'+cmd_selected)
+                res = handler(cmd, buf, buf_len)
+                return res
+        except:
+            return self.encode_bytes("E00", buf, buf_len)
+
+    def qxfer_read_cb(self, obj, annex, offset, length, buf, buf_len):
+        try:
+            if obj == "exec-file":
+                if len(self.binaries) > 0:
+                    obj_val = os.path.abspath(self.binaries[0])
+                else:
+                    obj_val = ""
+            else:
+                obj_val = self.qxfer_read(obj, annex)
+
+            if offset >= len(obj_val):
+                obj_val = "l"
+            elif offset + length >= len(obj_val):
+                obj_val = "l" + obj_val[offset:]
+            else:
+                obj_val = "m" + obj_val[offset:offset+length-1]
+
+        except XferInvalidObjectException:
+            obj_val = ""
+        except XferInvalidAnnexException:
+            obj_val = "E00"
+        except XferErrorException as err:
+            obj_val = str(err)
+        except Exception:
+            obj_val = ""
+
+        return self.encode_bytes(obj_val, buf, buf_len)
+
+    def capabilities(self, extra):
+        capstr = "qXfer:exec-file:read+"
+        if len(extra) > 0:
+            capstr = capstr + ";" + extra
+        self.capabilities_str = capstr.encode('ascii')
+
+    def cmd_cb(self, cmd, buf, buf_len):
+        try:
+            cmd = cmd.decode('ascii')
+            if cmd.startswith("qXfer"):
+                cmd = cmd.split(":")
+                if len(cmd) != 5:
+                    raise Exception()
+                offlen = cmd[4].split(',')
+                if cmd[2] == "read":
+                    return self.qxfer_read_cb(cmd[1], cmd[3], int(offlen[0], base=16), int(offlen[1], base=16), buf, buf_len)
+            elif cmd.startswith("qRcmd"):
+                if len(cmd) < len("qRcmd") + 2:
+                    return self.encode_bytes("E01", buf, buf_len)
+                cmd = cmd.split(',')
+                if len(cmd) != 2:
+                    return self.encode_bytes("E01", buf, buf_len)
+
+                return self.qrcmd_cb(cmd[1], buf, buf_len)
+            # disabled for the moment since this causes issues with breakpoints for an unknown reason
+            # elif cmd.startswith("__gdb_tgt_res"):
+            #     if self.ioloop_handle is not None:
+            #         self.module.bridge_ioloop_set_poll_delay(self.ioloop_handle, 1)
+            #         return 1
+            # elif cmd.startswith("__gdb_tgt_hlt"):
+            #     if self.ioloop_handle is not None:
+            #         self.module.bridge_ioloop_set_poll_delay(self.ioloop_handle, 0)
+            #         return 1
+            elif cmd.startswith("__is_started"):
+                return self.is_started and 1 or 0
+            elif cmd.startswith("__start_target"):
+                return self.start()
+            elif cmd.startswith("__stop_target"):
+                return self.stop()
+            if buf_len > 0:
+                return self.encode_bytes("", buf, buf_len)
+            else:
+                return 0
+        except:
+            print("Unexpected error:", sys.exc_info()[0])
+            return self.encode_bytes("E00", buf, buf_len)
+
+    def gdb(self, port):
+        def cmd_cb_hook(cmd, buf, buf_len):
+            return self.cmd_cb(cmd, buf, buf_len)
+
+        self.cmd_func_ptr = self.get_cable().cmd_func_typ(cmd_cb_hook)
+        self.gdb_handle = self.module.gdb_server_open(
+            self.get_cable().get_instance(),
+            port,
+            self.cmd_func_ptr,
+            self.capabilities_str)
+        return 0
+
+    def wait(self):
+        exiting = 0
+        if self.gdb_handle is not None:
+            self.module.gdb_server_close(self.gdb_handle, exiting)
+            exiting = 1
+            self.gdb_handle = None
+
+        if self.ioloop_handle is not None:
+            res = self.module.bridge_ioloop_close(self.ioloop_handle, exiting)
+            exiting = 1
+            self.ioloop_handle = None
+
+        if self.reqloop_handle is not None:
+            self.module.bridge_reqloop_close(self.reqloop_handle, exiting)
+            self.reqloop_handle = None
+
+        self.log(1, "Wait is exiting")
+
+        return 0
+
+    def lock(self):
+        self.get_cable().lock()
+
+    def unlock(self):
+        self.get_cable().unlock()
