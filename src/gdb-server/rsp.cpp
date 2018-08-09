@@ -60,7 +60,7 @@ void Rsp::init()
   m_thread_init = main_core->get_thread_id();
 }
 
-void Rsp::client_connected(Tcp_listener::tcp_socket_ptr_t client)
+void Rsp::client_connected(Tcp_socket::tcp_socket_ptr_t client)
 {
   top->log->user("RSP: client connected\n");
 
@@ -103,7 +103,7 @@ void Rsp::client_connected(Tcp_listener::tcp_socket_ptr_t client)
   top->log->debug("RSP: finished notified\n");
 }
 
-void Rsp::client_disconnected(Tcp_listener::tcp_socket_ptr_t)
+void Rsp::client_disconnected(Tcp_socket::tcp_socket_ptr_t)
 {
   top->log->user("RSP: TCP client disconnected\n");
 }
@@ -150,8 +150,8 @@ bool Rsp::open() {
   listener = new Tcp_listener(
     this->top->log,
     port,
-    [this](Tcp_listener::tcp_socket_ptr_t client) { return this->client_connected(client); }, 
-    [this](Tcp_listener::tcp_socket_ptr_t client) { return this->client_disconnected(client); }
+    [this](Tcp_socket::tcp_socket_ptr_t client) { return this->client_connected(client); }, 
+    [this](Tcp_socket::tcp_socket_ptr_t client) { return this->client_disconnected(client); }
   );
   return listener->start();
 }
@@ -192,7 +192,7 @@ void Rsp::resume_target(bool step, int tid)
 
 // Rsp::Client
 
-Rsp::Client::Client(Rsp *rsp, Tcp_listener::tcp_socket_ptr_t client) : top(rsp->top), rsp(rsp), client(client)
+Rsp::Client::Client(Rsp *rsp, Tcp_socket::tcp_socket_ptr_t client) : top(rsp->top), rsp(rsp), client(client)
 {
   thread_sel = rsp->m_thread_init;
   thread = new std::thread(&Rsp::Client::client_routine, this);
@@ -899,7 +899,7 @@ bool Rsp::Client::get_packet(char* pkt, size_t* p_pkt_len) {
   // first look for start bit
   do {
     ret = client->receive(&c, 1, true);
-    if(ret<0) {
+    if(ret == SOCKET_ERROR) {
       top->log->print(LOG_ERROR, "RSP: Error receiving1\n");
       return false;
     }
@@ -923,7 +923,7 @@ bool Rsp::Client::get_packet(char* pkt, size_t* p_pkt_len) {
 
     ret = this->client->receive(&c, 1, true);
 
-    if (ret<0) {
+    if (ret == SOCKET_ERROR) {
       top->log->print(LOG_ERROR, "RSP: Error receiving2\n");
       return false;
     }
@@ -950,7 +950,7 @@ bool Rsp::Client::get_packet(char* pkt, size_t* p_pkt_len) {
   // checksum, 2 bytes
   ret = this->client->receive(check_chars, 2, true);
 
-  if (ret<0) {
+  if (ret == SOCKET_ERROR) {
     top->log->print(LOG_ERROR, "RSP: Error receiving4\n");
     return false;
   }
@@ -1022,14 +1022,14 @@ bool Rsp::Client::send(const char* data, size_t len)
   do {
     top->log->print(LOG_DEBUG, "Sending %.*s\n", raw_len, raw);
 
-    if (!client->send(raw, raw_len)) {
+    if (client->send(raw, raw_len) == SOCKET_ERROR) {
       free(raw);
       top->log->print(LOG_ERROR, "Unable to send data to client\n");
       return false;
     }
 
     ret = client->receive(&ack, 1, 1000, true);
-    if(ret < 0) {
+    if(ret == SOCKET_ERROR) {
       free(raw);
       top->log->print(LOG_ERROR, "RSP: Error receiving0\n");
       return false;

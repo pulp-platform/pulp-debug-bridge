@@ -20,13 +20,13 @@
 
 #include "Tcp_listener.hpp"
 
-Tcp_listener::Tcp_listener(Log *log, port_t port, socket_cb_t connected_cb, socket_cb_t disconnected_cb) : 
-    log(log), port(port), c_cb(connected_cb), d_cb(disconnected_cb)
+Tcp_socket_owner::Tcp_socket_owner(Log *log, Tcp_socket::socket_cb_t connected_cb, Tcp_socket::socket_cb_t disconnected_cb) 
+  : log(log), c_cb(connected_cb), d_cb(disconnected_cb) 
 {
-
+  log->debug("Tcp_socket_owner constructor - conn_cb: %s disconn_cb: %s\n", (c_cb==NULL?"no":"yes"), (d_cb==NULL?"no":"yes"));
 }
 
-bool Tcp_listener::set_blocking(int fd, bool blocking)
+bool Tcp_socket_owner::set_blocking(int fd, bool blocking)
 {
   if (fd < 0) {
     return false;
@@ -45,6 +45,106 @@ bool Tcp_listener::set_blocking(int fd, bool blocking)
 
   return (fcntl(fd, F_SETFL, flags) == 0) ? true : false;
 #endif
+}
+
+int Tcp_socket_owner::instances = 0;
+
+bool Tcp_socket_owner::socket_init()
+{
+  instances++;
+  if (instances == 1) {
+    #ifdef _WIN32
+      return WSAStartup(MAKEWORD(1,1), &wsa_data) == 0;
+    #else
+      return true;
+    #endif
+  } else {
+    return true;
+  }
+}
+
+bool Tcp_socket_owner::print_error(const char * err_str)
+{
+#ifdef _WIN32
+  int err_num;
+  if ((err_num = WSAGetLastError()) != WSAEWOULDBLOCK) {
+    log->error(err_str, err_num);
+    return true;
+  }
+#else
+  if (errno != EWOULDBLOCK) {
+    log->error(err_str, errno);
+    return true;
+  }
+#endif
+  return false;
+}
+
+void Tcp_socket_owner::socket_deinit()
+{
+  instances--;
+  if (instances == 0) {
+    #ifdef _WIN32
+      WSACleanup();
+    #endif
+  }
+}
+
+Tcp_client::Tcp_client(Log * log, Tcp_socket::socket_cb_t connected_cb, Tcp_socket::socket_cb_t disconnected_cb)
+  : Tcp_socket_owner(log, connected_cb, disconnected_cb)
+{
+
+}
+
+void Tcp_client::client_disconnected(Tcp_socket *)
+{
+  if (client) {
+    if (d_cb) d_cb(client);
+    client = NULL;
+  }
+}
+
+Tcp_socket::tcp_socket_ptr_t Tcp_client::connect(const char * address, int port)
+{
+  struct sockaddr_in addr;
+  struct hostent *he;
+  socket_t socket_cl;
+
+  socket_cl = socket(PF_INET, SOCK_STREAM, 0);
+  if(socket_cl == INVALID_SOCKET)
+  {
+    print_error("unable to create socket - error %d\n");
+    return Tcp_socket::tcp_socket_ptr_t(nullptr);
+  }
+
+  if((he = gethostbyname(address)) == NULL) {
+    print_error("unable to find host - error %d\n");
+    return Tcp_socket::tcp_socket_ptr_t(nullptr);
+  }
+
+  log->user("Connecting to (%s:%d)\n", address, port);
+
+  addr.sin_family = AF_INET;
+  addr.sin_port = htons(port);
+  addr.sin_addr = *((struct in_addr *)he->h_addr_list[0]);
+  memset(addr.sin_zero, '\0', sizeof(addr.sin_zero));
+
+  if(::connect(socket_cl, (struct sockaddr *)&addr, sizeof(addr)) == SOCKET_ERROR) {
+    print_error("unable to connect - error %d\n");
+    return Tcp_socket::tcp_socket_ptr_t(nullptr);
+  }
+  log->user("Connected to (%s:%d)\n", address, port);
+  set_blocking(socket_cl, false);
+  is_running = true;
+  client = std::make_shared<Tcp_socket>(this, socket_cl);
+  if (c_cb) c_cb(client);
+  return client;
+}
+
+Tcp_listener::Tcp_listener(Log *log, port_t port, Tcp_socket::socket_cb_t connected_cb, Tcp_socket::socket_cb_t disconnected_cb)
+  : Tcp_socket_owner(log, connected_cb, disconnected_cb), port(port)
+{
+  log->debug("create listener conn_cb: %s disconn_cb: %s\n", (connected_cb==NULL?"no":"yes"), (disconnected_cb==NULL?"no":"yes"));
 }
 
 void Tcp_listener::listener_routine()
@@ -68,24 +168,28 @@ void Tcp_listener::listener_routine()
     if (ret > 0) {
       if((socket_client = accept(socket_in, NULL, NULL)) == INVALID_SOCKET)
       {
-        if(errno == EAGAIN)
+        if (!print_error("Tcp_listener: Unable to accept connection: %d\n"))
           continue;
 
-        log->print(LOG_ERROR, "Tcp_listener: Unable to accept connection: %s\n", strerror(errno));
         close(socket_client);
         continue;
       }
 
-      log->print(LOG_INFO, "Tcp_listener: Client connected!\n");
+      log->user("Tcp_listener: Client connected!\n");
 
       set_blocking(socket_client, false);
       client = std::make_shared<Tcp_socket>(this, socket_client);
 
-      if (c_cb) c_cb(client);
-      log->print(LOG_INFO, "Tcp_listener: client finished\n");
+      if (c_cb) {
+        log->debug("Tcp_listener: call connected callback\n");
+        c_cb(client);
+      } else {
+        log->debug("Tcp_listener: no connected callback - closing socket\n");
+      }
+      log->user("Tcp_listener: client finished\n");
     } else if (ret == SOCKET_ERROR) {
       if (is_running) {
-        log->print(LOG_ERROR, "Tcp_listener: error on listening socket: %s\n", strerror(errno));
+        print_error("Tcp_listener: error on listening socket: %d\n");
       }
       break;
     }
@@ -93,26 +197,7 @@ void Tcp_listener::listener_routine()
   log->debug("listener thread finished\n");
 }
 
-int Tcp_listener::socket_init()
-{
-  #ifdef _WIN32
-    WSADATA wsa_data;
-    return WSAStartup(MAKEWORD(1,1), &wsa_data);
-  #else
-    return 0;
-  #endif
-}
-
-int Tcp_listener::socket_deinit()
-{
-  #ifdef _WIN32
-    return WSACleanup();
-  #else
-    return 0;
-  #endif
-}
-
-void Tcp_listener::client_disconnected()
+void Tcp_listener::client_disconnected(Tcp_socket *)
 {
   if (client) {
     if (d_cb) d_cb(client);
@@ -133,7 +218,7 @@ void Tcp_listener::stop()
     ::close(socket_in);
     listener_thread->join();
   }
-  this->socket_deinit();
+  Tcp_socket_owner::socket_deinit();
   this->is_stopping = false;
 }
 
@@ -147,7 +232,7 @@ bool Tcp_listener::start()
 
   log->debug("Tcp_listener started (running %d)\n", this->is_running);
 
-  this->socket_init();
+  Tcp_socket_owner::socket_init();
   addr.sin_family = AF_INET;
   addr.sin_port = htons(port);
   addr.sin_addr.s_addr = INADDR_ANY;
@@ -156,22 +241,22 @@ bool Tcp_listener::start()
   socket_in = socket(PF_INET, SOCK_STREAM, 0);
   if(socket_in == INVALID_SOCKET)
   {
-    log->print(LOG_ERROR, "Unable to create comm socket: %s\n", strerror(errno));
+    print_error("Unable to create comm socket: %d\n");
     return false;
   }
 
   if(setsockopt(socket_in, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(int)) == -1) {
-    log->print(LOG_ERROR, "Unable to setsockopt on the socket: %s\n", strerror(errno));
+    print_error("Unable to setsockopt on the socket: %d\n");
     return false;
   }
 
   if(bind(socket_in, (struct sockaddr *)&addr, sizeof(addr)) == -1) {
-    log->print(LOG_ERROR, "Unable to bind the socket: %s\n", strerror(errno));
+    print_error("Unable to bind the socket: %d\n");
     return false;
   }
 
   if(listen(socket_in, 1) == -1) {
-    log->print(LOG_ERROR, "Unable to listen: %s\n", strerror(errno));
+    print_error("Unable to listen: %d\n");
     return false;
   }
 
@@ -179,16 +264,16 @@ bool Tcp_listener::start()
   this->is_stopping = false;
   listener_thread = new std::thread(&Tcp_listener::listener_routine, this);
 
-  log->print(LOG_INFO, "RSP server opened on port %d\n", port);
+  log->user("RSP server opened on port %d\n", port);
 
   return is_running;
 }
 
-Tcp_listener::Tcp_socket::Tcp_socket(Tcp_listener *listener, socket_t socket) : listener(listener), socket(socket)
+Tcp_socket::Tcp_socket(Tcp_socket_owner *owner, socket_t socket) : owner(owner), socket(socket)
 {
 }
 
-ssize_t Tcp_listener::Tcp_socket::check_error(func_ret_t)
+ssize_t Tcp_socket::check_error(func_ret_t)
 {
 #ifdef _WIN32
   int err_num;
@@ -196,7 +281,7 @@ ssize_t Tcp_listener::Tcp_socket::check_error(func_ret_t)
     listener->log->error("Error on client socket %d - closing\n", err_num);
 #else
   if (errno != EWOULDBLOCK) {
-    listener->log->error("Error on client socket %d - closing\n", errno);
+    owner->log->error("Error on client socket %d - closing\n", errno);
 #endif
     this->close();
     return -1;
@@ -205,9 +290,9 @@ ssize_t Tcp_listener::Tcp_socket::check_error(func_ret_t)
   }
 }
 
-void Tcp_listener::Tcp_socket::shutdown()
+void Tcp_socket::shutdown()
 {
-  listener->log->debug("Shutdown client socket\n");
+  owner->log->debug("Shutdown client socket\n");
   fd_set rfds;
   struct timeval tv;
   char buf[100];
@@ -239,29 +324,29 @@ void Tcp_listener::Tcp_socket::shutdown()
       break;
     }
   }
-  listener->log->debug("Shutdown finished waiting\n");
+  owner->log->debug("Shutdown finished waiting\n");
 }
 
 
-void Tcp_listener::Tcp_socket::close()
+void Tcp_socket::close()
 {
   if (!is_closed) {
     if (is_closing) return;
     is_closing = true;
-    listener->log->debug("Close client socket %d\n", is_shutdown);
+    owner->log->debug("Close client socket %d\n", is_shutdown);
     if (!is_shutdown) {
       this->shutdown();
     }
-    listener->log->debug("Close client socket\n");
+    owner->log->debug("Close client socket\n");
     is_closed = true;
     // clear blocking on the socket so that if linger is set we wait
-    listener->set_blocking(socket, false);
+    owner->set_blocking(socket, false);
 #ifdef _WIN32
     closesocket(socket);
 #else
     ::close(socket);
 #endif
-    listener->client_disconnected();
+    owner->client_disconnected(this);
     this->is_closing = false;
   }
 }
@@ -285,7 +370,7 @@ inline void timersub(const timeval* tvp, const timeval* uvp, timeval* vvp)
 
 // recv/send buf which must be buf_cnt in size. If cnt < 0 then send/recv as much as possible. 
 // If cnt > 0 send/recv exactly that amount
-func_ret_t Tcp_listener::Tcp_socket::recvsend(bool send, void * buf, size_t buf_len, size_t cnt, int flags, int ms)
+func_ret_t Tcp_socket::recvsend(bool send, void * buf, size_t buf_len, size_t cnt, int flags, int ms)
 {
   if (is_closed) {
     return -1;
@@ -312,16 +397,16 @@ func_ret_t Tcp_listener::Tcp_socket::recvsend(bool send, void * buf, size_t buf_
   while (1) {
     func_ret_t ret;
 
-    if (!listener->is_running) {
+    if (!owner->is_running) {
       this->close();
-      return -1;
+      return SOCKET_ERROR;
     }
 
     ret = select(socket+1, &rfds, &wfds, NULL, &tv);
 
-    if (!listener->is_running) {
+    if (!owner->is_running) {
       this->close();
-      return -1;
+      return SOCKET_ERROR;
     }
 
     if (ret > 0) {
@@ -331,16 +416,16 @@ func_ret_t Tcp_listener::Tcp_socket::recvsend(bool send, void * buf, size_t buf_
         ret = recv(socket, buf, cnt<=0?buf_len:cnt, flags);
       }
 
-      if (!listener->is_running) {
+      if (!owner->is_running) {
         this->close();
-        return -1;
+        return SOCKET_ERROR;
       }
 
       // check if the connection has closed
       if (!send && ret == 0) {
         this->is_shutdown = true;
         this->close();
-        res = -1;
+        res = SOCKET_ERROR;
         break;
       }
 
@@ -385,7 +470,7 @@ func_ret_t Tcp_listener::Tcp_socket::recvsend(bool send, void * buf, size_t buf_
   return res;
 }
 
-func_ret_t Tcp_listener::Tcp_socket::recvsend_block(bool send, void * buf, size_t len, int flags)
+func_ret_t Tcp_socket::recvsend_block(bool send, void * buf, size_t len, int flags)
 {
   func_ret_t ret = 0;
   while (ret == 0) {
@@ -394,22 +479,22 @@ func_ret_t Tcp_listener::Tcp_socket::recvsend_block(bool send, void * buf, size_
   return ret;
 }
 
-func_ret_t Tcp_listener::Tcp_socket::receive(void * buf, size_t len, int ms, bool await_all, int flags)
+func_ret_t Tcp_socket::receive(void * buf, size_t len, int ms, bool await_all, int flags)
 {
   return this->recvsend(false, buf, len, await_all?len:0, flags, ms);
 }
 
-func_ret_t Tcp_listener::Tcp_socket::receive(void * buf, size_t len, bool, int flags)
+func_ret_t Tcp_socket::receive(void * buf, size_t len, int flags)
 {
   return this->recvsend_block(false, buf, len, flags);
 }
 
-func_ret_t Tcp_listener::Tcp_socket::send(void * buf, size_t len, int ms, int flags)
+func_ret_t Tcp_socket::send(void * buf, size_t len, int ms, int flags)
 {
   return this->recvsend(true, buf, len, len, flags, ms);
 }
 
-func_ret_t Tcp_listener::Tcp_socket::send(void * buf, size_t len, int flags)
+func_ret_t Tcp_socket::send(void * buf, size_t len, int flags)
 {
   return this->recvsend_block(true, buf, len, flags);
 }

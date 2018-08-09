@@ -18,11 +18,17 @@
  * Authors: Germain Haugou, ETH (germain.haugou@iis.ee.ethz.ch)
  */
 
-
-#include "cables/adv_dbg_itf/adv_dbg_itf.hpp"
-#include "cable.hpp"
-
+#include <assert.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include <stdint.h>
+
+#include "cables/log.h"
+#include "cables/adv_dbg_itf/adv_dbg_itf.hpp"
+#include "debug_bridge/proxy.hpp"
+#include "cable.hpp"
+#include "gdb-server/Tcp_listener.hpp"
 
 class Jtag_proxy : public Cable {
   public:
@@ -40,13 +46,17 @@ class Jtag_proxy : public Cable {
 
     int flush();
 
-
-
     bool chip_reset(bool active);
 
   private:
 
-    int m_socket;
+    Tcp_client * m_client;
+    Tcp_socket::tcp_socket_ptr_t m_socket;
+    int m_port = 0;
+    const char *m_server;
+
+    void client_connected(Tcp_socket::tcp_socket_ptr_t);
+    void client_disconnected(Tcp_socket::tcp_socket_ptr_t);
 
     bool proxy_stream(char* instream, char* outstream, unsigned int n_bits, bool last, int bit);
     Log * log;

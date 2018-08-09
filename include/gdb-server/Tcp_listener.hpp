@@ -18,12 +18,16 @@
  * Authors: Martin Croome, GreenWaves Technologies (martin.croome@greenwaves-technologies.com)
  */
 
+#ifndef __TCP_LISTENER_H__
+#define __TCP_LISTENER_H__
+
 #ifdef _WIN32
   #ifndef _WIN32_WINNT
     #define _WIN32_WINNT 0x0501
   #endif
   #include <winsock2.h>
   #include <Ws2tcpip.h>
+  #include <Windef.h>
   typedef int port_t;
   typedef SOCKET socket_t;
   #define LST_SHUT_RDWR SD_BOTH
@@ -54,37 +58,17 @@
 #include <memory>
 #include <condition_variable>
 
-class Tcp_listener {
-public:
-  class Exception: public std::exception
-  {
+class Tcp_socket_owner;
+
+class Tcp_socket {
   public:
-      explicit Exception(const char* message):
-        msg_(message)
-        {
-        }
-      explicit Exception(const std::string& message):
-        msg_(message)
-        {}
-      virtual ~Exception() throw (){}
-      virtual const char* what() const throw (){
-        return msg_.c_str();
-      }
+    typedef std::function<void()> finished_cb_t;
+    typedef std::shared_ptr<Tcp_socket> tcp_socket_ptr_t;
+    typedef std::function<void(tcp_socket_ptr_t)> socket_cb_t;
 
-  protected:
-      std::string msg_;
-  };
-
-  class Fatal_exception: public Exception
-  { };
-
-  typedef std::function<void()> finished_cb_t;
-
-  class Tcp_socket {
-  public:
-    Tcp_socket(Tcp_listener *listener, socket_t socket);
+    Tcp_socket(Tcp_socket_owner *owner, socket_t socket);
     func_ret_t receive(void * buf, size_t len, int ms, bool await_all, int flags=0);
-    func_ret_t receive(void * buf, size_t len, bool await_all, int flags=0);
+    func_ret_t receive(void * buf, size_t len, int flags=0);
     func_ret_t send(void * buf, size_t len, int ms, int flags=0);
     func_ret_t send(void * buf, size_t len, int flags=0);
     void close();
@@ -95,33 +79,61 @@ public:
     func_ret_t recvsend_block(bool send, void * buf, size_t len, int flags);
     ssize_t check_error(func_ret_t ret);
 
-    Tcp_listener *listener;
+    Tcp_socket_owner *owner;
     socket_t socket;
     int block_timeout = 100;
     finished_cb_t f_cb;
     bool is_closed = false, is_shutdown = false, is_closing = false;
-  };
+};
 
-  typedef std::shared_ptr<Tcp_listener::Tcp_socket> tcp_socket_ptr_t;
-  typedef std::function<void(tcp_socket_ptr_t)> socket_cb_t;
+class Tcp_socket_owner {
+  public:
+    Tcp_socket_owner(Log *log, Tcp_socket::socket_cb_t connected_cb, Tcp_socket::socket_cb_t disconnected_cb);
+    virtual ~Tcp_socket_owner() {};
+    friend class Tcp_socket;
+  protected:
+    virtual void client_disconnected(Tcp_socket * socket) = 0;
+    bool print_error(const char * err_str);
+    static bool socket_init();
+    static void socket_deinit();
+    Log *log;
+    Tcp_socket::socket_cb_t c_cb, d_cb;
+    bool set_blocking(int fd, bool blocking);
+    bool is_running = false;
+  private:
+    static int instances;
 
-  Tcp_listener(Log *log, port_t port, socket_cb_t connected_cb, socket_cb_t disconnected_cb);
+  #ifdef _WIN32
+    WSADATA wsa_data;
+  #endif
+};
+
+class Tcp_client : public Tcp_socket_owner {
+  public:
+    Tcp_client(Log * log, Tcp_socket::socket_cb_t connected_cb, Tcp_socket::socket_cb_t disconnected_cb);
+    virtual ~Tcp_client() {}
+    Tcp_socket::tcp_socket_ptr_t connect(const char * address, int port);
+  private:
+    Tcp_socket::tcp_socket_ptr_t client;
+    void client_disconnected(Tcp_socket * socket);
+};
+
+class Tcp_listener : public Tcp_socket_owner {
+public:
+  Tcp_listener(Log *log, port_t port, Tcp_socket::socket_cb_t connected_cb, Tcp_socket::socket_cb_t disconnected_cb);
+  virtual ~Tcp_listener() {}
   bool start();
   void stop();
 
 private:
-  void client_disconnected();
+  void client_disconnected(Tcp_socket * socket);
   void listener_routine();
-  int socket_init();
-  int socket_deinit();
-  bool set_blocking(int fd, bool blocking);
 
-  Log *log;
   port_t port;
-  socket_cb_t c_cb, d_cb;
   socket_t socket_in;
-  bool is_running = false, is_stopping = false;
-  tcp_socket_ptr_t client;
+  bool is_stopping = false;
+  Tcp_socket::tcp_socket_ptr_t client;
   std::thread *listener_thread;
 };
 
+#endif

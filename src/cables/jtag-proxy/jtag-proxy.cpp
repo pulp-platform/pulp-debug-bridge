@@ -18,32 +18,29 @@
  * Authors: Germain Haugou, ETH (germain.haugou@iis.ee.ethz.ch)
  */
 
-#include <assert.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <unistd.h>
-#include <errno.h>
-#include <netinet/in.h>
-#include <netdb.h>
-#include <arpa/inet.h>
-#include <fcntl.h>
-#include <string.h>
-#include <sys/select.h>
-
-#include "cables/log.h"
 #include "jtag-proxy.hpp"
-#include "debug_bridge/proxy.hpp"
 
 Jtag_proxy::Jtag_proxy(Log* log) : log(log)
 {
+  m_client = new Tcp_client(
+    log,
+    [this](Tcp_socket::tcp_socket_ptr_t client) { return this->client_connected(client); }, 
+    [this](Tcp_socket::tcp_socket_ptr_t client) { return this->client_disconnected(client); }
+  );
 }   
+
+void Jtag_proxy::client_connected(Tcp_socket::tcp_socket_ptr_t)
+{
+  log->user("JTAG Proxy: Connected to (%s:%d)\n", m_server, m_port);
+}
+
+void Jtag_proxy::client_disconnected(Tcp_socket::tcp_socket_ptr_t)
+{
+  log->user("JTAG Proxy: Disconnected from (%s:%d)\n", m_server, m_port);
+}
 
 bool Jtag_proxy::connect(js::config *config)
 {
-  struct sockaddr_in addr;
-  struct hostent *he;
-
   js::config *proxy_config = config->get("jtag-proxy");
 
   if (proxy_config == NULL || proxy_config->get("port") == NULL)
@@ -52,37 +49,19 @@ bool Jtag_proxy::connect(js::config *config)
     return false;
   }
 
-  int m_port = proxy_config->get("port")->get_int();
+  m_port = proxy_config->get("port")->get_int();
 
-
-  const char *m_server;
   if (proxy_config->get("host") == NULL)
     m_server = "localhost";
   else
     m_server = proxy_config->get("host")->get_str().c_str();
 
-  if((m_socket = socket(PF_INET, SOCK_STREAM, 0)) < 0) {
-    log->error("Unable to create socket (%s)\n", strerror(errno));
+  log->user("JTAG Proxy: Connecting to (%s:%d)\n", m_server, m_port);
+
+  if ((m_socket = m_client->connect(m_server, m_port)) == nullptr) {
+    log->error("Unable to connect to %s port %d\n", m_server, m_port);
     return false;
   }
-
-  if((he = gethostbyname(m_server)) == NULL) {
-    perror("gethostbyname");
-    return false;
-  }
-  log->user("Connecting to (%s:%d)\n", m_server, m_port);
-
-  addr.sin_family = AF_INET;
-  addr.sin_port = htons(m_port);
-  addr.sin_addr = *((struct in_addr *)he->h_addr_list[0]);
-  memset(addr.sin_zero, '\0', sizeof(addr.sin_zero));
-
-  if(::connect(m_socket, (struct sockaddr *)&addr, sizeof(addr)) == -1) {
-    log->error("Unable to connect to %s port %d (%s)\n", m_server, m_port,
-            strerror(errno));
-    return false;
-  }
-  log->user("Connected to (%s:%d)\n", m_server, m_port);
   return true;
 }
 
@@ -125,14 +104,14 @@ bool Jtag_proxy::proxy_stream(char* instream, char* outstream, unsigned int n_bi
     buffer[n_bits-1] |= 1 << DEBUG_BRIDGE_JTAG_TMS;
   }
 
-  ::send(m_socket, (void *)&req, sizeof(req), 0);
-  ::send(m_socket, (void *)(&(buffer[0])), n_bits, 0);
+  m_socket->send((void *)&req, sizeof(req));
+  m_socket->send((void *)(&(buffer[0])), n_bits);
   if (instream != NULL)
   {
 
     ::memset((void *)instream, 0, (n_bits + 7) / 8);
-    if (::recv(m_socket, (void *)instream, (n_bits + 7) / 8, 0) != (n_bits + 7) / 8) return false;
-
+    if (m_socket->receive((void *)instream, (n_bits + 7) / 8, 0) != (func_ret_t)((n_bits + 7) / 8))
+      return false;
   }
   return true;
 }
@@ -158,6 +137,6 @@ bool Jtag_proxy::chip_reset(bool active)
   proxy_req_t req;
   req.type=DEBUG_BRIDGE_RESET_REQ;
   req.reset.active = active;
-  ::send(m_socket, (void *)&req, sizeof(req), 0);
+  m_socket->send((void *)&req, sizeof(req));
   return true;
 }

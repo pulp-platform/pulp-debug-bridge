@@ -290,7 +290,7 @@ class Rsp {
     class Client
     {
       public:
-        Client(Rsp *rsp, Tcp_listener::tcp_socket_ptr_t client);
+        Client(Rsp *rsp, Tcp_socket::tcp_socket_ptr_t client);
         void stop();
         bool is_running() { return running; };
         bool is_worker_thread( std::thread::id id) { return thread==nullptr?false:id==thread->get_id(); }
@@ -341,7 +341,7 @@ class Rsp {
         Gdb_server *top;
 
         Rsp *rsp = nullptr;
-        Tcp_listener::tcp_socket_ptr_t client = nullptr;
+        Tcp_socket::tcp_socket_ptr_t client = nullptr;
         std::thread *thread = nullptr;
 
         int thread_sel;
@@ -352,8 +352,8 @@ class Rsp {
 
 
   private:
-    void client_connected(Tcp_listener::tcp_socket_ptr_t client);
-    void client_disconnected(Tcp_listener::tcp_socket_ptr_t client);
+    void client_connected(Tcp_socket::tcp_socket_ptr_t client);
+    void client_disconnected(Tcp_socket::tcp_socket_ptr_t client);
     void rsp_client_finished();
     void resume_target(bool step=false, int tid=-1);
     void halt_target();
