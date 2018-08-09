@@ -177,7 +177,8 @@ class debug_bridge(object):
         self.do_exit = False
         # Load the library which provides generic services through
         # python / C++ bindings
-        lib_path = os.path.join('libpulpdebugbridge.so')
+        lib_path = os.path.join('libpulpdebugbridge' + os.name == 'nt' and '.dll' or '.so')
+        print(lib_path)
         self.module = ctypes.CDLL(lib_path)
 
         self.module.bridge_ioloop_open.argtypes = [ctypes.c_void_p, ctypes.c_uint]
