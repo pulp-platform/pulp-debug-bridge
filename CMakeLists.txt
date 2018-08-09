@@ -105,6 +105,10 @@ else(MSVC)
     endif(APPLE)
 endif(MSVC)
 
+if (WIN32)
+    target_compile_options(libplpbridge PRIVATE "-fpermissive")
+endif()
+
 # Optionally add in FTDI support
 if (WithFTDI)
     message(STATUS "Compiling in FTDI support")
