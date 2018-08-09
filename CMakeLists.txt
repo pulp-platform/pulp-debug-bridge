@@ -134,8 +134,11 @@ if (WithFTDI)
         target_include_directories(libplpbridge
             PRIVATE
                 ${CMAKE_CURRENT_SOURCE_DIR}/include/cables/ftdi
-                ${source_dir}/include/libftdi)
-        target_link_libraries(libplpbridge PRIVATE ${source_dir}/bin64/libftdi1.dll)
+                ${source_dir}/include/libftdi
+        )
+
+        set(FTDI_BIN_DIR ${source_dir}/bin64)
+        target_link_libraries(libplpbridge PRIVATE ${FTDI_BIN_DIR}/libftdi1.dll)
 
         add_dependencies(libplpbridge ftdi)
     else()
@@ -223,12 +226,21 @@ install(
 
 install(
     DIRECTORY python/ DESTINATION ${DEST_MODULES}
-    FILE_PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE
+    FILE_PERMISSIONS OWNER_READ OWNER_WRITE GROUP_READ WORLD_READ WORLD_EXECUTE
     FILES_MATCHING PATTERN "*.py"
 )
 
 install(
     DIRECTORY ${JSON_TOOLS_PYDIR}/ DESTINATION ${DEST_MODULES}
-    FILE_PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE
+    FILE_PERMISSIONS OWNER_READ OWNER_WRITE GROUP_READ WORLD_READ WORLD_EXECUTE
     FILES_MATCHING PATTERN "*.py"
 )
+
+# FTDI deps in bin dir if standalone
+if(StandaloneApp)
+    install(
+        DIRECTORY ${FTDI_BIN_DIR}/ DESTINATION ${DEST_BIN}
+        FILE_PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE
+        FILES_MATCHING PATTERN "*.dll"
+    )
+endif()
