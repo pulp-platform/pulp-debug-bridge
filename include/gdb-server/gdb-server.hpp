@@ -29,7 +29,6 @@
 
 #include <fcntl.h>
 #include <string.h>
-#include <sys/select.h>
 
 #include <thread>
 #include <unordered_map>
