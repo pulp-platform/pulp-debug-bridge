@@ -243,8 +243,9 @@ install(
     FILES_MATCHING PATTERN "*.py"
 )
 
-# FTDI deps in bin dir if standalone
-if(StandaloneApp)
+# FTDI deps in bin dir if on windows
+
+if(WithFTDI AND WIN32)
     install(
         DIRECTORY ${FTDI_BIN_DIR}/ DESTINATION ${DEST_BIN}
         FILE_PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE
