@@ -235,7 +235,7 @@ void Rsp::Client::client_routine()
 
 bool Rsp::Client::v_packet(char* data, size_t len)
 {
-  top->log->print(LOG_DEBUG, "V Packet: %s\n", data);
+  top->log->debug("V Packet\n");
   if (strncmp ("vKill", data, std::min(strlen ("vKill"), len)) == 0)
   {
     rsp->halt_target();
@@ -314,9 +314,10 @@ bool Rsp::Client::query(char* data, size_t len)
 {
   int ret;
   char reply[REPLY_BUF_LEN];
-  top->log->print(LOG_DEBUG, "Query packet: %s\n", data);
+  top->log->debug("Query packet\n");
   if (strncmp ("qSupported", data, strlen ("qSupported")) == 0)
   {
+    top->log->detail("qSupported packet\n");
     Rsp_capability::parse(data, len, &remote_caps);
     top->log->debug("swbreak: %d\n", this->remote_capability("swbreak"));
     if (strlen(top->capabilities) > 0) {
@@ -814,9 +815,10 @@ bool Rsp::Client::decode(char* data, size_t len)
     return this->signal();
   }
 
-  top->log->detail("Received %s (len: %zu)\n", data, len);
+  top->log->detail("Received %s\n", data);
   switch (data[0]) {
   case 'q':
+    top->log->detail("call query\n");
     return this->query(data, len);
 
   case 'g':
@@ -1113,6 +1115,7 @@ bool Rsp::Client::send(const char* data, size_t len)
 
 bool Rsp::Client::send_str(const char* data)
 {
+  top->log->detail("RSP: sending string %s\n", data);
   return this->send(data, strlen(data));
 }
 
