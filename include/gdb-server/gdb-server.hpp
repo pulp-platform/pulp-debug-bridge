@@ -344,6 +344,8 @@ class Rsp {
         std::thread *thread = nullptr;
 
         int thread_sel;
+        
+        int packet_timeout = 2000;
     };
 
     typedef std::shared_ptr<Rsp::Client> rsp_client_ptr_t;

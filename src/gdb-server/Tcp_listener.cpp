@@ -170,18 +170,24 @@ void Tcp_listener::listener_routine()
     ret = select(socket_in+1, &set, NULL, NULL, &tv);
 
     if (ret > 0) {
+      socket_client = INVALID_SOCKET;
       if((socket_client = accept(socket_in, NULL, NULL)) == INVALID_SOCKET)
       {
         if (!print_error("Tcp_listener: Unable to accept connection: %d\n"))
           continue;
 
-        close(socket_client);
+        ::close(socket_client);
         continue;
       }
 
       log->user("Tcp_listener: Client connected!\n");
 
-      set_blocking(socket_client, false);
+      if (!set_blocking(socket_client, false)) {
+        print_error("Tcp_listener: Unable to set non blocking: %d\n");
+        ::close(socket_client);
+        continue;
+      }
+
       client = std::make_shared<Tcp_socket>(this, socket_client);
 
       if (c_cb) {
@@ -232,11 +238,15 @@ bool Tcp_listener::start()
     return true;
   }
   struct sockaddr_in addr;
+
+#ifndef _WIN32
   int yes = 1;
+#endif
 
   log->debug("Tcp_listener started (running %d)\n", this->is_running);
 
   Tcp_socket_owner::socket_init();
+
   addr.sin_family = AF_INET;
   addr.sin_port = htons(port);
   addr.sin_addr.s_addr = INADDR_ANY;
@@ -249,10 +259,12 @@ bool Tcp_listener::start()
     return false;
   }
 
+#ifndef _WIN32 // see http://itamarst.org/writings/win32sockets.html
   if(setsockopt(socket_in, SOL_SOCKET, SO_REUSEADDR, (const char*) &yes, sizeof(int)) == -1) {
     print_error("Unable to setsockopt on the socket: %d\n");
     return false;
   }
+#endif
 
   if(bind(socket_in, (struct sockaddr *)&addr, sizeof(addr)) == -1) {
     print_error("Unable to bind the socket: %d\n");
@@ -370,7 +382,7 @@ inline void timersub(const timeval* tvp, const timeval* uvp, timeval* vvp)
 
 // recv/send buf which must be buf_cnt in size. If cnt < 0 then send/recv as much as possible. 
 // If cnt > 0 send/recv exactly that amount
-func_ret_t Tcp_socket::recvsend(bool send, void * buf, size_t buf_len, size_t cnt, int flags, int ms)
+func_ret_t Tcp_socket::recvsend(bool send, void * buf, size_t buf_len, size_t cnt, int ms)
 {
   if (is_closed) {
     return -1;
@@ -383,14 +395,6 @@ func_ret_t Tcp_socket::recvsend(bool send, void * buf, size_t buf_len, size_t cn
 
   ::gettimeofday(&now, NULL);
 
-  FD_ZERO(&rfds);
-  FD_ZERO(&wfds);
-  if (send) {
-    FD_SET(socket, &wfds);
-  } else {
-    FD_SET(socket, &rfds);
-  }
-
   tv.tv_sec = (ms * 1000) / 1000000;
   tv.tv_usec = (ms * 1000) % 1000000;
 
@@ -402,6 +406,14 @@ func_ret_t Tcp_socket::recvsend(bool send, void * buf, size_t buf_len, size_t cn
       return SOCKET_ERROR;
     }
 
+    FD_ZERO(&rfds);
+    FD_ZERO(&wfds);
+    if (send) {
+      FD_SET(socket, &wfds);
+    } else {
+      FD_SET(socket, &rfds);
+    }
+ 
     ret = select(socket+1, &rfds, &wfds, NULL, &tv);
 
     if (!owner->is_running) {
@@ -411,9 +423,13 @@ func_ret_t Tcp_socket::recvsend(bool send, void * buf, size_t buf_len, size_t cn
 
     if (ret > 0) {
       if (send) {
-        ret = ::send(socket, (const char *)buf, cnt, flags);
+        if (FD_ISSET(socket, &wfds)) {
+          ret = ::send(socket, (const char *)buf, cnt, 0);
+        } else continue;
       } else {
-        ret = recv(socket, (char*)buf, cnt<=0?buf_len:cnt, flags);
+        if (FD_ISSET(socket, &rfds)) {
+          ret = recv(socket, (char*)buf, (cnt<=0?buf_len:cnt), 0);
+        } else continue;
       }
 
       if (!owner->is_running) {
@@ -470,31 +486,31 @@ func_ret_t Tcp_socket::recvsend(bool send, void * buf, size_t buf_len, size_t cn
   return res;
 }
 
-func_ret_t Tcp_socket::recvsend_block(bool send, void * buf, size_t len, int flags)
+func_ret_t Tcp_socket::recvsend_block(bool send, void * buf, size_t len)
 {
   func_ret_t ret = 0;
   while (ret == 0) {
-    ret = this->recvsend(send, buf, len, len, flags, this->block_timeout);
+    ret = this->recvsend(send, buf, len, len, this->block_timeout);
   }
   return ret;
 }
 
-func_ret_t Tcp_socket::receive(void * buf, size_t len, int ms, bool await_all, int flags)
+func_ret_t Tcp_socket::receive(void * buf, size_t len, int ms, bool await_all)
 {
-  return this->recvsend(false, buf, len, await_all?len:0, flags, ms);
+  return this->recvsend(false, buf, len, await_all?len:0, ms);
 }
 
-func_ret_t Tcp_socket::receive(void * buf, size_t len, int flags)
+func_ret_t Tcp_socket::receive(void * buf, size_t len)
 {
-  return this->recvsend_block(false, buf, len, flags);
+  return this->recvsend_block(false, buf, len);
 }
 
-func_ret_t Tcp_socket::send(void * buf, size_t len, int ms, int flags)
+func_ret_t Tcp_socket::send(void * buf, size_t len, int ms)
 {
-  return this->recvsend(true, buf, len, len, flags, ms);
+  return this->recvsend(true, buf, len, len, ms);
 }
 
-func_ret_t Tcp_socket::send(void * buf, size_t len, int flags)
+func_ret_t Tcp_socket::send(void * buf, size_t len)
 {
-  return this->recvsend_block(true, buf, len, flags);
+  return this->recvsend_block(true, buf, len);
 }

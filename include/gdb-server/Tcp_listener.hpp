@@ -69,21 +69,21 @@ class Tcp_socket {
     typedef std::function<void(tcp_socket_ptr_t)> socket_cb_t;
 
     Tcp_socket(Tcp_socket_owner *owner, socket_t socket);
-    func_ret_t receive(void * buf, size_t len, int ms, bool await_all, int flags=0);
-    func_ret_t receive(void * buf, size_t len, int flags=0);
-    func_ret_t send(void * buf, size_t len, int ms, int flags=0);
-    func_ret_t send(void * buf, size_t len, int flags=0);
+    func_ret_t receive(void * buf, size_t len, int ms, bool await_all);
+    func_ret_t receive(void * buf, size_t len);
+    func_ret_t send(void * buf, size_t len, int ms);
+    func_ret_t send(void * buf, size_t len);
     void close();
     void shutdown();
     void set_finished_cb(finished_cb_t finished_cb);
   private:
-    func_ret_t recvsend(bool send, void * buf, size_t buf_len, size_t cnt, int flags, int ms);
-    func_ret_t recvsend_block(bool send, void * buf, size_t len, int flags);
+    func_ret_t recvsend(bool send, void * buf, size_t buf_len, size_t cnt, int ms);
+    func_ret_t recvsend_block(bool send, void * buf, size_t len);
     ssize_t check_error(func_ret_t ret);
 
     Tcp_socket_owner *owner;
     socket_t socket;
-    int block_timeout = 100;
+    int block_timeout = 1000;
     finished_cb_t f_cb;
     bool is_closed = false, is_shutdown = false, is_closing = false;
 };
