@@ -1012,9 +1012,7 @@ size_t Rsp::Client::get_packet(char* pkt, size_t max_pkt_len) {
           }
           break;
         }
-#ifdef __GNUC__
-  __attribute__ ((fallthrough));
-#endif
+        /* fall through. */
       case STATE_BODY:
         ret = this->client->receive(&(pkt[cur]), (max_pkt_len - cur), 100, false);
 
