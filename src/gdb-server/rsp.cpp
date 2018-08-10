@@ -814,7 +814,7 @@ bool Rsp::Client::decode(char* data, size_t len)
     return this->signal();
   }
 
-  top->log->print(LOG_DEBUG, "Received %c command (len: %zd)\n", data[0], len);
+  top->log->detail("Received %s (len: %zu)\n", data, len);
   switch (data[0]) {
   case 'q':
     return this->query(data, len);

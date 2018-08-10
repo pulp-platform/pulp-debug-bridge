@@ -28,6 +28,13 @@ option(WithFrameBuffer "Build with framebuffer support" OFF)
 option(WithFTDI "Build with FTDI support" ON)
 option(StandaloneApp "Install as standalone app" OFF)
 
+if(NOT CMAKE_BUILD_TYPE)
+    set(CMAKE_BUILD_TYPE "Debug"
+        CACHE STRING "Choose the type of build, options are: Debug Release RelWithDebInfo MinSizeRel."
+        FORCE
+    )
+endif(NOT CMAKE_BUILD_TYPE)
+
 include(ExternalProject)
 
 set(EXTERNAL_INSTALL_LOCATION ${CMAKE_BINARY_DIR}/external)
