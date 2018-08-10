@@ -1009,7 +1009,7 @@ size_t Rsp::Client::get_packet(char* pkt, size_t max_pkt_len) {
           if (verify_checksum(pkt, crc_start)) {
             pkt_len = deescape(pkt, crc_start);
             // clear the rest of the buffer
-            memset(&(buf[pkt_len]), 0, len-pkt_len);
+            memset(&(pkt[pkt_len]), 0, max_pkt_len - pkt_len);
             state = STATE_ACKNOWLEDGE;
           } else {
             top->log->error("RSP: Packet CRC error\n");
