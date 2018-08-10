@@ -495,8 +495,9 @@ bool Adv_dbg_itf::read_internal(ADBG_OPCODES opcode, unsigned int addr, int size
       return false;
   }
 
-  std::vector<char> buf(size < 8 ? 8 : size);
-  std::vector<char> recv(size);
+  int act_size = size < 8 ? 8 : size;
+  std::vector<char> buf(act_size);
+  std::vector<char> recv(size+act_size);
 
   int factor = 1;
 
