@@ -930,7 +930,6 @@ size_t deescape(char * buf, size_t len)
       i++; cur++;
     }
   }
-  buf[cur] = 0;
   return cur;
 }
 
@@ -990,6 +989,7 @@ size_t Rsp::Client::get_packet(char* pkt, size_t max_pkt_len) {
         escaped = false;
         break;
       case STATE_LEADIN:
+        // Look for the initial $
         ret = client->receive(&c, 1, packet_timeout, true);
         if (ret == SOCKET_ERROR) return 0;
         if (ret > 0) {
@@ -1004,9 +1004,12 @@ size_t Rsp::Client::get_packet(char* pkt, size_t max_pkt_len) {
         }
         break;
       case STATE_CRC:
+        // Look for enough characters to process the CRC
         if (cur - crc_start >= 3) {
           if (verify_checksum(pkt, crc_start)) {
             pkt_len = deescape(pkt, crc_start);
+            // clear the rest of the buffer
+            memset(&(buf[pkt_len]), 0, len-pkt_len);
             state = STATE_ACKNOWLEDGE;
           } else {
             top->log->error("RSP: Packet CRC error\n");
@@ -1016,6 +1019,7 @@ size_t Rsp::Client::get_packet(char* pkt, size_t max_pkt_len) {
         }
         /* fall through. */
       case STATE_BODY:
+        // Receive characters from the packet when in CRC or BODY states
         ret = this->client->receive(&(pkt[cur]), (max_pkt_len - cur), 100, false);
 
         if (ret == SOCKET_ERROR) return 0;
@@ -1023,6 +1027,8 @@ size_t Rsp::Client::get_packet(char* pkt, size_t max_pkt_len) {
         if (ret > 0) {
           last = cur + ret;
           if (state == STATE_BODY) {
+            // Look for # skipping escaped characters. Maintain the escaped state in
+            // case a packet is split on the } character
             if (scan_for_hash(pkt, &cur, &escaped, last)) {
               crc_start = cur; cur = last; state = STATE_CRC;
               break;
@@ -1040,6 +1046,7 @@ size_t Rsp::Client::get_packet(char* pkt, size_t max_pkt_len) {
         }
         break;
       case STATE_ACKNOWLEDGE:
+        // Send the acknowledgment
         if (this->client->send("+", 1) != 1) {
           top->log->error("RSP: Sending ACK failed\n");
           return 0;
@@ -1066,9 +1073,9 @@ bool Rsp::Client::send(const char* data, size_t len)
     // check if escaping needed
     if (c == '#' || c == '%' || c == '}' || c == '*') {
       raw[raw_len++] = '}';
-      raw[raw_len++] = c;
+      raw[raw_len++] = c ^ 0x20;
       checksum += '}';
-      checksum += c;
+      checksum += c ^ 0x20;
     } else {
       raw[raw_len++] = c;
       checksum += c;
