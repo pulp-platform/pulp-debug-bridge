@@ -302,7 +302,7 @@ class Rsp {
         int cause_to_signal(uint32_t cause, int * int_num = nullptr);
         int get_signal(Target_core *core);
         bool decode(char* data, size_t len);
-        bool get_packet(char* data, size_t* len);
+        size_t get_packet(char* data, size_t len);
 
         void client_routine();
 

@@ -71,8 +71,8 @@ class Tcp_socket {
     Tcp_socket(Tcp_socket_owner *owner, socket_t socket);
     func_ret_t receive(void * buf, size_t len, int ms, bool await_all);
     func_ret_t receive(void * buf, size_t len);
-    func_ret_t send(void * buf, size_t len, int ms);
-    func_ret_t send(void * buf, size_t len);
+    func_ret_t send(const void * buf, size_t len, int ms);
+    func_ret_t send(const void * buf, size_t len);
     void close();
     void shutdown();
     void set_finished_cb(finished_cb_t finished_cb);

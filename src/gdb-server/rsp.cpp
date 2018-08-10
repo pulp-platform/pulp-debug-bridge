@@ -29,7 +29,7 @@
 #include "gdb-server.hpp"
 
 #define REPLY_BUF_LEN 256
-#define PACKET_MAX_LEN 4096
+#define PACKET_MAX_LEN 4096u
 
 enum mp_type {
   BP_MEMORY   = 0,
@@ -211,7 +211,9 @@ void Rsp::Client::client_routine()
     char pkt[PACKET_MAX_LEN];
     size_t len;
 
-    running = this->get_packet(pkt, &len);
+    len = this->get_packet(pkt, (size_t) PACKET_MAX_LEN);
+
+    running = len > 0;
 
     if (running && !rsp->aborted) {
       running = this->decode(pkt, len);
@@ -893,14 +895,14 @@ bool time_has_expired(const timeval* start, const timeval* max_delay)
 {
   struct timeval now, used;
   ::gettimeofday(&now, NULL);
-  timersub(&now, &start, &used);        
-  return timercmp(&max_delay, &used, <);
+  timersub(&now, start, &used);        
+  return timercmp(max_delay, &used, <);
 }
 
 bool verify_checksum(const char * buf, size_t hash_pos)
 {
   unsigned int checksum = 0;
-  for(int i = 0; i < hash_pos; i++) {
+  for(size_t i = 0; i < hash_pos; i++) {
     checksum += buf[i];
   }
 
@@ -930,112 +932,119 @@ size_t deescape(char * buf, size_t len)
   return cur;
 }
 
+bool scan_for_hash(const char *pkt, size_t *cur, bool *escaped, size_t last)
+{
+  while (*cur < last) {
+    if (*escaped) {
+      *escaped = false;
+    } else if (pkt[*cur] == '}') {
+      *escaped = true;
+    } else if (pkt[*cur] == '#') {
+      return true;
+    }
+    (*cur)++;
+  }
+  return false;
+}
+
+enum pkt_rcv_states {
+  STATE_INIT = 0,
+  STATE_LEADIN,
+  STATE_BODY,
+  STATE_CRC,
+  STATE_ACKNOWLEDGE
+};
+
+const char *pkt_rcv_states_str[] =
+{
+    "STATE_INIT",
+    "STATE_LEADIN",
+    "STATE_BODY",
+    "STATE_CRC",
+    "STATE_ACKNOWLEDGE"
+};
+
 size_t Rsp::Client::get_packet(char* pkt, size_t max_pkt_len) {
   // packets follow the format: $packet-data#checksum
   // checksum is two-digit
 
+  top->log->debug("get packet called\n");
   size_t cur = 1, last = 1, crc_start = -1, pkt_len;
   struct timeval start;
   bool escaped = false;
   int ret;
   char c;
-  
+  pkt_rcv_states state = STATE_INIT;
+
   struct timeval max_delay;
   max_delay.tv_sec = (packet_timeout * 1000) / 1000000;
   max_delay.tv_usec = (packet_timeout * 1000) % 1000000;
 
   while (1) {
-    memset(pkt, 0, max_pkt_len);
-
-    // first look for start bit
     switch(state) {
-    case STATE_INIT:
-      memset(pkt, 0, max_pkt_len);
-      state = STATE_LEADIN;
-      cur = 0;
-      last = 0;
-      crc_start = -1;
-      pkt_len = 0;
-      escaped = false;
-      break;
-    case STATE_LEADIN:
-      ret = client->receive(&c, 1, 100, true);
-
-      if (ret == SOCKET_ERROR) {
-        top->log->print(LOG_ERROR, "RSP: Error receiving1\n");
-        return 0;
-      }
-
-      if (ret > 0) {
-        // special case for 0x03 (asynchronous break)
-        switch(c) {
-          case 0x03:
-            return 1;
-          case '$':
-            state = STATE_BODY;
-            ::gettimeofday(&start, NULL);
-            break;
-        }
-      }
-      break;
-    case STATE_CRC:
-      if (cur - crc_start >= 3) {
-        if (verify_checksum(pkt, crc_start)) {
-          pkt_len = deescape(pkt, crc_start);
-          state = STATE_ACKNOWLEDGE;
-        } else {
-          top->log->error("RSP: Packet CRC error\n");
-          state = STATE_INIT;
+      case STATE_INIT:
+        memset(pkt, 0, max_pkt_len);
+        state = STATE_LEADIN; cur = last = pkt_len = 0; crc_start = -1;
+        escaped = false;
+        break;
+      case STATE_LEADIN:
+        ret = client->receive(&c, 1, packet_timeout, true);
+        if (ret == SOCKET_ERROR) return 0;
+        if (ret > 0) {
+          switch(c) {
+            case 0x03:
+              return 1; // special case for 0x03 (asynchronous break)
+            case '$':
+              state = STATE_BODY;
+              ::gettimeofday(&start, NULL);
+              break;
+          }
         }
         break;
-      }
-      // no-break
-    case STATE_BODY:
-      ret = this->client->receive(&(pkt[cur]), (max_pkt_len - cur), 100, false);
+      case STATE_CRC:
+        if (cur - crc_start >= 3) {
+          if (verify_checksum(pkt, crc_start)) {
+            pkt_len = deescape(pkt, crc_start);
+            state = STATE_ACKNOWLEDGE;
+          } else {
+            top->log->error("RSP: Packet CRC error\n");
+            state = STATE_INIT;
+          }
+          break;
+        }
+        // no-break
+      case STATE_BODY:
+        ret = this->client->receive(&(pkt[cur]), (max_pkt_len - cur), 100, false);
 
-      if (ret == SOCKET_ERROR) {
-        top->log->print(LOG_ERROR, "RSP: Error receiving1\n");
-        return 0;
-      }
+        if (ret == SOCKET_ERROR) return 0;
 
-      if (ret > 0) {
-        last = cur + ret;
-        if (state == STATE_BODY) {
-          while (cur < last) {
-            if (escaped) {
-              escaped = false;
-            } else if (pkt[cur] == '}') {
-              escaped = true;
-            } else if (pkt[cur] == '#') {
-              crc_start = cur;
-              cur = last;
-              state = STATE_CRC;
+        if (ret > 0) {
+          last = cur + ret;
+          if (state == STATE_BODY) {
+            if (scan_for_hash(pkt, &cur, &escaped, last)) {
+              crc_start = cur; cur = last; state = STATE_CRC;
               break;
             }
-            cur++;
+          } else cur = last;
+        }
+        if (state == STATE_BODY || state == STATE_CRC) {
+          if (cur >= max_pkt_len) {
+            top->log->error("RSP: Too many characters received\n");
+            state = STATE_INIT;
+          } else if (time_has_expired(&start, &max_delay)) {
+            // no more time - look for another packet
+            state = STATE_INIT;
           }
+        }
+        break;
+      case STATE_ACKNOWLEDGE:
+        if (this->client->send("+", 1) != 1) {
+          top->log->error("RSP: Sending ACK failed\n");
+          return 0;
         } else {
-          cur = last;
+          return pkt_len;
         }
-      }
-      if (state == STATE_BODY || state == STATE_CRC) {
-        if (cur >= max_pkt_len) {
-          top->error(LOG_ERROR, "RSP: Too many characters received\n");
-          state = STATE_INIT;
-        } else if (time_has_expired(&start, &max_delay)) {
-          // no more time - look for another packet
-          state = STATE_INIT;
-        }
-      }
-      break;
-    case STATE_ACKNOWLEDGE:
-      char ack = '+';
-      if (this->client->send(&ack, 1) != 1) {
-        top->log->print(LOG_ERROR, "RSP: Sending ACK failed\n");
-        return false;
-      }
-
-      
+    }
   }
 }
 
