@@ -527,7 +527,34 @@ bool Rsp::Client::mem_write(char* data, size_t len)
   return this->send_str("OK");
 }
 
+typedef std::pair<uint32_t, uint32_t> csr_range_t;
 
+#define CSR(__x) csr_range_t(__x, __x)
+#define CSRR(__x, __y) csr_range_t(__x, __y)
+
+const std::vector<csr_range_t> csr_ranges = {
+  CSR(0x000),             // USTATUS
+  CSR(0x014),             // UHartID
+  CSRR(0x041, 0x042),     // UEPC, UCAUSE
+  CSR(0x300),             // MSTATUS
+  CSR(0x301),             // MISA
+  CSR(0x305),             // MTVEC
+  CSRR(0x341, 0x342),     // MEPC, MCAUSE
+  CSRR(0x780, 0x79f),     // PCCRs
+  CSRR(0x7a0, 0x7a1),     // PCER, PCMR
+  CSRR(0x7b0, 0x7b7),     // hw loops
+  CSR(0xc10),             // Priv level
+  CSR(0xf14),             // MHartID
+};
+
+bool valid_csr(uint32_t csr_offset)
+{
+  for (auto r : csr_ranges) {
+    if (csr_offset<r.first) return false;
+    if (csr_offset>=r.first&&csr_offset<=r.second) return true;
+  }
+  return false;
+}
 
 bool Rsp::Client::reg_read(char* data, size_t)
 {
@@ -540,19 +567,22 @@ bool Rsp::Client::reg_read(char* data, size_t)
     return false;
   }
 
+  // Note: if invalid registers are read return "xx" not "" otherwise gdb gives up
+  // reading more 
   if (addr < 32)
     this->top->target->get_thread(thread_sel)->gpr_read(addr, &rdata);
   else if (addr == 0x20)
     this->top->target->get_thread(thread_sel)->actual_pc_read(&rdata);
-  else if (addr >= 0x41) // Read CSR
-    if (addr == 0x41 + 0x301) {
-      top->log->debug("READ MISA ---------------------------\n");
-      rdata = 0x04000000;
+  else if (addr >= 0x41) { // Read CSR
+    uint32_t csr_num = addr - 0x41;
+    if (valid_csr(csr_num)) {
+      top->log->debug("READ CSR %d\n", csr_num);
+      this->top->target->get_thread(thread_sel)->csr_read(csr_num, &rdata);
     } else {
-      this->top->target->get_thread(thread_sel)->csr_read(addr - 0x41, &rdata);
+      return this->send_str("xx");
     }
-  else
-    return this->send_str("");
+  } else
+    return this->send_str("xx");
 
   rdata = htonl(rdata);
   snprintf(data_str, 9, "%08x", rdata);
