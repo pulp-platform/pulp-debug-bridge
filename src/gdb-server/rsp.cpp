@@ -527,6 +527,9 @@ bool Rsp::Client::mem_write(char* data, size_t len)
   return this->send_str("OK");
 }
 
+
+// This defines the valid CSR registers on GAP8
+// TODO - Move this to config
 typedef std::pair<uint32_t, uint32_t> csr_range_t;
 
 #define CSR(__x) csr_range_t(__x, __x)
@@ -556,6 +559,8 @@ bool valid_csr(uint32_t csr_offset)
   return false;
 }
 
+
+
 bool Rsp::Client::reg_read(char* data, size_t)
 {
   uint32_t addr;
@@ -567,27 +572,35 @@ bool Rsp::Client::reg_read(char* data, size_t)
     return false;
   }
 
-  // Note: if invalid registers are read return "xx" not "" otherwise gdb gives up
-  // reading more 
-  if (addr < 32)
-    this->top->target->get_thread(thread_sel)->gpr_read(addr, &rdata);
-  else if (addr == 0x20)
-    this->top->target->get_thread(thread_sel)->actual_pc_read(&rdata);
-  else if (addr >= 0x41) { // Read CSR
+  bool ret = false;
+  // Note: if invalid registers are read return "xx" (not available) not ""
+  // otherwise gdb gives up reading more.
+  // Letting gdb do what it wants results in a core crash
+  if (addr < 32) {
+    top->log->debug("Read register 0x%02x\n", addr);
+    ret = this->top->target->get_thread(thread_sel)->gpr_read(addr, &rdata);
+  } else if (addr == 0x20) {
+    top->log->debug("Read PC\n");
+    ret = this->top->target->get_thread(thread_sel)->actual_pc_read(&rdata);
+  } else if (addr >= 0x41) { // Read CSR
     uint32_t csr_num = addr - 0x41;
     if (valid_csr(csr_num)) {
-      top->log->debug("READ CSR %d\n", csr_num);
-      this->top->target->get_thread(thread_sel)->csr_read(csr_num, &rdata);
+      top->log->debug("Read CSR 0x%04x\n", csr_num);
+      ret = this->top->target->get_thread(thread_sel)->csr_read(csr_num, &rdata);
     } else {
       return this->send_str("xx");
     }
-  } else
+  } else {
     return this->send_str("xx");
+  }
 
-  rdata = htonl(rdata);
-  snprintf(data_str, 9, "%08x", rdata);
-
-  return this->send_str(data_str);
+  if (ret) {
+    rdata = htonl(rdata);
+    snprintf(data_str, 9, "%08x", rdata);
+    return this->send_str(data_str);
+  } else {
+    return this->send_str("E02");
+  }
 }
 
 
@@ -603,17 +616,31 @@ bool Rsp::Client::reg_write(char* data, size_t)
     return false;
   }
 
+  bool ret = false;
   wdata = ntohl(wdata);
-
   core = this->top->target->get_thread(thread_sel);
-  if (addr < 32)
-    core->gpr_write(addr, wdata);
-  else if (addr == 32)
-    core->write(DBG_NPC_REG, wdata);
-  else
+  if (addr < 32) {
+    top->log->debug("Write register 0x%02x 0x08x\n", addr, wdata);
+    ret = core->gpr_write(addr, wdata);
+  } else if (addr == 32) {
+    top->log->debug("Write NPC 0x08x\n", wdata);
+    ret = core->write(DBG_NPC_REG, wdata);
+  } else if (addr >= 0x41) {
+    uint32_t csr_num = addr - 0x41;
+    if (valid_csr(csr_num)) {
+      top->log->debug("Write CSR 0x%04x 0x08x\n", csr_num, wdata);
+      ret = this->top->target->get_thread(thread_sel)->csr_write(csr_num, wdata);
+    } else {
+      return this->send_str("E01");
+    }
+  } else {
     return this->send_str("E01");
+  }
 
-  return this->send_str("OK");
+  if (ret)
+    return this->send_str("OK");
+  else
+    return this->send_str("E02");
 }
 
 
@@ -630,16 +657,19 @@ bool Rsp::Client::regs_send()
 
   core = this->top->target->get_thread(thread_sel);
 
-  core->gpr_read_all(gpr);
+  bool ret = core->gpr_read_all(gpr);
 
   // now build the string to send back
   for(i = 0; i < 32; i++) {
     snprintf(&regs_str[i * 8], 9, "%08x", (unsigned int)htonl(gpr[i]));
   }
-  core->actual_pc_read(&pc);
+  ret = ret && core->actual_pc_read(&pc);
   snprintf(&regs_str[32 * 8 + 0 * 8], 9, "%08x", (unsigned int)htonl(pc));
 
-  return this->send_str(regs_str);
+  if (ret)
+    return this->send_str(regs_str);
+  else
+    return this->send_str("E02");
 }
 
 bool Rsp::Client::signal(Target_core *core)
@@ -1274,7 +1304,7 @@ void Rsp_capability::parse(char * buf, size_t len, Rsp_capabilities * caps)
       default:
         char * value = strstr(cap, "=");
         if (value) {
-          value = 0;
+          *value = 0;
           value++;
           caps->insert(
             std::make_pair(

@@ -117,6 +117,7 @@ public:
   bool read(uint32_t addr, uint32_t* rdata);
   bool write(uint32_t addr, uint32_t wdata);
   bool csr_read(unsigned int i, uint32_t *data);
+  bool csr_write(unsigned int i, uint32_t data);
   bool ie_write(uint32_t data);
   int get_thread_id() { return this->thread_id; }
   int get_cluster_id();

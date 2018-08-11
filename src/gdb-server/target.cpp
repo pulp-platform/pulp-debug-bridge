@@ -243,6 +243,12 @@ bool Target_core::csr_read(unsigned int i, uint32_t *data)
   return this->read(0x4000 + i * 4, data);
 }
 
+bool Target_core::csr_write(unsigned int i, uint32_t data)
+{
+  if (!is_on) return false;
+  top->log->detail("Writing CSR at offset 0x%08x\n", i);
+  return this->write(0x4000 + i * 4, data);
+}
 
 
 bool Target_core::is_stopped() {
