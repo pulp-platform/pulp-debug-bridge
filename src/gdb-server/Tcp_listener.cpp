@@ -380,9 +380,9 @@ inline void timersub(const timeval* tvp, const timeval* uvp, timeval* vvp)
 }
 #endif
 
-// recv/send buf which must be buf_cnt in size. If cnt < 0 then send/recv as much as possible. 
-// If cnt > 0 send/recv exactly that amount
-func_ret_t Tcp_socket::recvsend(bool send, void * buf, size_t buf_len, size_t cnt, int ms)
+// recv/send buf which must be max_len in size. If min_len < 0 then send/recv as much as possible. 
+// If min_len > 0 send/recv exactly that amount
+func_ret_t Tcp_socket::recvsend(bool send, void * buf, size_t max_len, ssize_t min_len, int ms)
 {
   if (is_closed) {
     return -1;
@@ -391,12 +391,18 @@ func_ret_t Tcp_socket::recvsend(bool send, void * buf, size_t buf_len, size_t cn
   fd_set rfds, wfds;
   struct timeval tv, now;
 
-  assert(cnt<=buf_len);
+  assert(min_len<=(ssize_t)max_len);
 
   ::gettimeofday(&now, NULL);
 
-  tv.tv_sec = (ms * 1000) / 1000000;
-  tv.tv_usec = (ms * 1000) % 1000000;
+  // if ms < 0 then use block timeout to cycle and never timeout the read or send
+  if (ms >= 0) {
+    tv.tv_sec = (ms * 1000) / 1000000;
+    tv.tv_usec = (ms * 1000) % 1000000;
+  } else {
+    tv.tv_sec = (block_timeout * 1000) / 1000000;
+    tv.tv_usec = (block_timeout * 1000) % 1000000;
+  }
 
   while (1) {
     func_ret_t ret;
@@ -424,11 +430,11 @@ func_ret_t Tcp_socket::recvsend(bool send, void * buf, size_t buf_len, size_t cn
     if (ret > 0) {
       if (send) {
         if (FD_ISSET(socket, &wfds)) {
-          ret = ::send(socket, (const char *)buf, cnt, 0);
+          ret = ::send(socket, (const char *)buf, max_len, 0);
         } else continue;
       } else {
         if (FD_ISSET(socket, &rfds)) {
-          ret = recv(socket, (char*)buf, (cnt<=0?buf_len:cnt), 0);
+          ret = recv(socket, (char*)buf, (min_len<=0?max_len:min_len), 0);
         } else continue;
       }
 
@@ -458,17 +464,19 @@ func_ret_t Tcp_socket::recvsend(bool send, void * buf, size_t buf_len, size_t cn
       res += ret;
 
       // check if we should try for more characters
-      if (cnt>0 && (size_t) res < cnt) {
-        struct timeval new_now, used;
-        gettimeofday(&new_now, NULL);
-        timersub(&new_now, &now, &used);
-        if (timercmp(&tv, &used, <)) {
-          // no more time - return what we have
-          break;
+      if (min_len>0 && res < min_len) {
+        if (ms >= 0) {
+          struct timeval new_now, used;
+          gettimeofday(&new_now, NULL);
+          timersub(&new_now, &now, &used);
+          if (timercmp(&tv, &used, <)) {
+            // no more time - return what we have
+            break;
+          }
+          timersub(&tv, &used, &tv);
         }
-        timersub(&tv, &used, &tv);
         buf = (void *)((char *) buf + res);
-        cnt -= ret;
+        min_len -= ret;
       } else {
         // We're waiting for anything so just return what we got
         break;
@@ -495,14 +503,14 @@ func_ret_t Tcp_socket::recvsend_block(bool send, void * buf, size_t len)
   return ret;
 }
 
-func_ret_t Tcp_socket::receive(void * buf, size_t len, int ms, bool await_all)
+func_ret_t Tcp_socket::receive_at_least(void * buf, size_t max_len, size_t min_len, int ms)
 {
-  return this->recvsend(false, buf, len, await_all?len:0, ms);
+  return this->recvsend(false, buf, max_len, min_len, ms);
 }
 
-func_ret_t Tcp_socket::receive(void * buf, size_t len)
+func_ret_t Tcp_socket::receive_blocking(void * buf, size_t len)
 {
-  return this->recvsend_block(false, buf, len);
+  return this->recvsend(false, buf, len, len, -1);
 }
 
 func_ret_t Tcp_socket::send(const void * buf, size_t len, int ms)
@@ -512,5 +520,5 @@ func_ret_t Tcp_socket::send(const void * buf, size_t len, int ms)
 
 func_ret_t Tcp_socket::send(const void * buf, size_t len)
 {
-  return this->recvsend_block(true, const_cast<void *>(buf), len);
+  return this->recvsend(true, const_cast<void *>(buf), len, len, -1);
 }

@@ -110,7 +110,7 @@ bool Jtag_proxy::proxy_stream(char* instream, char* outstream, unsigned int n_bi
   {
 
     ::memset((void *)instream, 0, (n_bits + 7) / 8);
-    if (m_socket->receive((void *)instream, (n_bits + 7) / 8) != (func_ret_t)((n_bits + 7) / 8))
+    if (m_socket->receive_blocking((void *)instream, (n_bits + 7) / 8) != (func_ret_t)((n_bits + 7) / 8))
       return false;
   }
   return true;

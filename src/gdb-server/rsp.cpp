@@ -758,7 +758,7 @@ bool Rsp::Client::wait()
     }
 
     // Otherwise wait for a stop request from gdb side for a while
-    ret = this->client->receive(&pkt, 1, 100, false);
+    ret = this->client->receive_at_least(&pkt, 1, 0, 100);
 
     if (ret < 0) {
       return false;
@@ -957,15 +957,6 @@ enum pkt_rcv_states {
   STATE_ACKNOWLEDGE
 };
 
-const char *pkt_rcv_states_str[] =
-{
-    "STATE_INIT",
-    "STATE_LEADIN",
-    "STATE_BODY",
-    "STATE_CRC",
-    "STATE_ACKNOWLEDGE"
-};
-
 size_t Rsp::Client::get_packet(char* pkt, size_t max_pkt_len) {
   // packets follow the format: $packet-data#checksum
   // checksum is two-digit
@@ -990,7 +981,7 @@ size_t Rsp::Client::get_packet(char* pkt, size_t max_pkt_len) {
         escaped = false;
         break;
       case STATE_LEADIN:
-        ret = client->receive(&c, 1, packet_timeout, true);
+        ret = client->receive_at_least(&c, 1, 1, packet_timeout);
         if (ret == SOCKET_ERROR) return 0;
         if (ret > 0) {
           switch(c) {
@@ -1016,7 +1007,7 @@ size_t Rsp::Client::get_packet(char* pkt, size_t max_pkt_len) {
         }
         /* fall through. */
       case STATE_BODY:
-        ret = this->client->receive(&(pkt[cur]), (max_pkt_len - cur), 100, false);
+        ret = this->client->receive_at_least(&(pkt[cur]), (max_pkt_len - cur), 1, 100);
 
         if (ret == SOCKET_ERROR) return 0;
 
@@ -1088,13 +1079,13 @@ bool Rsp::Client::send(const char* data, size_t len)
   do {
     top->log->print(LOG_DEBUG, "Sending %.*s\n", raw_len, raw);
 
-    if (client->send(raw, raw_len) == SOCKET_ERROR) {
+    if (client->send(raw, raw_len, 1000) == SOCKET_ERROR) {
       free(raw);
       top->log->print(LOG_ERROR, "Unable to send data to client\n");
       return false;
     }
 
-    ret = client->receive(&ack, 1, 1000, true);
+    ret = client->receive_at_least(&ack, 1, 1, 1000);
     if(ret == SOCKET_ERROR) {
       free(raw);
       top->log->print(LOG_ERROR, "RSP: Error receiving0\n");

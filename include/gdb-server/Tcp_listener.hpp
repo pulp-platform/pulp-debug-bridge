@@ -69,15 +69,15 @@ class Tcp_socket {
     typedef std::function<void(tcp_socket_ptr_t)> socket_cb_t;
 
     Tcp_socket(Tcp_socket_owner *owner, socket_t socket);
-    func_ret_t receive(void * buf, size_t len, int ms, bool await_all);
-    func_ret_t receive(void * buf, size_t len);
     func_ret_t send(const void * buf, size_t len, int ms);
     func_ret_t send(const void * buf, size_t len);
+    func_ret_t receive_at_least(void * buf, size_t max_len, size_t min_len, int ms);
+    func_ret_t receive_blocking(void * buf, size_t len);
     void close();
     void shutdown();
     void set_finished_cb(finished_cb_t finished_cb);
   private:
-    func_ret_t recvsend(bool send, void * buf, size_t buf_len, size_t cnt, int ms);
+    func_ret_t recvsend(bool send, void * buf, size_t max_len, ssize_t min_len, int ms);
     func_ret_t recvsend_block(bool send, void * buf, size_t len);
     ssize_t check_error(func_ret_t ret);
 
