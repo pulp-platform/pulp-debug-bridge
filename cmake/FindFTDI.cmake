@@ -3,7 +3,7 @@
 # Once done this will define
 #
 #  FTDI_FOUND - system has ftdi
-#  FTDI_INCLUDE_DIR - ~ the ftdi include directory 
+#  FTDI_INCLUDE_DIR - ~ the ftdi include directory
 #  FTDI_LIBRARY - Link these to use ftdi
 
 include( SelectLibraryConfigurations )
@@ -17,7 +17,11 @@ if (FTDI_INCLUDE_DIR AND FTDI_LIBRARIES)
 else (FTDI_INCLUDE_DIR AND FTDI_LIBRARIES)
   if(NOT WIN32)
     find_package(PkgConfig REQUIRED)
-    pkg_check_modules(FDTI libftdi)
+    if(APPLE)
+      pkg_check_modules(FDTI libftdi1)
+    else()
+      pkg_check_modules(FDTI libftdi)
+    endif()
     set(FTDI_VERSION ${PC_FTDI_VERSION})
   endif(NOT WIN32)
 
@@ -26,6 +30,7 @@ else (FTDI_INCLUDE_DIR AND FTDI_LIBRARIES)
     PATHS
       ${PC_FDTI_INCLUDE_DIRS}
       /usr/local/include
+      /usr/local/include/libftdi1
       /usr/include
       ${GNUWIN32_DIR}/include
       $ENV{FTDI_INCLUDE_DIR}
