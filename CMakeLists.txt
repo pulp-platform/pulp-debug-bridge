@@ -16,7 +16,7 @@
 
 # Authors: Martin Croome, GreenWaves Technologies
 
-cmake_minimum_required(VERSION 3.5)
+cmake_minimum_required(VERSION 2.8)
 project(plpbridge VERSION 1.0.0)
 set (CMAKE_CXX_STANDARD 11)
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake/")
@@ -25,7 +25,8 @@ set(FTDI_DEVKIT_NAME, "libftdi1-1.4git_devkit_x86_x64_14June2018")
 set(FTDI_DEVKIT_URL, "https://sourceforge.net/projects/picusb/files/${FTDI_DEVKIT_NAME}.zip/download")
 
 option(WithFrameBuffer "Build with framebuffer support" OFF)
-option(WithFTDI "Build with FTDI support" ON)
+option(ForceFTDI "Must build with FTDI support" OFF)
+option(WithFTDI "Build with FTDI support if available" ON)
 option(StandaloneApp "Install as standalone app" OFF)
 
 if(NOT CMAKE_BUILD_TYPE)
@@ -140,9 +141,9 @@ endif()
 
 # Optionally add in FTDI support
 if (WithFTDI)
-  message(STATUS "Compiling in FTDI support")
   if (WIN32)
     if (WIN64)
+      message(STATUS "Compiling in FTDI support")
       # Download LibFTDI SDK if on windows
       ExternalProject_Add(
           ftdi
@@ -162,11 +163,14 @@ if (WithFTDI)
       )
 
       set(FTDI_BIN_DIR ${source_dir}/bin64)
+      target_link_libraries(libplpbridge PRIVATE ${FTDI_BIN_DIR}/libftdi1.dll)
+      add_dependencies(libplpbridge ftdi)
     else()
-      message(FATAL_ERROR "No Win32 bit support for FTDI")
+      if (ForceFTDI)
+        message(FATAL_ERROR "No Win32 bit support for FTDI")
+      else()
+        message(STATUS "FTDI is not available for Win32. Not including.")
     endif()
-    target_link_libraries(libplpbridge PRIVATE ${FTDI_BIN_DIR}/libftdi1.dll)
-    add_dependencies(libplpbridge ftdi)
   else()
     find_package(FTDI REQUIRED)
     if(FTDI_FOUND)
@@ -177,7 +181,11 @@ if (WithFTDI)
                 ${FTDI_INCLUDE_DIR})
         target_link_libraries(libplpbridge PRIVATE ${FTDI_LIBRARIES})
     else()
-        message(FATAL_ERROR "Can't find ftdi library")
+        if (ForceFTDI)
+          message(FATAL_ERROR "Can't find ftdi library")
+        else()
+          message(STATUS "No FTDI libarary found")
+        endif()
     endif()
   endif()
   target_sources(libplpbridge PRIVATE src/cables/ftdi/ftdi.cpp)
