@@ -875,7 +875,7 @@ bool Rsp::Client::decode(char* data, size_t len)
     return this->signal();
   }
 
-  top->log->detail("Received %s\n", data);
+  top->log->detail("Received packet: '%s'\n", data);
   switch (data[0]) {
   case 'q':
     top->log->detail("call query\n");
@@ -972,6 +972,26 @@ bool verify_checksum(const char * buf, size_t hash_pos)
   char checksum_str[3];
   snprintf(checksum_str, 3, "%02x", checksum);
   return (buf[hash_pos + 1] == checksum_str[0] && buf[hash_pos + 2] == checksum_str[1]);
+}
+
+void escape(const char *data, size_t len, char *raw, size_t *raw_idx, uint32_t *crc)
+{
+  size_t i;
+  *crc = 0;
+  for (i = 0; i < len; i++) {
+    char c = data[i];
+
+    // check if escaping needed
+    if (c == '#' || c == '%' || c == '}' || c == '*') {
+      raw[(*raw_idx)++] = '}';
+      raw[(*raw_idx)++] = c ^ 0x20;
+      *crc += '}';
+      *crc += c ^ 0x20;
+    } else {
+      raw[(*raw_idx)++] = c;
+      *crc += c;
+    }
+  }
 }
 
 size_t deescape(char * buf, size_t len)
@@ -1109,27 +1129,13 @@ size_t Rsp::Client::get_packet(char* pkt, size_t max_pkt_len) {
 bool Rsp::Client::send(const char* data, size_t len)
 {
   int ret;
-  size_t i;
   size_t raw_len = 0;
   char* raw = (char*)malloc(len * 2 + 4);
-  unsigned int checksum = 0;
+  uint32_t checksum = 0;
 
   raw[raw_len++] = '$';
 
-  for (i = 0; i < len; i++) {
-    char c = data[i];
-
-    // check if escaping needed
-    if (c == '#' || c == '%' || c == '}' || c == '*') {
-      raw[raw_len++] = '}';
-      raw[raw_len++] = c ^ 0x20;
-      checksum += '}';
-      checksum += c ^ 0x20;
-    } else {
-      raw[raw_len++] = c;
-      checksum += c;
-    }
-  }
+  escape(data, len, raw, &raw_len, &checksum);
 
   // add checksum
   checksum = checksum % 256;
@@ -1185,18 +1191,17 @@ bool Rsp::Client::bp_insert(char* data, size_t len)
 
   if (3 != sscanf(data, "Z%1d,%x,%1d", (int *)&type, &addr, &bp_len)) {
     top->log->error("Could not get three arguments\n");
-    return false;
+    return this->send_str("E01");
   }
 
   if (type != BP_MEMORY) {
     top->log->error("ERROR: Not a memory bp\n");
-    this->send_str("");
-    return false;
+    return this->send_str("");
   }
 
   if (!top->bkp->insert(addr)) {
     top->log->error("Unable to insert breakpoint\n");
-    return false;
+    return this->send_str("E02");
   }
 
   top->log->debug("Breakpoint inserted at 0x%08x\n", addr);
@@ -1220,12 +1225,12 @@ bool Rsp::Client::bp_remove(char* data, size_t len)
 
   if (type != BP_MEMORY) {
     top->log->print(LOG_ERROR, "Not a memory bp\n");
-    return false;
+    return this->send_str("");
   }
 
   if (!top->bkp->remove(addr)) {
     top->log->error("Unable to remove breakpoint\n");
-    return false;
+    return this->send_str("E02");
   }
 
   return this->send_str("OK");
