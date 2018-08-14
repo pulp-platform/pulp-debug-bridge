@@ -16,7 +16,7 @@
 
 # Authors: Martin Croome, GreenWaves Technologies
 
-cmake_minimum_required(VERSION 2.8)
+cmake_minimum_required(VERSION 3.5)
 project(plpbridge VERSION 1.0.0)
 set (CMAKE_CXX_STANDARD 11)
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake/")
