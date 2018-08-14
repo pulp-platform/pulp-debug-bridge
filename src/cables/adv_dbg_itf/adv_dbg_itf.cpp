@@ -142,17 +142,27 @@ void Adv_dbg_itf::device_select(unsigned int i)
 bool Adv_dbg_itf::access(bool wr, unsigned int addr, int size, char* buffer)
 {
   bool result;
-
+  int count = 3;
   pthread_mutex_lock(&mutex);
 
-  jtag_debug();
+  do {
+    jtag_debug();
 
-  if (wr)
-    result = write(addr, size, buffer);
-  else
-    result = read(addr, size, buffer);
+    if (wr)
+      result = write(addr, size, buffer);
+    else
+      result = read(addr, size, buffer);
 
-  // log->debug ("access: %s 0x%08x size: %d res:%d\n", wr?"write":"read", addr, size, result);
+    if (!result) {
+      m_dev->jtag_reset(true);
+      m_dev->jtag_reset(false);
+      for (size_t i = 0; i < m_jtag_devices.size(); i++) {
+        m_jtag_devices[i].is_in_debug = false;
+      }
+      this->jtag_soft_reset();
+    }
+    log->debug ("access: %s 0x%08x size: %d res:%d\n", wr?"write":"read", addr, size, result);
+  } while (count-- > 0);
 
   pthread_mutex_unlock(&mutex);
 
@@ -247,8 +257,9 @@ bool Adv_dbg_itf::write(unsigned int _addr, int _size, char* _buffer)
     //   count++;
     //   continue;
     // }
-    if (retval) return retval;
-    printf("write retry: count %d retry count %d\n", count, this->retry_count);
+    return retval;
+    // if (retval) return retval;
+    // printf("write retry: count %d retry count %d\n", count, this->retry_count);
   } while (count++ < this->retry_count);
 
   return false;
@@ -344,8 +355,9 @@ bool Adv_dbg_itf::read(unsigned int _addr, int _size, char* _buffer)
     //   continue;
     // }
 
-    if (retval) return retval;
-    printf("read retry: count %d retry count %d\n", count, this->retry_count);
+    return retval;
+    // if (retval) return retval;
+    // printf("read retry: count %d retry count %d\n", count, this->retry_count);
   } while (count++ < retry_count);
 
   return false;
@@ -405,7 +417,7 @@ bool Adv_dbg_itf::write_internal(ADBG_OPCODES opcode, unsigned int addr, int siz
   buf[0] = ( size / (bitwidth / 8) ) >> 0;
 
   if (!m_dev->stream_inout(NULL, buf, 53, m_tms_on_last)) {
-    log->warning("ft2232: failed to write opcode stream to device\n");
+    log->warning("adv_dbg_itf: failed to write opcode stream to device\n");
     return false;
   }
 
@@ -420,13 +432,13 @@ bool Adv_dbg_itf::write_internal(ADBG_OPCODES opcode, unsigned int addr, int siz
 
   // send start bit
   if (!m_dev->bit_inout(NULL, 0x1, false)) {
-    log->warning("ft2232: failed to write start bit to device\n");
+    log->warning("adv_dbg_itf: failed to write start bit to device\n");
     return false;
   }
 
   // send data
   if (!m_dev->stream_inout(NULL, buffer, size * 8, false)) {
-    log->warning("ft2232: failed to write data to device\n");
+    log->warning("adv_dbg_itf: failed to write data to device\n");
     return false;
   }
 
@@ -437,7 +449,7 @@ bool Adv_dbg_itf::write_internal(ADBG_OPCODES opcode, unsigned int addr, int siz
   buf[1] = crc >>  8;
   buf[0] = crc >>  0;
   if (!m_dev->stream_inout(NULL, buf, 32, false)) {
-    log->warning("ft2232: failed to write crc to device\n");
+    log->warning("adv_dbg_itf: failed to write crc to device\n");
     return false;
   }
 
@@ -448,7 +460,7 @@ bool Adv_dbg_itf::write_internal(ADBG_OPCODES opcode, unsigned int addr, int siz
   recv[0] = 0;
 
   if (!m_dev->stream_inout(recv, buf, 2, false)) {
-    log->warning("ft2232: failed to read match bit from device\n");
+    log->warning("adv_dbg_itf: failed to read match bit from device\n");
     return false;
   }
 
@@ -459,7 +471,7 @@ bool Adv_dbg_itf::write_internal(ADBG_OPCODES opcode, unsigned int addr, int siz
 
   if ((recv[0] & 0x1) != 0x1) {
     // TODO some pulp targets like fulmine does not support CRC.
-    log->warning("ft2232: Match bit was not set. Transfer has probably failed; addr %08X, size %d\n", addr, size);
+    log->warning("adv_dbg_itf: Match bit was not set. Transfer has probably failed; addr %08X, size %d\n", addr, size);
     return false;
   }
 
@@ -535,7 +547,7 @@ bool Adv_dbg_itf::read_internal(ADBG_OPCODES opcode, unsigned int addr, int size
   buf[0] = (nwords * factor) >> 0;
 
   if (!m_dev->stream_inout(NULL, &(buf[0]), 53, m_tms_on_last)) {
-    log->warning("ft2232: failed to write opcode stream to device\n");
+    log->warning("adv_dbg_itf: failed to write opcode stream to device\n");
     return false;
   }
 
@@ -556,7 +568,7 @@ bool Adv_dbg_itf::read_internal(ADBG_OPCODES opcode, unsigned int addr, int size
   while (true) {
     buf[0] = 0x0;
     if (!m_dev->bit_inout(&(buf[0]), 0x0, false)) {
-      log->warning("ft2232: failed to read start bit from device\n");
+      log->warning("adv_dbg_itf: failed to read start bit from device\n");
       return false;
     }
 
@@ -568,7 +580,7 @@ bool Adv_dbg_itf::read_internal(ADBG_OPCODES opcode, unsigned int addr, int size
     unsigned long usec_elapsed = (now.tv_sec - start.tv_sec) * 1000000 + (now.tv_usec - start.tv_usec);
 
     if (usec_elapsed > (unsigned long) access_timeout) {
-      log->warning("ft2232: did not get a start bit from the AXI module in 1s\n");
+      log->warning("adv_dbg_itf: did not get a start bit from the AXI module in 1s\n");
       m_dev->purge();
       return false;
     }
@@ -581,7 +593,7 @@ bool Adv_dbg_itf::read_internal(ADBG_OPCODES opcode, unsigned int addr, int size
   crc = 0xFFFFFFFF;
   for (int i = 0; i < nwords; i++) {
     if (!m_dev->stream_inout(&(recv[0]), &(buf[0]), bytewidth*8, false)) {
-      log->warning("ft2232: failed to receive data from device\n");
+      log->warning("adv_dbg_itf: failed to receive data from device\n");
       return false;
     }
 
@@ -593,7 +605,7 @@ bool Adv_dbg_itf::read_internal(ADBG_OPCODES opcode, unsigned int addr, int size
 
   // receive crc
   if (!m_dev->stream_inout(&(recv[0]), &(buf[0]), 33, m_tms_on_last)) {
-    log->warning("ft2232: failed to read crc from device\n");
+    log->warning("adv_dbg_itf: failed to read crc from device\n");
     return false;
   }
 
@@ -605,8 +617,8 @@ bool Adv_dbg_itf::read_internal(ADBG_OPCODES opcode, unsigned int addr, int size
   uint32_t recv_crc;
   memcpy(&recv_crc, &(recv[0]), 4);
   if (crc != recv_crc) {
-    log->warning ("ft2232: crc from adv dbg unit did not match for request to addr %08X\n", addr);
-    log->debug ("ft2232: Got %08X, expected %08X\n", recv_crc, crc);
+    log->warning ("adv_dbg_itf: crc from adv dbg unit did not match for request to addr %08X\n", addr);
+    log->debug ("adv_dbg_itf: Got %08X, expected %08X\n", recv_crc, crc);
     return false;
   }
 
@@ -633,7 +645,7 @@ bool Adv_dbg_itf::read_error_reg(uint32_t *addr, bool *error)
   buf[0] = 0x1A;
 
   if (!m_dev->stream_inout(NULL, buf, 6, m_tms_on_last)) {
-    log->warning("ft2232: failed to write internal register select to device\n");
+    log->warning("adv_dbg_itf: failed to write internal register select to device\n");
     return false;
   }
 
@@ -647,7 +659,7 @@ bool Adv_dbg_itf::read_error_reg(uint32_t *addr, bool *error)
   jtag_pad_before();
 
   if (!m_dev->stream_inout(buf, buf, 33, m_tms_on_last)) {
-    log->warning("ft2232: failed to read AXI error register\n");
+    log->warning("adv_dbg_itf: failed to read AXI error register\n");
     return false;
   }
 
@@ -700,7 +712,7 @@ bool Adv_dbg_itf::clear_error_reg()
   buf[0] = 0x08;
 
   if (!m_dev->stream_inout(NULL, buf, 5+1+15, m_tms_on_last)) {
-    log->warning("ft2232: failed to write internal register write to device\n");
+    log->warning("adv_dbg_itf: failed to write internal register write to device\n");
     return false;
   }
 
@@ -736,7 +748,7 @@ bool Adv_dbg_itf::jtag_set_selected_ir(char ir)
     is_last = (m_jtag_devices.size() - 1 == i);
 
     if (!m_dev->stream_inout(NULL, buf, m_jtag_devices[i].ir_len, is_last)) {
-      log->warning ("ft2232: failed to set IR to bypass\n");
+      log->warning ("adv_dbg_itf: failed to set IR to bypass\n");
       return false;
     }
   }
@@ -775,7 +787,7 @@ bool Adv_dbg_itf::jtag_axi_select()
   jtag_pad_before();
 
   if (!m_dev->stream_inout(NULL, buf, 6, m_tms_on_last)) {
-    log->warning("ft2232: failed to write AXI select to device\n");
+    log->warning("adv_dbg_itf: failed to write AXI select to device\n");
     return false;
   }
 
@@ -874,7 +886,7 @@ int Adv_dbg_itf::ir_len_detect()
   m_dev->stream_inout(recv_buf, send_buf, MAX_CHAIN_LEN, false);
 
   if (recv_buf[MAX_CHAIN_LEN/8-1] != 0)
-    log->warning("ft2232: Did not receive 0 that we sent, JTAG chain might be faulty\n");
+    log->warning("adv_dbg_itf: Did not receive 0 that we sent, JTAG chain might be faulty\n");
 
   // now we send all 1's and see how long it takes for them to get back to us
   memset(send_buf, 0xFF, MAX_CHAIN_LEN/8);
@@ -887,7 +899,7 @@ int Adv_dbg_itf::ir_len_detect()
       break;
     }
   }
-  log->debug("ft2232: jtag_chainlen = %d\n", jtag_chainlen);
+  log->debug("adv_dbg_itf: jtag_chainlen = %d\n", jtag_chainlen);
 
   m_dev->jtag_write_tms(1); // update DR
   m_dev->jtag_write_tms(0); // run test idle
@@ -913,7 +925,7 @@ int Adv_dbg_itf::dr_len_detect()
   m_dev->stream_inout(recv_buf, send_buf, MAX_CHAIN_LEN, false);
 
   if (recv_buf[MAX_CHAIN_LEN/8-1] != 0)
-    log->warning("ft2232: Did not receive 0 that we sent, JTAG chain might be faulty\n");
+    log->warning("adv_dbg_itf: Did not receive 0 that we sent, JTAG chain might be faulty\n");
 
   // now we send all 1's and see how long it takes for them to get back to us
   memset(send_buf, 0xFF, MAX_CHAIN_LEN/8);
@@ -982,7 +994,7 @@ bool Adv_dbg_itf::jtag_pad_before()
   memset(buffer, 0, pad_bits/8);
 
   if (!m_dev->stream_inout(NULL, buffer, pad_bits, false)) {
-    log->warning("ft2232: failed to pad chain before our selected device\n");
+    log->warning("adv_dbg_itf: failed to pad chain before our selected device\n");
     return false;
   }
 
@@ -1004,7 +1016,7 @@ bool Adv_dbg_itf::jtag_pad_after(bool tms)
   memset(buffer, 0, pad_bits/8);
 
   if (!m_dev->stream_inout(NULL, buffer, pad_bits, tms)) {
-    log->warning("ft2232: failed to pad chain before our selected device\n");
+    log->warning("adv_dbg_itf: failed to pad chain before our selected device\n");
     return false;
   }
 
