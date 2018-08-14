@@ -96,7 +96,7 @@ void Ioloop::ioloop_routine()
       // debugStruct_ptr is used to synchronize with the runtime at the first start or 
       // when we switch from one binary to another
       // Each binary will initialize when it boots will wait until we set it to zero before stopping
-      while(1) {
+      while(!end) {
         if ((debug_struct = activate()) != NULL) break;
 
         // We use a fast loop to miss as few printf as possible as the binary will
@@ -104,6 +104,8 @@ void Ioloop::ioloop_routine()
         // no host loader is connected
         usleep(1);
       }
+
+      if (end) break;
 
       // First check if the application has exited
       cable->access(false, PTR_2_INT(&debug_struct->exit_status), 4, (char*)&value);
@@ -116,7 +118,7 @@ void Ioloop::ioloop_routine()
       // Check printf
       // The target application should quickly dumps the characters, so we can loop on printf
       // until we don't find anything
-      while(1) {
+      while(!end) {
         cable->access(false, PTR_2_INT(&debug_struct->pending_putchar), 4, (char*)&value);
         if (value == 0) break;
         std::vector<char> buff(value + 1);
@@ -127,6 +129,8 @@ void Ioloop::ioloop_routine()
         fflush(NULL);
       }
 
+      if (end) break;
+      
       // Small sleep to not poll too often
       usleep(delay);
     }
