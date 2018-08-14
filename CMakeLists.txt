@@ -70,6 +70,7 @@ ExternalProject_Add(
   pulp-configs
   PREFIX ${CMAKE_BINARY_DIR}/pulp-configs
   GIT_REPOSITORY https://github.com/pulp-platform/pulp-configs.git
+  GIT_TAG 5800fbf3040ac4a15f7c40a378a0c4402eb3538c
   BUILD_IN_SOURCE ON
   CONFIGURE_COMMAND ""
   BUILD_COMMAND make INSTALL=${INSTALL_CMD}
