@@ -144,6 +144,7 @@ endif()
   if (WIN32)
     if (WIN64)
       message(STATUS "Compiling in FTDI support")
+      set(FTDI_FOUND YES)
       # Download LibFTDI SDK if on windows
       ExternalProject_Add(
           ftdi
@@ -173,7 +174,7 @@ endif()
       endif()
     endif()
   else()
-    find_package(FTDI REQUIRED)
+    find_package(FTDI QUIET)
     if(FTDI_FOUND)
         target_compile_options(libplpbridge PUBLIC ${FTDI_CFLAGS_OTHER})
         target_include_directories(libplpbridge
@@ -189,8 +190,10 @@ endif()
         endif()
     endif()
   endif()
-  target_sources(libplpbridge PRIVATE src/cables/ftdi/ftdi.cpp)
-  target_compile_definitions(libplpbridge PUBLIC __USE_FTDI__)
+  if(FTDI_FOUND)
+    target_sources(libplpbridge PRIVATE src/cables/ftdi/ftdi.cpp)
+    target_compile_definitions(libplpbridge PUBLIC __USE_FTDI__)
+  endif()
 endif()
 
 # Optionally add in SDL/Framebuffer support
