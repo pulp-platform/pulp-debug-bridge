@@ -45,7 +45,7 @@ Adv_dbg_itf::Adv_dbg_itf(js::config *system_config, Log* log, Cable *m_dev) : m_
 
   conf = system_config->get("**/adv_dbg_unit/retry_count");
 
-  this->retry_count = conf != NULL ? conf->get_int() : 0;
+  this->retry_count = conf != NULL ? conf->get_int() : 3;
   log->debug("Using retry count: %d\n", this->retry_count);
 
 }
@@ -247,9 +247,9 @@ bool Adv_dbg_itf::write(unsigned int _addr, int _size, char* _buffer)
     //   count++;
     //   continue;
     // }
-
-    return retval;
-  } while (count < this->retry_count);
+    if (retval) return retval;
+    printf("write retry: count %d retry count %d\n", count, this->retry_count);
+  } while (count++ < this->retry_count);
 
   return false;
 }
@@ -344,8 +344,9 @@ bool Adv_dbg_itf::read(unsigned int _addr, int _size, char* _buffer)
     //   continue;
     // }
 
-    return retval;
-  } while (count < retry_count);
+    if (retval) return retval;
+    printf("read retry: count %d retry count %d\n", count, this->retry_count);
+  } while (count++ < retry_count);
 
   return false;
 }
