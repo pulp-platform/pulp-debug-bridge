@@ -41,6 +41,12 @@ if (WIN32)
   endif()
 endif()
 
+if (APPLE)
+  set(INSTALL_CMD ginstall)
+else()
+  set(INSTALL_CMD install)
+endif()
+
 include(ExternalProject)
 
 set(EXTERNAL_INSTALL_LOCATION ${CMAKE_BINARY_DIR}/external)
@@ -66,7 +72,7 @@ ExternalProject_Add(
   GIT_REPOSITORY https://github.com/pulp-platform/pulp-configs.git
   BUILD_IN_SOURCE ON
   CONFIGURE_COMMAND ""
-  BUILD_COMMAND make
+  BUILD_COMMAND make INSTALL=${INSTALL_CMD}
   INSTALL_COMMAND ""
   LOG_DOWNLOAD ON
 )
@@ -91,8 +97,15 @@ add_library(libplpbridge SHARED
   ${JSON_TOOLS_SRC_DIR}
 )
 
+if (APPLE)
+  target_compile_options(
+    libplpbridge PRIVATE
+    -Wno-nested-anon-types
+  )
+endif()
+
 # All include directories for libplpbridge
-target_include_directories(libplpbridge PRIVATE 
+target_include_directories(libplpbridge PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}/include
   ${CMAKE_CURRENT_SOURCE_DIR}/include/cables/jtag-proxy
   ${CMAKE_CURRENT_SOURCE_DIR}/include/cables/adv_dbg_itf
