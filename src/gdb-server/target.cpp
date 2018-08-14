@@ -718,6 +718,7 @@ Target_cluster::Target_cluster(js::config *system_config, js::config *config, Gd
 : Target_cluster_common(config, top, cluster_base, xtrigger_addr, cluster_id)
 {
   int nb_pe = config->get("nb_pe")->get_int();
+  top->log->debug("creating cluster %d with %d cores\n", cluster_id, nb_pe);
   for (int i=0; i<nb_pe; i++)
   {
     Target_core *core = new Target_core(top, cluster_base + 0x300000 + i * 0x8000, this, i);
@@ -727,6 +728,7 @@ Target_cluster::Target_cluster(js::config *system_config, js::config *config, Gd
 
   // Figure out if the cluster can be powered down
   js::config *bypass_config = system_config->get("**/apb_soc_ctrl/regmap/power/bypass");
+  top->log->debug("cluster %d power bypass %d\n", cluster_id, bypass_config != NULL);
   if (bypass_config)
   {
     uint32_t addr = system_config->get("**/apb_soc_ctrl/base")->get_int() +
