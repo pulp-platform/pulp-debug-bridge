@@ -21,8 +21,8 @@ project(plpbridge VERSION 1.0.0)
 set (CMAKE_CXX_STANDARD 11)
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake/")
 
-set(FTDI_DEVKIT_NAME, "libftdi1-1.4git_devkit_x86_x64_14June2018")
-set(FTDI_DEVKIT_URL, "https://sourceforge.net/projects/picusb/files/${FTDI_DEVKIT_NAME}.zip/download")
+set(FTDI_DEVKIT_NAME, "libftdi1-1.4git_devkit_x86_x64_14June2018.zip")
+set(FTDI_DEVKIT_URL, "https://sourceforge.net/projects/picusb/files/${FTDI_DEVKIT_NAME}/download")
 
 option(WithFrameBuffer "Build with framebuffer support" OFF)
 option(ForceFTDI "Must build with FTDI support" OFF)
@@ -40,9 +40,7 @@ if (WIN32)
   if(CMAKE_SIZEOF_VOID_P EQUAL 8)
     set(WIN64 YES)
   endif()
-endif()
-
-if (APPLE)
+elseif (APPLE)
   set(INSTALL_CMD ginstall)
 else()
   set(INSTALL_CMD install)
@@ -84,7 +82,7 @@ set(PULP_CONFIGS_BIN ${source_dir}/bin)
 set(PULP_CONFIGS_CONFIGS ${source_dir}/configs)
 
 # Create library
-add_library(libplpbridge SHARED
+add_library(libplpbridge MODULE
   src/cables/adv_dbg_itf/adv_dbg_itf.cpp
   src/cables/jtag-proxy/jtag-proxy.cpp
   src/cables/jtag.cpp
@@ -99,12 +97,6 @@ add_library(libplpbridge SHARED
   ${JSON_TOOLS_SRC_DIR}
 )
 
-if (APPLE)
-  target_compile_options(
-    libplpbridge PRIVATE
-    -Wno-nested-anon-types
-  )
-endif()
 
 # All include directories for libplpbridge
 target_include_directories(libplpbridge PRIVATE
@@ -128,11 +120,12 @@ if(MSVC)
   target_compile_options(libplpbridge PRIVATE /W4 /WX)
 else(MSVC)
   if (APPLE)
-    target_compile_options(libplpbridge PUBLIC -Wall -Wextra -pedantic -Werror -Wno-unused-private-field)
+    target_compile_options(libplpbridge PUBLIC -Wall -Wextra -pedantic -Werror -Wno-unused-private-field -Wno-nested-anon-types)
   else(APPLE)
     target_compile_options(libplpbridge PRIVATE -Wall -Wextra -pedantic -Werror)
   endif(APPLE)
 endif(MSVC)
+
 
 # link windows sockets
 if (WIN32)
@@ -140,7 +133,7 @@ if (WIN32)
 endif()
 
 # Optionally add in FTDI support
-  if (WithFTDI)
+if (WithFTDI)
   if (WIN32)
     if (WIN64)
       message(STATUS "Compiling in FTDI support")
@@ -149,8 +142,8 @@ endif()
       ExternalProject_Add(
           ftdi
           PREFIX ${CMAKE_BINARY_DIR}/ftdi
-          URL "https://sourceforge.net/projects/picusb/files/libftdi1-1.4git_devkit_x86_x64_14June2018.zip/download"
-          DOWNLOAD_NAME "libftdi1-1.4git_devkit_x86_x64_14June2018.zip"
+          URL ${FTDI_DEVKIT_URL}
+          DOWNLOAD_NAME ${FTDI_DEVKIT_NAME}
           CONFIGURE_COMMAND ""
           BUILD_COMMAND ""
           INSTALL_COMMAND ""
@@ -198,7 +191,7 @@ endif()
 
 # Optionally add in SDL/Framebuffer support
 if (WithFrameBuffer)
-  if (WIN32)
+  if (NOT WIN32)
     find_package(SDL2 REQUIRED)
     if (SDL2_LIBRARY)
       message(STATUS "Compiling with framebuffer support")
