@@ -92,6 +92,8 @@ class Adv_dbg_itf : public Cable  {
 
     bool m_tms_on_last;
 
+    bool jtag_reset_int(bool active);
+
     bool write(unsigned int addr, int size, char* buffer);
     bool write_internal(ADBG_OPCODES opcode, unsigned int addr, int size, char* buffer);
 

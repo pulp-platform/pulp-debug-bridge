@@ -86,11 +86,9 @@ bool Adv_dbg_itf::connect(js::config *config)
   return true;
 }
 
-
-
-bool Adv_dbg_itf::jtag_reset(bool active)
+bool Adv_dbg_itf::jtag_reset_int(bool active)
 {
-  pthread_mutex_lock(&mutex);
+  log->detail("JTAG reset %d\n", active);
 
   for (jtag_devices_size_t i=0; i < m_jtag_devices.size(); i++)
   {
@@ -98,6 +96,13 @@ bool Adv_dbg_itf::jtag_reset(bool active)
   }
   bool result = m_dev->jtag_reset(active);
 
+  return result;
+}
+
+bool Adv_dbg_itf::jtag_reset(bool active)
+{
+  pthread_mutex_lock(&mutex);
+  bool result = jtag_reset_int(active);
   pthread_mutex_unlock(&mutex);
 
   return result;
@@ -142,27 +147,13 @@ void Adv_dbg_itf::device_select(unsigned int i)
 bool Adv_dbg_itf::access(bool wr, unsigned int addr, int size, char* buffer)
 {
   bool result;
-  int count = 3;
   pthread_mutex_lock(&mutex);
+  jtag_debug();
 
-  do {
-    jtag_debug();
-
-    if (wr)
-      result = write(addr, size, buffer);
-    else
-      result = read(addr, size, buffer);
-
-    if (!result) {
-      m_dev->jtag_reset(true);
-      m_dev->jtag_reset(false);
-      for (size_t i = 0; i < m_jtag_devices.size(); i++) {
-        m_jtag_devices[i].is_in_debug = false;
-      }
-      this->jtag_soft_reset();
-    }
-    log->debug ("access: %s 0x%08x size: %d res:%d\n", wr?"write":"read", addr, size, result);
-  } while (count-- > 0);
+  if (wr)
+    result = write(addr, size, buffer);
+  else
+    result = read(addr, size, buffer);
 
   pthread_mutex_unlock(&mutex);
 
@@ -257,9 +248,13 @@ bool Adv_dbg_itf::write(unsigned int _addr, int _size, char* _buffer)
     //   count++;
     //   continue;
     // }
-    return retval;
-    // if (retval) return retval;
-    // printf("write retry: count %d retry count %d\n", count, this->retry_count);
+    // return retval;
+    if (retval) return retval;
+    printf("write retry: count %d retry count %d\n", count, this->retry_count);
+    jtag_reset_int(true);
+    jtag_reset_int(false);
+    jtag_soft_reset();
+    jtag_debug();
   } while (count++ < this->retry_count);
 
   return false;
@@ -355,9 +350,13 @@ bool Adv_dbg_itf::read(unsigned int _addr, int _size, char* _buffer)
     //   continue;
     // }
 
-    return retval;
-    // if (retval) return retval;
-    // printf("read retry: count %d retry count %d\n", count, this->retry_count);
+    // return retval;
+    if (retval) return retval;
+    printf("read retry: count %d retry count %d\n", count, this->retry_count);
+    jtag_reset_int(true);
+    jtag_reset_int(false);
+    jtag_soft_reset();
+    jtag_debug();
   } while (count++ < retry_count);
 
   return false;
@@ -581,7 +580,6 @@ bool Adv_dbg_itf::read_internal(ADBG_OPCODES opcode, unsigned int addr, int size
 
     if (usec_elapsed > (unsigned long) access_timeout) {
       log->warning("adv_dbg_itf: did not get a start bit from the AXI module in 1s\n");
-      m_dev->purge();
       return false;
     }
   }
@@ -730,6 +728,8 @@ bool Adv_dbg_itf::jtag_set_selected_ir(char ir)
   char buf[1];
   bool is_last;
   unsigned int i;
+
+  log->detail("adv_dbg_itf: select ir %d\n", ir);
 
   m_dev->jtag_write_tms(1); // select DR scan
   m_dev->jtag_write_tms(1); // select IR scan

@@ -426,7 +426,8 @@ bool Rsp::Client::mem_read(char* data, size_t)
     return false;
   }
 
-  top->target->mem_read(addr, length, (char *)buffer);
+  if (!top->target->mem_read(addr, length, (char *)buffer))
+    return this->send_str("E02");
 
   for(i = 0; i < length; i++) {
     rdata = buffer[i];
@@ -491,11 +492,14 @@ bool Rsp::Client::mem_write_ascii(char* data, size_t len)
     buffer[j] = wdata;
   }
 
-  top->target->mem_write(addr, buffer_len, buffer);
+  bool ret = top->target->mem_write(addr, buffer_len, buffer);
 
   free(buffer);
 
-  return this->send_str("OK");
+  if (ret)
+    return this->send_str("OK");
+  else
+    return this->send_str("E02");
 }
 
 bool Rsp::Client::mem_write(char* data, size_t len)
@@ -522,9 +526,10 @@ bool Rsp::Client::mem_write(char* data, size_t len)
   data = &data[i+1];
   len = len - i - 1;
 
-  top->target->mem_write(addr, len, data);
-
-  return this->send_str("OK");
+  if (top->target->mem_write(addr, len, data))
+    return this->send_str("OK");
+  else
+    return this->send_str("E02");
 }
 
 
