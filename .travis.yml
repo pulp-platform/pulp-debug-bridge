@@ -1,0 +1,26 @@
+dist: trusty
+language: cpp
+
+addons:
+  apt:
+    sources:
+      - ubuntu-toolchain-r-test
+    packages:
+      - libftdi-dev
+
+env:
+  matrix:
+    - WITH_FTDI=ON FORCE_FTDI=ON
+    - WITH_FTDI=OFF
+
+install: if [[ "$TRAVIS_OS_NAME" == "osx" ]]; then brew install libftdi; fi
+    
+os: 
+  - linux
+  - osx
+
+script: 
+  - mkdir build
+  - cd build
+  - cmake .. -DCMAKE_INSTALL_PREFIX=$PWD/_install -DStandaloneApp=YES -DForceFTDI=$FORCE_FTDI -DWithFTDI=$WITH_FTDI
+  - make all install
