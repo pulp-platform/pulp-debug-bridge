@@ -21,8 +21,8 @@ project(plpbridge VERSION 1.0.0)
 set (CMAKE_CXX_STANDARD 11)
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake/")
 
-set(FTDI_DEVKIT_NAME, "libftdi1-1.4git_devkit_x86_x64_14June2018.zip")
-set(FTDI_DEVKIT_URL, "https://sourceforge.net/projects/picusb/files/${FTDI_DEVKIT_NAME}/download")
+set(FTDI_DEVKIT_NAME "libftdi1-1.4git_devkit_x86_x64_14June2018.zip")
+set(FTDI_DEVKIT_URL "https://sourceforge.net/projects/picusb/files/${FTDI_DEVKIT_NAME}/download")
 
 option(WithFrameBuffer "Build with framebuffer support" OFF)
 option(ForceFTDI "Must build with FTDI support" OFF)
@@ -206,10 +206,16 @@ if (WithFrameBuffer)
   endif()
 endif()
 
-set_target_properties(libplpbridge PROPERTIES
-  VERSION ${PROJECT_VERSION}
-  OUTPUT_NAME "pulpdebugbridge" # lib will be added as appropriate
-)
+if(APPLE)
+  set_target_properties(libplpbridge PROPERTIES
+    OUTPUT_NAME "pulpdebugbridge" # lib will be added as appropriate
+  )
+else()
+  set_target_properties(libplpbridge PROPERTIES
+    VERSION ${PROJECT_VERSION}
+    OUTPUT_NAME "pulpdebugbridge" # lib will be added as appropriate
+  )
+endif()
 
 if(StandaloneApp)
   set(DEST_BIN ".")
