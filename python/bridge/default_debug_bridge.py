@@ -183,8 +183,6 @@ class debug_bridge(object):
             lib_path = os.path.dirname(os.path.realpath(sys.path[0]))
             os.environ['PATH'] = lib_path + ';' + os.environ['PATH']
             self.module = ctypes.windll.LoadLibrary('libpulpdebugbridge.dll')
-        elif platform.system() == "Darwin":
-            self.module = ctypes.CDLL('libpulpdebugbridge.dylib')
         else:
             self.module = ctypes.CDLL('libpulpdebugbridge.so')
 
