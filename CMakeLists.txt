@@ -25,8 +25,7 @@ set(FTDI_DEVKIT_NAME "libftdi1-1.4git_devkit_x86_x64_14June2018.zip")
 set(FTDI_DEVKIT_URL "https://sourceforge.net/projects/picusb/files/${FTDI_DEVKIT_NAME}/download")
 
 option(WithFrameBuffer "Build with framebuffer support" OFF)
-option(ForceFTDI "Must build with FTDI support" OFF)
-option(WithFTDI "Build with FTDI support if available" ON)
+option(WithFTDI "Build with FTDI support" ON)
 option(StandaloneApp "Install as standalone app" OFF)
 
 if(NOT CMAKE_BUILD_TYPE)
@@ -137,7 +136,6 @@ if (WithFTDI)
   if (WIN32)
     if (WIN64)
       message(STATUS "Compiling in FTDI support")
-      set(FTDI_FOUND YES)
       # Download LibFTDI SDK if on windows
       ExternalProject_Add(
           ftdi
@@ -167,14 +165,13 @@ if (WithFTDI)
       endif()
     endif()
   else()
-    set(FTDI_FOUND YES)
-    # Download LibFTDI SDK if on windows
+    message(STATUS "Compiling in FTDI support")
     ExternalProject_Add(
         ftdi
         PREFIX ${CMAKE_BINARY_DIR}/ftdi
         GIT_REPOSITORY git://developer.intra2net.com/libftdi
         GIT_TAG v1.4
-        CMAKE_ARGS -DSTATICLIBS=OFF -DBUILD_TESTS=OFF -DDOCUMENTAION=OFF -DEXAMPLES=OFF -DFTDIPP=OFF -DFTDI_EEPROM=OFF -DPYTHON_BINDINGS=OFF -DCMAKE_INSTALL_PREFIX=./install
+        CMAKE_ARGS -DSTATICLIBS=OFF -DBUILD_TESTS=OFF -DDOCUMENTATION=OFF -DEXAMPLES=OFF -DFTDIPP=OFF -DFTDI_EEPROM=OFF -DPYTHON_BINDINGS=OFF -DCMAKE_INSTALL_PREFIX=./install
         LOG_DOWNLOAD ON
     )
 
@@ -264,6 +261,8 @@ install(
   TARGETS libplpbridge
   DESTINATION ${DEST_LIBS}
 )
+
+# ftdi libs on Linux/MAC
 
 if(DEFINED FTDI_LIB_DIR)
   install(
