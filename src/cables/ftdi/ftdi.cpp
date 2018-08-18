@@ -55,6 +55,19 @@
 #include "ftdi.hpp"
 #include "cables/log.h"
 
+// Macros to make config commands clearer
+
+#define SET_DATA_BUFFER(__buf, __idx, __value) __buf[__idx++] = __value
+#define SET_DATA_BUFFER2(__buf, __idx, __cmd, __arg1, __arg2) \
+  do { \
+    SET_DATA_BUFFER(__buf, __idx, __cmd); \
+    SET_DATA_BUFFER(__buf, __idx, __arg1); \
+    SET_DATA_BUFFER(__buf, __idx, __arg2); \
+  } while (0)
+#define SET_DATA_BITS_LOW_BYTE(__buf, __idx, __value, __direction) SET_DATA_BUFFER2(__buf, __idx, SET_BITS_LOW, __value, __direction)
+#define SET_DATA_BITS_HIGH_BYTE(__buf, __idx, __value, __direction) SET_DATA_BUFFER2(__buf, __idx, SET_BITS_HIGH, __value, __direction)
+#define SET_TCK_DIVISOR(__buf, __idx, __valueL, __valueH) SET_DATA_BUFFER2(__buf, __idx, TCK_DIVISOR, __valueL, __valueH)
+
 
 #ifndef min
 #define min(X,Y) ((X) < (Y) ? (X) : (Y))
@@ -85,6 +98,7 @@ bool
 Ftdi::connect(js::config *config)
 {
   unsigned char buf[256];
+  int rst_len = 0;
   std::list<struct device_desc> dev_desc = m_descriptors[m_id];
   int error;
   const char *description = NULL;
@@ -108,7 +122,13 @@ Ftdi::connect(js::config *config)
     goto fail;
   }
 
-  ftdi_init(&m_ftdic);
+  error = ftdi_init(&m_ftdic);
+  if (error < 0) {
+    log->error("ftdi2232: Unable to initialize LibFTDI context: %d\n", error);
+    goto fail;
+  }
+
+  // TODO - Should we ftdi_set_interface here? It works without but probably because the default is the first
 
   //---------------------------------------------------------------------------
   // Device Selection
@@ -187,30 +207,20 @@ Ftdi::connect(js::config *config)
     set_bit_direction(8, 1);
     set_bit_direction(9, 1);
 
-    buf[0] = SET_BITS_LOW;  // Set value & direction of ADBUS lines
-    buf[1] = 0x00;          // values
-    buf[2] = 0x1b;          // direction (1 == output)
-    //buf[3] = 0x8a;   // Activate this command to disabled the default divider by 5, otherwise by default we can just go up to 6MHz instead of 30MHz
-    buf[3] = TCK_DIVISOR;
-    buf[4] = 0x01;         // We cannot go below that on fulmine
-    buf[5] = 0x00;
-    buf[6] = SEND_IMMEDIATE;
+    SET_DATA_BITS_LOW_BYTE(buf, rst_len, 0x00, 0x1b); // Set value & direction of ADBUS lines, direction (1 == output)
+    SET_TCK_DIVISOR(buf, rst_len, 0x01, 0x00); // We cannot go below that on fulmine
+    SET_DATA_BUFFER(buf, rst_len, SEND_IMMEDIATE);
   }
   else if (m_id == Digilent)
   {
     bits_value = 0x7 << 4;
     bits_direction = 0x7b;
 
-    buf[0] = SET_BITS_LOW;  // Set value & direction of ADBUS lines
-    buf[1] = 0x70;          // values                   0111 0000
-    buf[2] = 0x7b;          // direction (1 == output)  0111 1011
-    //buf[3] = 0x8a;
-    buf[3] = TCK_DIVISOR;
-    // THe divisor has been put to 2 as is not reliable on gap board with less
-    // than that
-    buf[4] = 0x02;
-    buf[5] = 0x00;
-    buf[6] = SEND_IMMEDIATE;
+    SET_DATA_BITS_LOW_BYTE(buf, rst_len, 0x70, 0x7b); // direction (1 == output)  0111 1011 values 0111 0000
+    // SET_DATA_BUFFER(buf, rst_len, EN_DIV_5); // Enable clock divide by 5
+    SET_TCK_DIVISOR(buf, rst_len, 0x02, 0x00); // The divisor has been put to 2 as is not reliable on gap board with less
+    // SET_DATA_BUFFER(buf, rst_len, DIS_ADAPTIVE); // Make sure adaptive clocking is disabled
+    SET_DATA_BUFFER(buf, rst_len, SEND_IMMEDIATE);
   }
   else
   {
@@ -218,7 +228,7 @@ Ftdi::connect(js::config *config)
     goto fail;
   }
 
-  if(ft2232_write((char *)buf, 7, 0) != 7) {
+  if(ft2232_write((char *)buf, rst_len, 0) != rst_len) {
     log->error("ft2232: Initial write failed\n");
     goto fail;
   }
@@ -493,9 +503,15 @@ Ftdi::ft2232_mpsse_open() {
     goto fail;
   }
 
+  ret = ftdi_set_bitmode(&m_ftdic, 0x00, BITMODE_RESET);
+  if (ret < 0) {
+    log->warning("ft2232: ftdi_set_bitmode(BITMODE_RESET) failed\n");
+    goto fail;
+  }
+
   ret = ftdi_set_bitmode(&m_ftdic, 0x0b, BITMODE_MPSSE);
   if (ret < 0) {
-    log->warning("ft2232: ftdi_set_bitmode() failed\n");
+    log->warning("ft2232: ftdi_set_bitmode(BITMODE_MPSSE) failed\n");
     goto fail;
   }
 
@@ -546,6 +562,7 @@ Ftdi::ft2232_mpsse_open() {
     goto fail;
   }
 
+  usleep(SETUP_DELAY);
   return true;
 
 fail:
@@ -882,23 +899,18 @@ Ftdi::ft2232_read_packed_bits(char *buf, int packet_len, int bits_per_packet, in
 bool
 Ftdi::set_bit_value(int bit, int value)
 {
-
   unsigned char buf[4];
-
+  int cmd_len = 0;
   bits_value = (bits_value & ~(1<<bit)) | (value << bit);
   if (bit >= 8)
   {
-    buf[0] = SET_BITS_HIGH;
-    buf[1] = bits_value >> 8;
-    buf[2] = bits_direction >> 8;
-    buf[3] = SEND_IMMEDIATE;
+    SET_DATA_BITS_HIGH_BYTE(buf, cmd_len, bits_value>>8, bits_direction>>8);
+    SET_DATA_BUFFER(buf, cmd_len, SEND_IMMEDIATE);
   }
   else
   {
-    buf[0] = SET_BITS_LOW;
-    buf[1] = bits_value;
-    buf[2] = bits_direction;
-    buf[3] = SEND_IMMEDIATE;
+    SET_DATA_BITS_LOW_BYTE(buf, cmd_len, bits_value, bits_direction);
+    SET_DATA_BUFFER(buf, cmd_len, SEND_IMMEDIATE);
   }
 
   if (ft2232_write((char *)buf, 4, 0) != 4) return false;
@@ -924,15 +936,12 @@ Ftdi::jtag_reset(bool active)
       if (active)
       {
         unsigned char buf[256];
-        buf[0] = SET_BITS_HIGH;
-        buf[1] = ~0x01;
-        buf[2] = 0x3;
-        buf[3] = SET_BITS_HIGH;
-        buf[4] = ~0x02;
-        buf[5] = 0x3;
-        buf[6] = SEND_IMMEDIATE;
+        int cmd_len = 0;
+        SET_DATA_BITS_HIGH_BYTE(buf, cmd_len, ~0x01, 0x3);
+        SET_DATA_BITS_HIGH_BYTE(buf, cmd_len, ~0x02, 0x3);
+        SET_DATA_BUFFER(buf, cmd_len, SEND_IMMEDIATE);
 
-        if(ft2232_write((char *)buf, 7, 0) != 7) return false;
+        if(ft2232_write((char *)buf, cmd_len, 0) != cmd_len) return false;
       }
       return true;
     }    

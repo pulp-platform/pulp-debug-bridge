@@ -30,6 +30,7 @@ extern "C" {
 #include <ftdi.h>
 }
 
+#define SETUP_DELAY		25000
 #define FTDX_MAXSEND 4096
 #define FTDX_MAXSEND_MPSSE (64 * 1024)
 #define FTDI_MAXRECV   ( 4 * 64)
