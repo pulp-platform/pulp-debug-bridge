@@ -167,26 +167,29 @@ if (WithFTDI)
       endif()
     endif()
   else()
-    find_package(FTDI QUIET)
-    if(FTDI_FOUND)
-        target_compile_options(libplpbridge PUBLIC ${FTDI_CFLAGS_OTHER})
-        target_include_directories(libplpbridge
-            PRIVATE
-                ${CMAKE_CURRENT_SOURCE_DIR}/include/cables/ftdi
-                ${FTDI_INCLUDE_DIR})
-        target_link_libraries(libplpbridge PRIVATE ${FTDI_LIBRARIES})
-    else()
-        if (ForceFTDI)
-          message(FATAL_ERROR "Can't find ftdi library")
-        else()
-          message(STATUS "No FTDI libarary found")
-        endif()
-    endif()
+    set(FTDI_FOUND YES)
+    # Download LibFTDI SDK if on windows
+    ExternalProject_Add(
+        ftdi
+        PREFIX ${CMAKE_BINARY_DIR}/ftdi
+        GIT_REPOSITORY git://developer.intra2net.com/libftdi
+        GIT_TAG v1.4
+        CMAKE_ARGS -DSTATICLIBS=OFF -DBUILD_TESTS=OFF -DDOCUMENTAION=OFF -DEXAMPLES=OFF -DFTDIPP=OFF -DFTDI_EEPROM=OFF -DPYTHON_BINDINGS=OFF -DCMAKE_INSTALL_PREFIX=./install
+        LOG_DOWNLOAD ON
+    )
+
+    ExternalProject_Get_Property(ftdi binary_dir)
+    target_include_directories(libplpbridge
+        PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/include/cables/ftdi
+            ${binary_dir}/install/include/libftdi1
+    )
+    set(FTDI_LIB_DIR ${binary_dir}/install/lib)
+    target_link_libraries(libplpbridge PRIVATE ${FTDI_LIB_DIR}/libftdi1.so)
+
   endif()
-  if(FTDI_FOUND)
-    target_sources(libplpbridge PRIVATE src/cables/ftdi/ftdi.cpp)
-    target_compile_definitions(libplpbridge PUBLIC __USE_FTDI__)
-  endif()
+  target_sources(libplpbridge PRIVATE src/cables/ftdi/ftdi.cpp)
+  target_compile_definitions(libplpbridge PUBLIC __USE_FTDI__)
 endif()
 
 # Optionally add in SDL/Framebuffer support
@@ -262,6 +265,14 @@ install(
   DESTINATION ${DEST_LIBS}
 )
 
+if(DEFINED FTDI_LIB_DIR)
+  install(
+    DIRECTORY ${FTDI_LIB_DIR}/ DESTINATION ${DEST_LIBS}
+    FILES_MATCHING PATTERN "libftdi1\.so*"
+    PATTERN cmake EXCLUDE
+    PATTERN pkgconfig EXCLUDE
+  )
+endif()
 # Python module files
 
 install(

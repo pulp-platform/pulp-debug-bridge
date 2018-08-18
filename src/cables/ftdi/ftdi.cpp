@@ -102,7 +102,8 @@ Ftdi::connect(js::config *config)
   std::list<struct device_desc> dev_desc = m_descriptors[m_id];
   int error;
   const char *description = NULL;
-
+  struct ftdi_version_info version;
+  
   if (config && config->get("description") != NULL)
   {
     description = config->get("description")->get_str().c_str();
@@ -127,6 +128,11 @@ Ftdi::connect(js::config *config)
     log->error("ftdi2232: Unable to initialize LibFTDI context: %d\n", error);
     goto fail;
   }
+
+  version = ftdi_get_library_version();
+  log->user("ftdi2232 libftdi version %s (major: %d, minor: %d, micro: %d, snapshot ver: %s)\n",
+      version.version_str, version.major, version.minor, version.micro,
+      version.snapshot_str);
 
   // TODO - Should we ftdi_set_interface here? It works without but probably because the default is the first
 
