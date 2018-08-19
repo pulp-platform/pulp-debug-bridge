@@ -210,6 +210,7 @@ Ftdi::connect(js::config *config)
   if (m_id == Olimex)
   {
     bits_value = 0x1 << 8;
+    // This is superfluous - remove if you have the ability to test
     set_bit_direction(8, 1);
     set_bit_direction(9, 1);
 
@@ -219,10 +220,11 @@ Ftdi::connect(js::config *config)
   }
   else if (m_id == Digilent)
   {
+    // these are used as the base for set_bit_value
     bits_value = 0x7 << 4;
     bits_direction = 0x7b;
 
-    SET_DATA_BITS_LOW_BYTE(buf, rst_len, 0x70, 0x7b); // direction (1 == output)  0111 1011 values 0111 0000
+    SET_DATA_BITS_LOW_BYTE(buf, rst_len, bits_value, bits_direction); // direction (1 == output)  0111 1011 values 0111 0000
     // SET_DATA_BUFFER(buf, rst_len, EN_DIV_5); // Enable clock divide by 5
     SET_TCK_DIVISOR(buf, rst_len, 0x02, 0x00); // The divisor has been put to 2 as is not reliable on gap board with less
     // SET_DATA_BUFFER(buf, rst_len, DIS_ADAPTIVE); // Make sure adaptive clocking is disabled
@@ -346,7 +348,7 @@ Ftdi::flush() {
     return 0;
 
   if ((xferred = ftdi_write_data(&m_ftdic, (uint8_t*)m_params.send_buf, m_params.send_buffered)) < 0) {
-    log->warning("ft2232: ftdi_write_data() failed\n");
+    log->warning("ft2232: ftdi_write_data() failed - %s (%d)\n", ftdi_get_error_string(&m_ftdic), xferred);
     return -1;
   }
 
@@ -371,7 +373,7 @@ Ftdi::flush() {
     while (recvd == 0) {
       recvd = ftdi_read_data(&m_ftdic, (uint8_t*)&(m_params.recv_buf[m_params.recv_write_idx]), m_params.to_recv);
       if (recvd < 0)
-        log->warning("Error from ftdi_read_data() - %s\n", ftdi_get_error_string(&m_ftdic));
+        log->warning("Error from ftdi_read_data() - %s (%d)\n", ftdi_get_error_string(&m_ftdic), recvd);
     }
 
     if ((unsigned int) recvd < m_params.to_recv)
@@ -422,7 +424,7 @@ Ftdi::ft2232_read(char* buf, int len) {
     while (recvd == 0) {
       recvd = ftdi_read_data(&m_ftdic, (uint8_t*)&(buf[cpy_len]), len);
       if (recvd < 0)
-        log->warning("ft2232: Error from ftdi_read_data() - %s\n", ftdi_get_error_string(&m_ftdic));
+        log->warning("ft2232: Error from ftdi_read_data() - %s (%d)\n", ftdi_get_error_string(&m_ftdic), recvd);
     }
   }
 
