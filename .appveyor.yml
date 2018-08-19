@@ -1,0 +1,43 @@
+version: build{build}
+
+skip_commits:
+  files:
+    - .travis.yml
+
+cache:
+- x86_64-8.1.0-release-posix-seh-rt_v6-rev0.7z
+
+environment:
+  matrix:
+  - MINGW_DIR: mingw64
+    MINGW_URL: https://sourceforge.net/projects/mingw-w64/files/Toolchains%20targetting%20Win64/Personal%20Builds/mingw-builds/8.1.0/threads-posix/seh/x86_64-8.1.0-release-posix-seh-rt_v6-rev0.7z/download
+    MINGW_ARCHIVE: x86_64-8.1.0-release-posix-seh-rt_v6-rev0.7z
+    WITH_FTDI: ON
+    FORCE_FTDI: ON
+    VERBOSE: 1
+
+clone_folder: c:\dev\pulp-bridge
+clone_depth: 5
+
+install:
+  - if not exist "%MINGW_ARCHIVE%" appveyor DownloadFile "%MINGW_URL%" -FileName "%MINGW_ARCHIVE%"
+  - 7z x -y "%MINGW_ARCHIVE%" > nul
+  - sh: sudo apt-get install make
+
+before_build:
+  - set Path=%CD%\%MINGW_DIR%\bin;%Path%
+  - git config --global core.autocrlf input
+  - g++ --version
+  - mingw32-make --version
+  - cmake --version
+  - echo NUMBER_OF_PROCESSORS=%NUMBER_OF_PROCESSORS%
+
+  - cd c:\dev\pulp-bridge
+  - md build
+
+build_script:
+  - cd build
+  - cmake .. -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Debug -DStandaloneApp=YES  -DCMAKE_INSTALL_PREFIX="c:/dev/pulp-bridge/install" -DForceFTDI=$FORCE_FTDI -DWithFTDI=$WITH_FTDI -DCMAKE_IGNORE_PATH="C:/Program Files/Git/usr/bin"
+  - mingw32-make all install VERBOSE=1
+
+test: off
