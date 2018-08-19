@@ -35,6 +35,17 @@ if(NOT CMAKE_BUILD_TYPE)
     )
 endif(NOT CMAKE_BUILD_TYPE)
 
+# use, i.e. don't skip the full RPATH for the build tree
+SET(CMAKE_SKIP_BUILD_RPATH  FALSE)
+
+# when building, don't use the install RPATH already
+# (but later on when installing)
+SET(CMAKE_BUILD_WITH_INSTALL_RPATH FALSE)
+
+# add the automatically determined parts of the RPATH
+# which point to directories outside the build tree to the install RPATH
+SET(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
+
 if (WIN32)
   if(CMAKE_SIZEOF_VOID_P EQUAL 8)
     set(WIN64 YES)
@@ -222,14 +233,16 @@ if(StandaloneApp)
   set(DEST_CONFIGS "configs")
   set(DEST_LIBS ".")
   set(DEST_MODULES ".")
+  SET(CMAKE_INSTALL_RPATH "${CMAKE_INSTALL_PREFIX}")
 else()
   set(DEST_BIN "bin")
   set(DEST_CONFIGS "configs")
   set(DEST_LIBS "lib")
   set(DEST_MODULES "python")
+  SET(CMAKE_INSTALL_RPATH "${CMAKE_INSTALL_PREFIX}/lib")
 endif()
 
-# python tool binaries
+# # python tool binaries
 
 install(
   DIRECTORY ${PULP_CONFIGS_BIN}/ DESTINATION ${DEST_BIN}
