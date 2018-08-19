@@ -13,8 +13,6 @@ environment:
     MINGW_URL: https://sourceforge.net/projects/mingw-w64/files/Toolchains%20targetting%20Win64/Personal%20Builds/mingw-builds/8.1.0/threads-posix/seh/x86_64-8.1.0-release-posix-seh-rt_v6-rev0.7z/download
     MINGW_ARCHIVE: x86_64-8.1.0-release-posix-seh-rt_v6-rev0.7z
     WITH_FTDI: ON
-    FORCE_FTDI: ON
-    VERBOSE: 1
 
 clone_folder: c:\dev\pulp-bridge
 clone_depth: 5
@@ -30,7 +28,6 @@ before_build:
   - mingw32-make --version
   - cmake --version
   - echo NUMBER_OF_PROCESSORS=%NUMBER_OF_PROCESSORS%
-
   - cd c:\dev\pulp-bridge
   - md build
 
@@ -38,5 +35,11 @@ build_script:
   - cd build
   - cmake .. -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Debug -DStandaloneApp=YES  -DCMAKE_INSTALL_PREFIX="c:/dev/pulp-bridge/install" -DWithFTDI=$WITH_FTDI -DCMAKE_IGNORE_PATH="C:/Program Files/Git/usr/bin" -DCMAKE_SH="CMAKE_SH-NOTFOUND"
   - cmake --build . --target install -- VERBOSE=1
+  - 7z a plpbridge_win64.zip c:/dev/pulp-bridge/install/*
+  - dir
+
+artifacts:
+  - path: build/plpbridge_win64.zip
+    name: plpbridge_win64
 
 test: off

@@ -1,3 +1,6 @@
+[![Build Status](https://travis-ci.com/sousoux/pulp-debug-bridge.svg?branch=martin)](https://travis-ci.com/sousoux/pulp-debug-bridge)
+[![Build status](https://ci.appveyor.com/api/projects/status/uht7cqv15jl3kcd4/branch/martin?svg=true)](https://ci.appveyor.com/project/sousoux/pulp-debug-bridge/branch/martin)
+
 # Pulp debug bridge
 
 This is a tool which can be used to interact with a pulp target, like doing read and write or loading a binary.
