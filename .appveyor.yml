@@ -22,7 +22,6 @@ clone_depth: 5
 install:
   - if not exist "%MINGW_ARCHIVE%" appveyor DownloadFile "%MINGW_URL%" -FileName "%MINGW_ARCHIVE%"
   - 7z x -y "%MINGW_ARCHIVE%" > nul
-  - sh: sudo apt-get install make
 
 before_build:
   - set Path=%CD%\%MINGW_DIR%\bin;%Path%
@@ -37,7 +36,7 @@ before_build:
 
 build_script:
   - cd build
-  - cmake .. -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Debug -DStandaloneApp=YES  -DCMAKE_INSTALL_PREFIX="c:/dev/pulp-bridge/install" -DForceFTDI=$FORCE_FTDI -DWithFTDI=$WITH_FTDI -DCMAKE_IGNORE_PATH="C:/Program Files/Git/usr/bin"
-  - mingw32-make all install VERBOSE=1
+  - cmake .. -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Debug -DStandaloneApp=YES  -DCMAKE_INSTALL_PREFIX="c:/dev/pulp-bridge/install" -DWithFTDI=$WITH_FTDI -DCMAKE_IGNORE_PATH="C:/Program Files/Git/usr/bin" -DCMAKE_SH="CMAKE_SH-NOTFOUND"
+  - cmake --build . --target install -- VERBOSE=1
 
 test: off

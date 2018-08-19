@@ -60,12 +60,13 @@ include(ExternalProject)
 
 set(EXTERNAL_INSTALL_LOCATION ${CMAKE_BINARY_DIR}/external)
 
+# Passing CMAKE_IGNORE_PATH to subbuilds is to avoid git shell being picked up by mingw
 # Add in JSON-TOOLS
 ExternalProject_Add(
   json-tools
   PREFIX ${CMAKE_BINARY_DIR}/json-tools
   GIT_REPOSITORY https://github.com/GreenWaves-Technologies/json-tools
-  CMAKE_ARGS -DCMAKE_INSTALL_PREFIX=${CMAKE_BINARY_DIR}/json-tools
+  CMAKE_ARGS -DCMAKE_INSTALL_PREFIX=${CMAKE_BINARY_DIR}/json-tools -DCMAKE_IGNORE_PATH=${CMAKE_IGNORE_PATH}
   LOG_DOWNLOAD ON
 )
 
@@ -79,11 +80,8 @@ ExternalProject_Add(
   pulp-configs
   PREFIX ${CMAKE_BINARY_DIR}/pulp-configs
   GIT_REPOSITORY https://github.com/pulp-platform/pulp-configs.git
-  GIT_TAG 5800fbf3040ac4a15f7c40a378a0c4402eb3538c
-  BUILD_IN_SOURCE ON
-  CONFIGURE_COMMAND ""
-  BUILD_COMMAND make INSTALL=${INSTALL_CMD}
-  INSTALL_COMMAND ""
+  GIT_TAG martin
+  CMAKE_ARGS -DCMAKE_IGNORE_PATH=${CMAKE_IGNORE_PATH} -DCMAKE_INSTALL_PREFIX=${CMAKE_INSTALL_PREFIX}
   LOG_DOWNLOAD ON
 )
 
@@ -193,7 +191,11 @@ if (WithFTDI)
             ${binary_dir}/install/include/libftdi1
     )
     set(FTDI_LIB_DIR ${binary_dir}/install/lib)
-    target_link_libraries(libplpbridge PRIVATE ${FTDI_LIB_DIR}/libftdi1.so)
+    if(APPLE)
+      target_link_libraries(libplpbridge PRIVATE ${FTDI_LIB_DIR}/libftdi1.dylib)
+    else()
+      target_link_libraries(libplpbridge PRIVATE ${FTDI_LIB_DIR}/libftdi1.so)
+    endif()
 
   endif()
   target_sources(libplpbridge PRIVATE src/cables/ftdi/ftdi.cpp)
