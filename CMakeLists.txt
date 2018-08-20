@@ -17,7 +17,7 @@
 # Authors: Martin Croome, GreenWaves Technologies
 
 cmake_minimum_required(VERSION 3.5)
-project(plpbridge VERSION 1.0.0)
+
 set (CMAKE_CXX_STANDARD 11)
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/CMake")
 
@@ -31,18 +31,6 @@ set(FTDI_DEVKIT_URL "https://sourceforge.net/projects/picusb/files/${FTDI_DEVKIT
 option(WithFrameBuffer "Build with framebuffer support" OFF)
 option(WithFTDI "Build with FTDI support" ON)
 option(WithConfigGenerators "Install the config tools" ON)
-
-set(JsonToolsGitTag martin CACHE STRING "JSON tools git tag/branch to checkout")
-set(JsonToolsGitRepo https://github.com/pulp-platform/json-tools CACHE STRING "JSON tools git repo to checkout")
-set(PulpConfigsGitTag martin CACHE STRING "PULP configs git tag/branch to checkout")
-set(PulpConfigsGitRepo https://github.com/pulp-platform/pulp-configs CACHE STRING "PULP configs git repo to checkout")
-
-if(NOT CMAKE_BUILD_TYPE)
-    set(CMAKE_BUILD_TYPE "Debug"
-        CACHE STRING "Choose the type of build, options are: Debug Release RelWithDebInfo MinSizeRel."
-        FORCE
-    )
-endif(NOT CMAKE_BUILD_TYPE)
 
 # use, i.e. don't skip the full RPATH for the build tree
 SET(CMAKE_SKIP_BUILD_RPATH  FALSE)
@@ -68,10 +56,6 @@ endif()
 
 add_custom_target(plpbridge ALL)
 
-# +++++ PULP configs (This will add json toools)
-
-find_add_pulp_configs(${PulpConfigsGitRepo} ${PulpConfigsGitTag})
-
 # +++++ plpbridge library
 
 add_library(libplpbridge MODULE
@@ -86,12 +70,7 @@ add_library(libplpbridge MODULE
   src/gdb-server/Tcp_listener.cpp
   src/gdb-server/breakpoints.cpp
   src/ioloop.cpp
-  ${JSON_TOOLS_SRC_DIR}
 )
-
-if(NOT PULP_CONFIGS_FOUND)
-  add_dependencies(libplpbridge pulp-configs)
-endif()
 
 # Enable all warnings as errors
 if(MSVC)
@@ -201,16 +180,9 @@ if (WithFrameBuffer)
   endif()
 endif()
 
-if(APPLE)
-  set_target_properties(libplpbridge PROPERTIES
-    OUTPUT_NAME "pulpdebugbridge" # lib will be added as appropriate
-  )
-else()
-  set_target_properties(libplpbridge PROPERTIES
-    VERSION ${PROJECT_VERSION}
-    OUTPUT_NAME "pulpdebugbridge" # lib will be added as appropriate
-  )
-endif()
+set_target_properties(libplpbridge PROPERTIES
+  OUTPUT_NAME "pulpdebugbridge" # lib will be added as appropriate
+)
 
 add_dependencies(plpbridge libplpbridge)
 
