@@ -30,7 +30,6 @@ set(FTDI_DEVKIT_URL "https://sourceforge.net/projects/picusb/files/${FTDI_DEVKIT
 
 option(WithFrameBuffer "Build with framebuffer support" OFF)
 option(WithFTDI "Build with FTDI support" ON)
-option(WithConfigGenerators "Install the config tools" ON)
 
 # use, i.e. don't skip the full RPATH for the build tree
 SET(CMAKE_SKIP_BUILD_RPATH  FALSE)
