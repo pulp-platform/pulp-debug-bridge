@@ -216,7 +216,7 @@ install(
 if(DEFINED FTDI_LIB_DIR)
   install(
     DIRECTORY ${FTDI_LIB_DIR}/ DESTINATION ${DEST_LIBS}
-    FILES_MATCHING PATTERN "libftdi1\.so*"
+    FILES_MATCHING PATTERN "libftdi1*"
     PATTERN cmake EXCLUDE
     PATTERN pkgconfig EXCLUDE
   )
