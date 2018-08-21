@@ -249,6 +249,7 @@ parser.add_argument("--chip", dest="chip", default=None, help="Specify target ch
 parser.add_argument("--binary", dest="binaries", default=[], action="append", help="Specify a binary to be loaded by the load command")
 parser.add_argument("--flash-image", dest="flash_image", default=None, help="Specify a flash image to be flashed")
 parser.add_argument("--flasher", dest="flasher", default=None, help="Specify absolute path of on chip flash program")
+parser.add_argument("--boot-mode", dest="boot_mode", default=None, help="Specify the boot mode")
 
 [args, otherArgs] = parser.parse_known_args()
 
@@ -265,7 +266,6 @@ if 'write' in args.command:
 if 'gdb' in args.command:
   parser.add_argument("--rsp-port", dest="rsp_port", default=1234, help="Specify the port number that the RSP will use to open a socket for GDB connection")
 
-parser.add_argument("--boot-mode", dest="boot_mode", default=None, help="Specify the boot mode")
 
 args = parser.parse_args()
 
