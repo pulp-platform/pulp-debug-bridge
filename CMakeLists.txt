@@ -185,10 +185,10 @@ set_target_properties(libplpbridge PROPERTIES
 
 add_dependencies(plpbridge libplpbridge)
 
-set(DEST_BIN "bin")
-set(DEST_CONFIGS "configs")
-set(DEST_MODULES "python")
-set(DEST_BRIDGE ${DEST_MODULES}/"bridge")
+set(DEST_BIN bin)
+set(DEST_CONFIGS configs)
+set(DEST_MODULES python)
+set(DEST_BRIDGE ${DEST_MODULES}/bridge)
 SET(CMAKE_INSTALL_RPATH "${CMAKE_INSTALL_PREFIX}/lib")
 
 
