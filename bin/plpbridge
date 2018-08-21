@@ -236,11 +236,18 @@ parser.add_argument("--flash-image", dest="fimages", default=[], action="append"
 
 [args, otherArgs] = parser.parse_known_args()
 
-parser.add_argument("--addr", dest="addr", default=None, help="Specify the address of the access for read and write commands")
-parser.add_argument("--size", dest="size", default="4", help="Specify the size of the access for read and write commands")
-parser.add_argument("--width", dest="width", default=1, type=int, help="Specify the word size in bytes used to display numbers for read commands")
-parser.add_argument("--value", dest="value", default=None, help="Specify the value to be written for write command")
-parser.add_argument("--rsp-port", dest="rsp_port", default=1234, help="Specify the port number that the RSP will use to open a socket for GDB connection")
+if 'read' in args.command or 'write' in args.command:
+  parser.add_argument("--addr", dest="addr", default=None, help="Specify the address of the access for read and write commands")
+  parser.add_argument("--size", dest="size", default="4", help="Specify the size of the access for read and write commands")
+
+if 'read' in args.command:
+  parser.add_argument("--width", dest="width", default=1, type=int, help="Specify the word size in bytes used to display numbers for read commands")
+
+if 'write' in args.command:
+  parser.add_argument("--value", dest="value", default=None, help="Specify the value to be written for write command")
+
+if 'gdb' in args.command:
+  parser.add_argument("--rsp-port", dest="rsp_port", default=1234, help="Specify the port number that the RSP will use to open a socket for GDB connection")
 
 parser.add_argument("--boot-mode", dest="boot_mode", default=None, help="Specify the boot mode")
 
