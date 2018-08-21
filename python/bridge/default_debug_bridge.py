@@ -180,11 +180,13 @@ class debug_bridge(object):
         # python / C++ bindings
 
         if platform.system() == "Windows":
-            lib_path = os.path.dirname(os.path.realpath(sys.path[0]))
-            os.environ['PATH'] = lib_path + ';' + os.environ['PATH']
-            self.module = ctypes.windll.LoadLibrary('libpulpdebugbridge.dll')
+            libname = "libpulpdebugbridge.dll"
+            fullpath = os.path.join(os.path.dirname(__file__), libname)
+            self.module = ctypes.windll.LoadLibrary(fullpath)
         else:
-            self.module = ctypes.CDLL('libpulpdebugbridge.so')
+            libname = "libpulpdebugbridge.so"
+            fullpath = os.path.join(os.path.dirname(__file__), libname)
+            self.module = ctypes.CDLL(fullpath)
 
         self.module.bridge_ioloop_open.argtypes = [ctypes.c_void_p, ctypes.c_uint]
         self.module.bridge_ioloop_open.restype = ctypes.c_void_p
