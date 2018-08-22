@@ -172,7 +172,7 @@ bool Adv_dbg_itf::access(bool wr, unsigned int addr, int size, char* buffer)
 bool Adv_dbg_itf::write(unsigned int _addr, int _size, char* _buffer)
 {
   int count = 0;
-  while (count++ < this->retry_count)
+  while (count++ <= this->retry_count)
   {
     unsigned int addr = _addr;
     int size = _size;
@@ -268,7 +268,7 @@ bool Adv_dbg_itf::write(unsigned int _addr, int _size, char* _buffer)
 bool Adv_dbg_itf::read(unsigned int _addr, int _size, char* _buffer)
 {
   int count = 0;
-  while (count++ < this->retry_count)
+  while (count++ <= this->retry_count)
   {
     unsigned int addr = _addr;
     int size = _size;
