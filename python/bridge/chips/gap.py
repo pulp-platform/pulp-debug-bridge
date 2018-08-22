@@ -91,8 +91,7 @@ class gap_debug_bridge(debug_bridge):
         # Reset the chip and tell him we want to load via jtag
         # We keep the reset active until the end so that it sees
         # the boot mode as soon as it boots from rom
-        if self.verbose > 0:
-            print ("Notifying to boot code that we are doing a JTAG boot")
+        self.log(1, "Notifying to boot code that we are doing a JTAG boot")
         self.get_cable().chip_reset(True)
         self.get_cable().jtag_set_reg(JTAG_SOC_CONFREG, JTAG_SOC_CONFREG_WIDTH, BOOT_MODE_JTAG)
         self.get_cable().chip_reset(False)
@@ -127,8 +126,7 @@ class gap_debug_bridge(debug_bridge):
 
     def load_jtag(self):
 
-        if self.verbose > 0:
-            print ('Loading binary through jtag')
+        self.log(1, 'Loading binary through jtag')
 
         if self.stop() != 0:
             return -1
@@ -136,8 +134,7 @@ class gap_debug_bridge(debug_bridge):
         # Load the binary through jtag
 
         for binary in self.binaries:
-            if self.verbose > 1:
-                print ("Loading binary from " + binary)
+            self.log(1, "Loading binary from " + binary)
             if self.load_elf(binary=binary):
                 return 1
 
@@ -153,7 +150,7 @@ class gap_debug_bridge(debug_bridge):
     def start(self):
 
         if self.start_cores and not self.is_started:
-            print ('Starting execution')
+            self.log(1, 'Starting execution')
 
             self.is_started = True
             # Unstall the FC so that it starts fetching instructions from the loaded binary
@@ -164,14 +161,12 @@ class gap_debug_bridge(debug_bridge):
 
     def load_jtag_hyper(self):
 
-        if self.verbose:
-            print ('Loading binary through jtag_hyper')
+        self.log(1, 'Loading binary through jtag_hyper')
 
         # Reset the chip and tell him we want to load from hyper
         # We keep the reset active until the end so that it sees
         # the boot mode as soon as it boots from rom
-        if self.verbose:
-            print ("Notifying to boot code that we are doing a JTAG boot from hyperflash")
+        self.log(1, "Notifying to boot code that we are doing a JTAG boot from hyperflash")
         self.get_cable().chip_reset(True)
         self.get_cable().jtag_set_reg(JTAG_SOC_CONFREG, JTAG_SOC_CONFREG_WIDTH, BOOT_MODE_JTAG_HYPER)
         self.get_cable().chip_reset(False)
@@ -201,7 +196,7 @@ class gap_debug_bridge(debug_bridge):
             flasher_ready = self.read_32(addrFlasherRdy)
         flasher_ready = 0;
         addrBuffer = self.read_32((addrHeader+20))
-        indexAddr = 0
+        self.log(1, "Flash address buffer 0x{:x}".format(addrBuffer))
         self.write_32(addrFlashAddr, 0)
         self.write_32(addrIterTime, n_iter)
         for i in range(n_iter):
@@ -225,31 +220,27 @@ class gap_debug_bridge(debug_bridge):
 
     def load_jtag_old(self):
 
-        if self.verbose:
-            print ('Loading binary through jtag')
+        self.log(1, 'Loading binary through jtag')
 
         # Reset the chip and tell him we want to load via jtag
         # We keep the reset active until the end so that it sees
         # the boot mode as soon as it boots from rom
-        if self.verbose:
-            print ("Notifying to boot code that we are doing a JTAG boot")
+        self.log(1, "Notifying to boot code that we are doing a JTAG boot")
         self.get_cable().chip_reset(True)
         self.get_cable().jtag_set_reg(JTAG_SOC_CONFREG, JTAG_SOC_CONFREG_WIDTH, BOOT_MODE_JTAG)
         self.get_cable().chip_reset(False)
 
         # Now wait until the boot code tells us we can load the code
-        if self.verbose:
-            print ("Waiting for notification from boot code")
+        self.log(1, "Waiting for notification from boot code")
         while True:
             reg_value = self.get_cable().jtag_get_reg(JTAG_SOC_CONFREG, JTAG_SOC_CONFREG_WIDTH, BOOT_MODE_JTAG)
             if reg_value == CONFREG_BOOT_WAIT:
                 break
-        print ("Received for notification from boot code")
+        self.log(1, "Received notification from boot code")
 
 
         # Load the binary through jtag
-        if self.verbose:
-            print ("Loading binaries")
+        self.log(1, "Loading binaries")
         for binary in self.binaries:
             if self.load_elf(binary=binary):
                 return 1
@@ -260,8 +251,7 @@ class gap_debug_bridge(debug_bridge):
     def start_old(self):
 
         # And notify the boot code that the binary is ready
-        if self.verbose:
-            print ("Notifying to boot code that the binary is loaded")
+        self.log(1, "Notifying to boot code that the binary is loaded")
         self.get_cable().jtag_set_reg(JTAG_SOC_CONFREG, JTAG_SOC_CONFREG_WIDTH, CONFREG_PGM_LOADED)
 
         return 0
