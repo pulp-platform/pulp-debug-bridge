@@ -347,7 +347,7 @@ class debug_bridge(object):
                 byte_array = byte
             else:
                 byte_array += byte
-        return struct.unpack(">i",byte_array)[0]
+        return struct.unpack("<i",byte_array)[0]
             # int.from_bytes(byte_array, byteorder='little')
 
     def read_32(self, addr):
