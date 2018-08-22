@@ -418,7 +418,7 @@ void Reqloop::reqloop_routine()
       // debugStruct_ptr is used to synchronize with the runtime at the first start or 
       // when we switch from one binary to another
       // Each binary will initialize when it boots will wait until we set it to zero before stopping
-      while(1) {
+      while(!end) {
         if ((debug_struct = activate()) != NULL) break;
 
         // We use a fast loop to miss as few printf as possible as the binary will
@@ -430,8 +430,8 @@ void Reqloop::reqloop_routine()
       // Check printf
       // The target application should quickly dumps the characters, so we can loop on printf
       // until we don't find anything
-      while(1) {
-        hal_bridge_req_t *first_bridge_req;
+      while(!end) {
+        hal_bridge_req_t *first_bridge_req = NULL;
 
         if (!cable->access(false, PTR_2_INT(&debug_struct->first_bridge_req), 4, (char*)&first_bridge_req)) goto end;
 
