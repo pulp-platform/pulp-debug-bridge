@@ -309,6 +309,7 @@ class debug_bridge(object):
         return 0
 
     def stop(self):
+
         stop_addr_config = self.config.get('**/debug_bridge/stop_addr')
         if stop_addr_config is not None:
             self.is_started = False
