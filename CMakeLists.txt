@@ -32,6 +32,13 @@ option(WithFrameBuffer "Build with framebuffer support" OFF)
 option(WithFTDI "Build with FTDI support" ON)
 set(LibFTDIVersion v1.4 CACHE STRING "LibFTDI version/git tag to build")
 
+if(NOT CMAKE_BUILD_TYPE)
+    set(CMAKE_BUILD_TYPE "RelWithDebInfo"
+        CACHE STRING "Choose the type of build, options are: Debug Release RelWithDebInfo MinSizeRel."
+        FORCE
+    )
+endif(NOT CMAKE_BUILD_TYPE)
+
 set(DEST_BIN bin)
 set(DEST_CONFIGS configs)
 set(DEST_MODULES python)
@@ -39,17 +46,17 @@ set(DEST_LIBS lib)
 set(DEST_BRIDGE ${DEST_MODULES}/bridge)
 
 # For linux and MAC use fixed rpath for non system libraries
-SET(CMAKE_INSTALL_RPATH "${CMAKE_INSTALL_PREFIX}/${DEST_LIBS}")
-SET(CMAKE_SKIP_BUILD_RPATH  FALSE)
-SET(CMAKE_MACOSX_RPATH TRUE)
+set(CMAKE_INSTALL_RPATH "${CMAKE_INSTALL_PREFIX}/${DEST_LIBS}")
+set(CMAKE_SKIP_BUILD_RPATH  FALSE)
+set(CMAKE_MACOSX_RPATH TRUE)
 
 # when building, don't use the install RPATH already
 # (but later on when installing)
-SET(CMAKE_BUILD_WITH_INSTALL_RPATH FALSE)
-LIST(FIND CMAKE_PLATFORM_IMPLICIT_LINK_DIRECTORIES "${CMAKE_INSTALL_PREFIX}/lib" isSystemDir)
-IF("${isSystemDir}" STREQUAL "-1")
-   SET(CMAKE_INSTALL_RPATH "${CMAKE_INSTALL_PREFIX}/lib")
-ENDIF("${isSystemDir}" STREQUAL "-1")
+set(CMAKE_BUILD_WITH_INSTALL_RPATH FALSE)
+list(FIND CMAKE_PLATFORM_IMPLICIT_LINK_DIRECTORIES "${CMAKE_INSTALL_PREFIX}/lib" isSystemDir)
+if("${isSystemDir}" STREQUAL "-1")
+   set(CMAKE_INSTALL_RPATH "${CMAKE_INSTALL_PREFIX}/lib")
+endif("${isSystemDir}" STREQUAL "-1")
 
 # check platform
 if (WIN32)
