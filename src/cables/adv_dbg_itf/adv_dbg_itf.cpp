@@ -555,8 +555,11 @@ bool Adv_dbg_itf::read_internal(ADBG_OPCODES opcode, unsigned int addr, int size
 
   // wait for a '1' from the AXI module
   struct timeval start, now;
-  int retval = gettimeofday(&start, NULL);
-  assert(retval == 0);
+
+  if (gettimeofday(&start, NULL) < 0) {
+    log->warning("adv_dbg_itf: gettimeofday failure\n");
+    return false;
+  }
 
   while (true) {
     buf[0] = 0x0;
@@ -568,8 +571,11 @@ bool Adv_dbg_itf::read_internal(ADBG_OPCODES opcode, unsigned int addr, int size
     if (buf[0] & 0x1)
       break;
 
-    retval = gettimeofday(&now, NULL);
-    assert(retval == 0);
+    if (gettimeofday(&now, NULL) < 0) {
+      log->warning("adv_dbg_itf: gettimeofday failure\n");
+      return false;
+    }
+
     unsigned long usec_elapsed = (now.tv_sec - start.tv_sec) * 1000000 + (now.tv_usec - start.tv_usec);
 
     if (usec_elapsed > (unsigned long) access_timeout) {
