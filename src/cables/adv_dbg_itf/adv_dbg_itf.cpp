@@ -48,6 +48,9 @@ Adv_dbg_itf::Adv_dbg_itf(js::config *system_config, Log* log, Cable *m_dev) : m_
   this->retry_count = conf != NULL ? conf->get_int() : 3;
   log->debug("Using retry count: %d\n", this->retry_count);
 
+  conf = system_config->get("**/adv_dbg_unit/check_errors");
+  this->check_errors = conf != NULL ? conf->get_bool() : false;
+  log->debug("Checking errors: %d\n", this->check_errors);
 }
 
 
@@ -165,7 +168,7 @@ bool Adv_dbg_itf::access(bool wr, unsigned int addr, int size, char* buffer)
 bool Adv_dbg_itf::write(unsigned int _addr, int _size, char* _buffer)
 {
   int count = 0;
-  do
+  while (count++ < this->retry_count)
   {
     unsigned int addr = _addr;
     int size = _size;
@@ -239,23 +242,19 @@ bool Adv_dbg_itf::write(unsigned int _addr, int _size, char* _buffer)
       addr   += 1;
     }
 
-    // uint32_t error_addr = 0;
-    // bool error = false;
-    // retval = retval && read_error_reg(&error_addr, &error);
+    if (this->check_errors)
+    {
+      uint32_t error_addr;
+      bool error = false;
+      retval = retval && read_error_reg(&error_addr, &error);
 
-    // if (error) {
-    //   log->debug("advdbg reports: Failed to write to addr %X\n", error_addr);
-    //   count++;
-    //   continue;
-    // }
-    // return retval;
-    if (retval) return retval;
-    printf("write retry: count %d retry count %d\n", count, this->retry_count);
-    jtag_reset_int(true);
-    jtag_reset_int(false);
-    jtag_soft_reset();
-    jtag_debug();
-  } while (count++ < this->retry_count);
+      if (error) {
+        log->debug("adv_dbg_itf: Failed to write to addr %X\n", error_addr);
+        continue;
+      }
+    }
+    return retval;
+  }
 
   return false;
 }
@@ -265,7 +264,7 @@ bool Adv_dbg_itf::write(unsigned int _addr, int _size, char* _buffer)
 bool Adv_dbg_itf::read(unsigned int _addr, int _size, char* _buffer)
 {
   int count = 0;
-  do
+  while (count++ < this->retry_count)
   {
     unsigned int addr = _addr;
     int size = _size;
@@ -340,24 +339,19 @@ bool Adv_dbg_itf::read(unsigned int _addr, int _size, char* _buffer)
       addr   += 1;
     }
 
-    // uint32_t error_addr = 0;
-    // bool error = false;
-    // retval = retval && read_error_reg(&error_addr, &error);
+    if (this->check_errors)
+    {
+      uint32_t error_addr;
+      bool error = false;
+      retval = retval && read_error_reg(&error_addr, &error);
 
-    // if (error) {
-    //   log->debug("advdbg reports: Failed to read from addr %X\n", error_addr);
-    //   count++;
-    //   continue;
-    // }
-
-    // return retval;
-    if (retval) return retval;
-    printf("read retry: count %d retry count %d\n", count, this->retry_count);
-    jtag_reset_int(true);
-    jtag_reset_int(false);
-    jtag_soft_reset();
-    jtag_debug();
-  } while (count++ < retry_count);
+      if (error) {
+        log->debug("adv_dbg_itf: Failed to read from addr %X\n", error_addr);
+        continue;
+      }
+    }
+    return retval;
+  }
 
   return false;
 }
