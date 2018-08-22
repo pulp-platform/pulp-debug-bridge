@@ -30,17 +30,26 @@ set(FTDI_DEVKIT_URL "https://sourceforge.net/projects/picusb/files/${FTDI_DEVKIT
 
 option(WithFrameBuffer "Build with framebuffer support" OFF)
 option(WithFTDI "Build with FTDI support" ON)
+set(LibFTDIVersion v1.4 CACHE STRING "LibFTDI version/git tag to build")
 
-# use, i.e. don't skip the full RPATH for the build tree
+set(DEST_BIN bin)
+set(DEST_CONFIGS configs)
+set(DEST_MODULES python)
+set(DEST_LIBS lib)
+set(DEST_BRIDGE ${DEST_MODULES}/bridge)
+
+# For linux and MAC use fixed rpath for non system libraries
+SET(CMAKE_INSTALL_RPATH "${CMAKE_INSTALL_PREFIX}/${DEST_LIBS}")
 SET(CMAKE_SKIP_BUILD_RPATH  FALSE)
+SET(CMAKE_MACOSX_RPATH TRUE)
 
 # when building, don't use the install RPATH already
 # (but later on when installing)
 SET(CMAKE_BUILD_WITH_INSTALL_RPATH FALSE)
-
-# add the automatically determined parts of the RPATH
-# which point to directories outside the build tree to the install RPATH
-SET(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
+LIST(FIND CMAKE_PLATFORM_IMPLICIT_LINK_DIRECTORIES "${CMAKE_INSTALL_PREFIX}/lib" isSystemDir)
+IF("${isSystemDir}" STREQUAL "-1")
+   SET(CMAKE_INSTALL_RPATH "${CMAKE_INSTALL_PREFIX}/lib")
+ENDIF("${isSystemDir}" STREQUAL "-1")
 
 # check platform
 if (WIN32)
@@ -138,8 +147,8 @@ if (WithFTDI)
         ftdi
         PREFIX ${CMAKE_BINARY_DIR}/ftdi
         GIT_REPOSITORY "git://developer.intra2net.com/libftdi"
-        GIT_TAG v1.4
-        CMAKE_ARGS -DSTATICLIBS=OFF -DBUILD_TESTS=OFF -DDOCUMENTATION=OFF -DEXAMPLES=OFF -DFTDIPP=OFF -DFTDI_EEPROM=OFF -DPYTHON_BINDINGS=OFF -DCMAKE_INSTALL_PREFIX=./install
+        GIT_TAG ${LibFTDIVersion}
+        CMAKE_ARGS -DSTATICLIBS=OFF -DBUILD_TESTS=OFF -DDOCUMENTATION=OFF -DEXAMPLES=OFF -DFTDIPP=OFF -DFTDI_EEPROM=OFF -DPYTHON_BINDINGS=OFF -DCMAKE_INSTALL_PREFIX=./install -DCMAKE_INSTALL_RPATH=${CMAKE_INSTALL_RPATH} -DCMAKE_MACOSX_RPATH=${CMAKE_MACOSX_RPATH}
         LOG_DOWNLOAD ON
     )
 
@@ -185,12 +194,6 @@ set_target_properties(libplpbridge PROPERTIES
 
 add_dependencies(plpbridge libplpbridge)
 
-set(DEST_BIN bin)
-set(DEST_CONFIGS configs)
-set(DEST_MODULES python)
-set(DEST_BRIDGE ${DEST_MODULES}/bridge)
-SET(CMAKE_INSTALL_RPATH "${CMAKE_INSTALL_PREFIX}/lib")
-
 
 # PULP bridge library
 
@@ -218,6 +221,7 @@ if(DEFINED FTDI_LIB_DIR)
 endif()
 
 # Python module files
+
 install(
   DIRECTORY python/ DESTINATION ${DEST_MODULES}
   FILE_PERMISSIONS OWNER_READ OWNER_WRITE GROUP_READ WORLD_READ WORLD_EXECUTE
@@ -228,7 +232,7 @@ install(
 
 if(WithFTDI AND WIN32)
   install(
-    DIRECTORY ${FTDI_BIN_DIR}/ DESTINATION ${DEST_BRIDGE}
+    DIRECTORY ${FTDI_BIN_DIR}/ DESTINATION ${DEST_BIN}
     FILE_PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE
     FILES_MATCHING PATTERN "*.dll"
   )

@@ -178,7 +178,7 @@ class debug_bridge(object):
         self.do_exit = False
         # Load the library which provides generic services through
         # python / C++ bindings
-
+        # The library is located in the same directory as this file
         if platform.system() == "Windows":
             libname = "libpulpdebugbridge.dll"
             fullpath = os.path.join(os.path.dirname(__file__), libname)
