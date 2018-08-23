@@ -1046,7 +1046,7 @@ size_t Rsp::Client::get_packet(char* pkt, size_t max_pkt_len) {
   // checksum is two-digit
 
   top->log->debug("get packet called\n");
-  size_t cur = 1, last = 1, crc_start = -1, pkt_len;
+  size_t cur = 1, last = 1, crc_start = -1, pkt_len = 0;
   struct timeval start;
   bool escaped = false;
   int ret;
