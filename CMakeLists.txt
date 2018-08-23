@@ -43,6 +43,7 @@ set(DEST_BIN bin)
 set(DEST_CONFIGS configs)
 set(DEST_MODULES python)
 set(DEST_LIBS lib)
+set(DEST_INCLUDE include)
 set(DEST_BRIDGE ${DEST_MODULES}/bridge)
 
 # For linux and MAC use fixed rpath for non system libraries
@@ -213,6 +214,13 @@ install(
 
 install(
   DIRECTORY bin/ DESTINATION ${DEST_BIN}
+  FILE_PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE
+)
+
+# includes needed by other modules
+
+install(
+  DIRECTORY include/debug_bridge DESTINATION ${DEST_INCLUDE}
   FILE_PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE
 )
 
