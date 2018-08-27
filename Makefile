@@ -23,6 +23,18 @@ RELEASE_TYPE ?= Debug
 # propagate verbose for debugging
 VERBOSE ?= 0
 
+ifndef CMAKE
+HAS_CMAKE3 = $(shell which cmake3)
+ifeq '$(HAS_CMAKE3)' ''
+CMAKE = $(shell which cmake-3.7.1)
+ifeq '$(CMAKE)' ''
+CMAKE = cmake
+endif
+else
+CMAKE = cmake3
+endif
+endif
+
 $(info #### Building in $(BUILD_DIR))
 $(info #### Release type is $(RELEASE_TYPE))
 $(info #### Installing to $(INSTALL_DIR))
@@ -48,5 +60,5 @@ $(BUILD_DIR):
 
 $(BUILD_DIR)/CMakeCache.txt: $(BUILD_DIR)
 	( cd $(BUILD_DIR) ; \
-	  cmake -DCMAKE_BUILD_TYPE=$(RELEASE_TYPE) -DCMAKE_INSTALL_PREFIX=$(INSTALL_DIR) \
+	  $(CMAKE) -DCMAKE_BUILD_TYPE=$(RELEASE_TYPE) -DCMAKE_INSTALL_PREFIX=$(INSTALL_DIR) \
 		$(EXTRA_CMAKE_ARGS) $(MAKEFILE_DIR) )
