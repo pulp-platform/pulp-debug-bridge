@@ -139,9 +139,6 @@ def gdb(bridge):
 
 
 def start(bridge):
-    if not hasattr(bridge, 'binaries'):
-        raise Exception("Trying to start but no executable has been loaded - you need a load command before the start")
-
     if args.verbose >= 4:
         print ('Starting execution')
 
