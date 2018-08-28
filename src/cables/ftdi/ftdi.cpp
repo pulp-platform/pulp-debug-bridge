@@ -269,6 +269,7 @@ bool Ftdi::purge()
 
 bool Ftdi::chip_reset(bool active)
 {
+  log->debug("ft2232: chip reset (active: %d)\n", active);
   if (m_id == Olimex)
   {
     std::string chip = this->config->get("**/chip/name")->get_str();

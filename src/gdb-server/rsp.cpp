@@ -39,7 +39,8 @@ enum mp_type {
   WP_ACCESS   = 4
 };
 
-
+#define UNAVAILABLE10 "00000000" "00000000" "00000000" "00000000" "00000000" "00000000" "00000000" "00000000" "00000000" "00000000"
+#define UNAVAILABLE33 UNAVAILABLE10 UNAVAILABLE10 UNAVAILABLE10 "00000000" "00000000" "00000000"
 
 // Rsp
 
@@ -257,12 +258,13 @@ bool Rsp::Client::v_packet(char* data, size_t len)
     this->top->target->clear_resume_all();
 
     // vCont can contains several commands, handle them in sequence
-    // TODO - this could use strtok_s to be more robust
     char *str = strtok(&data[6], ";");
+    bool thread_is_started=false;
+    int stepped_tid = -1;
     while(str != NULL) {
       // Extract command and thread ID
-      char *delim = strchr(str, ':');
       int tid = -1;
+      char *delim = strchr(str, ':');
       if (delim != NULL) {
         tid = atoi(delim+1);
         if (tid == 0) {
@@ -290,15 +292,31 @@ bool Rsp::Client::v_packet(char* data, size_t len)
 
       if (cont) {
         if (tid == -1) {
+          thread_is_started = true;
           this->top->target->prepare_resume_all(step);
         } else {
-          this->top->target->get_thread(tid)->prepare_resume(step);
+          Target_core * core = this->top->target->get_thread(tid);
+          if (core->get_power()) {
+            thread_is_started = true;
+            core->prepare_resume(step);
+          } else if (step) stepped_tid = tid;
         }
       }
 
       str = strtok(NULL, ";");
     }
 
+    if (!thread_is_started) {
+      if (stepped_tid != -1) {
+        // Core is off but gdb is trying to step it
+        // We'll say we did the step
+        size_t len;
+        char str[128];
+        len = snprintf(str, 128, "T%02xthread:%1x;", TARGET_SIGNAL_TRAP, stepped_tid + 1);
+        return this->send(str, len);
+      } else
+        return this->send_str("N");
+    } 
     rsp->indicate_resume();
     this->top->target->resume_all();
 
@@ -354,7 +372,7 @@ bool Rsp::Client::query(char* data, size_t len)
     unsigned int thread_id;
     if (sscanf(data, "qThreadExtraInfo,%x", &thread_id) != 1) {
       top->log->print(LOG_ERROR, "Could not parse qThreadExtraInfo packet\n");
-      return this->send_str("");
+      return this->send_str("E01");
     }
     Target_core *thread = top->target->get_thread(thread_id - 1);
     {
@@ -581,17 +599,21 @@ bool Rsp::Client::reg_read(char* data, size_t)
   // Note: if invalid registers are read return "xx" (not available) not ""
   // otherwise gdb gives up reading more.
   // Letting gdb do what it wants results in a core crash
-  if (addr < 32) {
+
+  Target_core * core = this->top->target->get_thread(thread_sel);
+  if (!core->get_power()) {
+    return this->send_str("xx");
+  } else if (addr < 32) {
     top->log->debug("Read register 0x%02x\n", addr);
-    ret = this->top->target->get_thread(thread_sel)->gpr_read(addr, &rdata);
+    ret = core->gpr_read(addr, &rdata);
   } else if (addr == 0x20) {
     top->log->debug("Read PC\n");
-    ret = this->top->target->get_thread(thread_sel)->actual_pc_read(&rdata);
+    ret = core->actual_pc_read(&rdata);
   } else if (addr >= 0x41) { // Read CSR
     uint32_t csr_num = addr - 0x41;
     if (valid_csr(csr_num)) {
       top->log->debug("Read CSR 0x%04x\n", csr_num);
-      ret = this->top->target->get_thread(thread_sel)->csr_read(csr_num, &rdata);
+      ret = core->csr_read(csr_num, &rdata);
     } else {
       return this->send_str("xx");
     }
@@ -648,8 +670,6 @@ bool Rsp::Client::reg_write(char* data, size_t)
     return this->send_str("E02");
 }
 
-
-
 bool Rsp::Client::regs_send()
 {
   uint32_t gpr[32];
@@ -662,19 +682,24 @@ bool Rsp::Client::regs_send()
 
   core = this->top->target->get_thread(thread_sel);
 
-  bool ret = core->gpr_read_all(gpr);
+  if (core->get_power()) {
+    bool ret = core->gpr_read_all(gpr);
 
-  // now build the string to send back
-  for(i = 0; i < 32; i++) {
-    snprintf(&regs_str[i * 8], 9, "%08x", (unsigned int)htonl(gpr[i]));
+    // now build the string to send back
+    for(i = 0; i < 32; i++) {
+      snprintf(&regs_str[i * 8], 9, "%08x", (unsigned int)htonl(gpr[i]));
+    }
+    ret = ret && core->actual_pc_read(&pc);
+    snprintf(&regs_str[32 * 8], 9, "%08x", (unsigned int)htonl(pc));
+
+    if (ret)
+      return this->send_str(regs_str);
+    else
+      return this->send_str("E02");
+  } else {
+    // core is off so indicate that none of its registers are available
+    return this->send_str(UNAVAILABLE33);
   }
-  ret = ret && core->actual_pc_read(&pc);
-  snprintf(&regs_str[32 * 8 + 0 * 8], 9, "%08x", (unsigned int)htonl(pc));
-
-  if (ret)
-    return this->send_str(regs_str);
-  else
-    return this->send_str("E02");
 }
 
 bool Rsp::Client::signal(Target_core *core)
@@ -880,7 +905,7 @@ bool Rsp::Client::decode(char* data, size_t len)
     return this->signal();
   }
 
-  top->log->detail("Received packet: '%s'\n", data);
+  top->log->detail("Received packet: '%s' (len: %d)\n", data, len);
   switch (data[0]) {
   case 'q':
     top->log->detail("call query\n");

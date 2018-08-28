@@ -114,6 +114,8 @@ class Target_core
 public:
   Target_core(Gdb_server *top, uint32_t dbg_unit_addr, Target_cluster_common * cluster, int core_id);
   void set_power(bool is_on);
+  bool get_power();
+  bool has_power_state_change();
   bool read(uint32_t addr, uint32_t* rdata);
   bool write(uint32_t addr, uint32_t wdata);
   bool csr_read(unsigned int i, uint32_t *data);
@@ -122,9 +124,7 @@ public:
   int get_thread_id() { return this->thread_id; }
   int get_cluster_id();
   int get_core_id() { return this->core_id; }
-  void get_name(char* str, size_t len) {
-    snprintf(str, len, "Cluster %02d - Core %01d", get_cluster_id(), get_core_id());
-  }
+  void get_name(char* str, size_t len);
 
   bool actual_pc_read(unsigned int* pc);
   bool is_stopped();
@@ -156,6 +156,7 @@ private:
   int core_id;
 
   bool is_on = false;
+  bool power_state_changed = false;
   uint32_t hartid;
   int thread_id;
   bool pc_is_cached = false;

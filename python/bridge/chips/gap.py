@@ -84,17 +84,18 @@ class gap_debug_bridge(debug_bridge):
         # self.capabilities("qXfer:features:read+")
 
     def stop(self):
-        if self.is_started == False:
-            return 0
-
         self.is_started = False
         # Reset the chip and tell him we want to load via jtag
         # We keep the reset active until the end so that it sees
         # the boot mode as soon as it boots from rom
         self.log(1, "Notifying to boot code that we are doing a JTAG boot")
-        self.get_cable().chip_reset(True)
+        if (not self.get_cable().chip_reset(True)):
+            self.log(0, "Failed to assert chip reset")
+
         self.get_cable().jtag_set_reg(JTAG_SOC_CONFREG, JTAG_SOC_CONFREG_WIDTH, BOOT_MODE_JTAG)
-        self.get_cable().chip_reset(False)
+
+        if (not self.get_cable().chip_reset(False)):
+            self.log(0, "Failed to deassert chip reset")
 
         # Removed synchronization with boot code due to HW bug, it is better
         # to stop fc as soon as possible

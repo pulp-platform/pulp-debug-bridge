@@ -175,6 +175,17 @@ bool Target_core::ie_write(uint32_t data)
   return this->write(DBG_IE_REG, data);
 }
 
+bool Target_core::has_power_state_change()
+{
+  bool state_changed = this->power_state_changed;
+  this->power_state_changed = false;
+  return state_changed;
+}
+
+bool Target_core::get_power()
+{
+  return this->is_on;
+}
 
 void Target_core::set_power(bool is_on)
 {
@@ -182,6 +193,7 @@ void Target_core::set_power(bool is_on)
   if (is_on != this->is_on)
   {
     top->log->debug("Core %d:%d power state changed\n", this->get_cluster_id(), core_id, this->is_on, is_on);
+    this->power_state_changed = true;
     this->pc_is_cached = false; // power state has changed - pc cannot be cached
     this->is_on = is_on;
     if (is_on) {
@@ -419,6 +431,10 @@ uint32_t Target_core::check_stopped()
 
 
 int Target_core::get_cluster_id() { return cluster->get_id(); }
+
+void Target_core::get_name(char* str, size_t len) {
+  snprintf(str, len, "Cluster %02d - Core %01d%s", get_cluster_id(), get_core_id(), (get_power()?"":" (Off)"));
+}
 
 
 void Target_core::prepare_resume(bool step)

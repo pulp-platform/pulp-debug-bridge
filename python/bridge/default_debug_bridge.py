@@ -28,6 +28,16 @@ import struct
 import sys
 import platform
 
+class CableException(Exception):
+    pass
+
+class CableCreationException(CableException):
+    def __init__(self, error_string):
+        self.error_string = error_string
+
+    def __str__(self):
+        return self.error_string
+
 class DebugBridgeException(Exception):
     pass
 
@@ -115,7 +125,7 @@ class Ctype_cable(object):
         self.instance = self.module.cable_new(config_string, system_config.dump_to_string().encode('utf-8'))
 
         if self.instance is None:
-            raise Exception('Failed to initialize cable with error: ' +
+            raise CableCreationException('Failed to initialize cable with error: ' +
                 self.module.bridge_get_error().decode('utf-8'))
 
 
@@ -436,7 +446,7 @@ class debug_bridge(object):
     def doreset(self, run):
         do_ioloop = self.ioloop_handle is not None
         if do_ioloop:
-            iores = self.module.bridge_ioloop_close(self.ioloop_handle, 1)
+            self.module.bridge_ioloop_close(self.ioloop_handle, 1)
             self.ioloop_handle = None
         self.stop()
         self.load()
