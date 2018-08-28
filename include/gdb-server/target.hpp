@@ -22,6 +22,17 @@
 #include "gdb-server/gdb-server.hpp"
 #include <unistd.h>
 
+class Memory_wall
+{
+public:
+  Memory_wall(uint32_t start, uint32_t len);
+  bool overlaps(uint32_t start, uint32_t len);
+
+private:
+  uint32_t start;
+  uint32_t len;
+};
+
 
 
 class Target_cache
@@ -116,6 +127,7 @@ public:
   Target_core *get_core(int i) { return cores[i]; }
   void update_power();
   void set_power(bool is_on);
+  bool get_power();
   void resume();
   void halt();
   void flush();
@@ -125,6 +137,8 @@ public:
   void prepare_resume(bool step);
   int get_id() { return cluster_id; }
   virtual Target_core * check_stopped(uint32_t *stopped_cause);
+  void add_memory_wall(uint32_t addr, uint32_t len);
+  bool memory_wall_overlaps(uint32_t addr, uint32_t len);
 protected:
   Gdb_server *top;
   std::vector<Target_core *> cores;
@@ -138,6 +152,7 @@ protected:
   uint32_t xtrigger_addr;
   Target_cache *cache = NULL;
   bool resume_prepared = false;
+  std::vector<Memory_wall *> mem_walls;
 };
 
 

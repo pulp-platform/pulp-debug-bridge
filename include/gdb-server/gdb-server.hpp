@@ -106,9 +106,6 @@ public:
   const char * capabilities;
 };
 
-
-
-
 class Target_core
 {
 public:
@@ -188,6 +185,7 @@ public:
   bool is_stopped() { return !started; }
   bool mem_read(uint32_t addr, uint32_t length, char * buffer);
   bool mem_write(uint32_t addr, uint32_t length, char * buffer);
+  bool check_mem_access(uint32_t addr, uint32_t length);
 
   Target_core * check_stopped();
 

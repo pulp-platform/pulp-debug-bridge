@@ -286,7 +286,7 @@ bool Rsp::Client::v_packet(char* data, size_t len)
         cont = true;
         step = true;
       } else {
-        top->log->print(LOG_ERROR, "Unsupported command in vCont packet: %s\n", str);
+        top->log->error("Unsupported command in vCont packet: %s\n", str);
         exit(-1);
       }
 
@@ -371,7 +371,7 @@ bool Rsp::Client::query(char* data, size_t len)
     char str[REPLY_BUF_LEN];
     unsigned int thread_id;
     if (sscanf(data, "qThreadExtraInfo,%x", &thread_id) != 1) {
-      top->log->print(LOG_ERROR, "Could not parse qThreadExtraInfo packet\n");
+      top->log->error("Could not parse qThreadExtraInfo packet\n");
       return this->send_str("E01");
     }
     Target_core *thread = top->target->get_thread(thread_id - 1);
@@ -424,7 +424,7 @@ bool Rsp::Client::query(char* data, size_t len)
     }
   }
 
-  top->log->print(LOG_ERROR, "Unknown query packet\n");
+  top->log->error("Unknown query packet\n");
 
   return this->send_str("");
 }
@@ -433,23 +433,31 @@ bool Rsp::Client::query(char* data, size_t len)
 bool Rsp::Client::mem_read(char* data, size_t)
 {
   unsigned char buffer[512];
-  char reply[512];
+  char reply[1024];
   uint32_t addr;
   uint32_t length;
-  uint32_t rdata;
   uint32_t i;
 
   if (sscanf(data, "%x,%x", &addr, &length) != 2) {
-    top->log->print(LOG_ERROR, "Could not parse packet\n");
+    top->log->error("Could not parse packet\n");
     return false;
   }
 
-  if (!top->target->mem_read(addr, length, (char *)buffer))
-    return this->send_str("E02");
+  if (length >= 512) {
+    return this->send_str("E01");
+  }
 
-  for(i = 0; i < length; i++) {
-    rdata = buffer[i];
-    snprintf(&reply[i * 2], 3, "%02x", rdata);
+  if (top->target->check_mem_access(addr, length)) {
+    if (!top->target->mem_read(addr, length, (char *)buffer))
+      return this->send_str("E02");
+
+    for(i = 0; i < length; i++) {
+      snprintf(&reply[i * 2], 3, "%02x", (uint32_t)buffer[i]);
+    }
+  } else {
+    top->log->detail("Filtered memory read attempt - area is inaccessible\n");
+    memset(reply, (int)'0', length * 2);
+    reply[length * 2] = '\0';
   }
 
   return this->send(reply, length*2);
@@ -468,7 +476,7 @@ bool Rsp::Client::mem_write_ascii(char* data, size_t len)
   int buffer_len;
 
   if (sscanf(data, "%x,%d:", &addr, &length) != 2) {
-    top->log->print(LOG_ERROR, "Could not parse packet\n");
+    top->log->error("Could not parse packet\n");
     return false;
   }
 
@@ -488,7 +496,7 @@ bool Rsp::Client::mem_write_ascii(char* data, size_t len)
   buffer_len = len/2;
   buffer = (char*)malloc(buffer_len);
   if (buffer == NULL) {
-    top->log->print(LOG_ERROR, "Failed to allocate buffer\n");
+    top->log->error("Failed to allocate buffer\n");
     return false;
   }
 
@@ -510,6 +518,9 @@ bool Rsp::Client::mem_write_ascii(char* data, size_t len)
     buffer[j] = wdata;
   }
 
+  if (!top->target->check_mem_access(addr, buffer_len))
+    return this->send_str("E03");
+
   bool ret = top->target->mem_write(addr, buffer_len, buffer);
 
   free(buffer);
@@ -527,7 +538,7 @@ bool Rsp::Client::mem_write(char* data, size_t len)
   size_t i;
 
   if (sscanf(data, "%x,%x:", &addr, &length) != 2) {
-    top->log->print(LOG_ERROR, "Could not parse packet\n");
+    top->log->error("Could not parse packet\n");
     return false;
   }
 
@@ -543,6 +554,9 @@ bool Rsp::Client::mem_write(char* data, size_t len)
   // align to hex data
   data = &data[i+1];
   len = len - i - 1;
+
+  if (!top->target->check_mem_access(addr, len))
+    return this->send_str("E03");
 
   if (top->target->mem_write(addr, len, data))
     return this->send_str("OK");
@@ -591,7 +605,7 @@ bool Rsp::Client::reg_read(char* data, size_t)
   char data_str[10];
 
   if (sscanf(data, "%x", &addr) != 1) {
-    top->log->print(LOG_ERROR, "Could not parse packet\n");
+    top->log->error("Could not parse packet\n");
     return false;
   }
 
@@ -963,7 +977,7 @@ bool Rsp::Client::decode(char* data, size_t len)
   //   return this->send_str("OK"); // extended mode supported
 
   default:
-    top->log->print(LOG_ERROR, "Unknown packet: starts with %c\n", data[0]);
+    top->log->error("Unknown packet: starts with %c\n", data[0]);
     break;
   }
 
@@ -1182,14 +1196,14 @@ bool Rsp::Client::send(const char* data, size_t len)
 
     if (client->send(raw, raw_len, 1000) == SOCKET_ERROR) {
       free(raw);
-      top->log->print(LOG_ERROR, "Unable to send data to client\n");
+      top->log->error("Unable to send data to client\n");
       return false;
     }
 
     ret = client->receive_at_least(&ack, 1, 1, 1000);
     if(ret == SOCKET_ERROR) {
       free(raw);
-      top->log->print(LOG_ERROR, "RSP: Error receiving0\n");
+      top->log->error("RSP: Error receiving0\n");
       return false;
     }
     top->log->print(LOG_DEBUG, "Received %c\n", ack);
@@ -1249,12 +1263,12 @@ bool Rsp::Client::bp_remove(char* data, size_t len)
   data[len] = 0;
 
   if (3 != sscanf(data, "z%1d,%x,%1d", (int *)&type, &addr, &bp_len)) {
-    top->log->print(LOG_ERROR, "Could not get three arguments\n");
+    top->log->error("Could not get three arguments\n");
     return false;
   }
 
   if (type != BP_MEMORY) {
-    top->log->print(LOG_ERROR, "Not a memory bp\n");
+    top->log->error("Not a memory bp\n");
     return this->send_str("");
   }
 

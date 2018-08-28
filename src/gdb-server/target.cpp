@@ -21,6 +21,19 @@
 
 #include "target.hpp"
 
+Memory_wall::Memory_wall(uint32_t start, uint32_t len)
+: start(start), len(len)
+{
+
+}
+
+
+bool Memory_wall::overlaps(uint32_t start, uint32_t len)
+{
+  return (start < this->start + this->len) && (this->start < start + len);
+}
+
+
 
 Target_cluster_cache::Target_cluster_cache(Gdb_server *top, uint32_t addr)
 : top(top), addr(addr)
@@ -509,13 +522,32 @@ Target_cluster_common::~Target_cluster_common()
   {
     delete(core);
   }
+  for (auto &wall: mem_walls)
+  {
+    delete(wall);
+  }
 }
 
 
+void Target_cluster_common::add_memory_wall(uint32_t addr, uint32_t len)
+{
+  top->log->debug("Add memory wall to cluster %d start: 0x%08x end: 0x%08x\n", cluster_id, addr, addr + len - 1);
+  Memory_wall * wall = new Memory_wall(addr, len);
+  mem_walls.push_back(wall);
+}
+
+bool Target_cluster_common::memory_wall_overlaps(uint32_t addr, uint32_t len)
+{
+  for (auto &wall: mem_walls)
+  {
+    if (wall->overlaps(addr, len)) return true;
+  }
+  return false;
+}
 
 void Target_cluster_common::init()
 {
-  top->log->print(LOG_DEBUG, "Init cluster %d\n", cluster_id);
+  top->log->debug("Init cluster %d\n", cluster_id);
   is_on = false;
   nb_on_cores = 0;
   for (auto &core: cores)
@@ -665,9 +697,14 @@ void Target_cluster_common::resume()
 
 void Target_cluster_common::update_power()
 {
-  set_power(power->is_on());
+  set_power(get_power());
 }
 
+
+bool Target_cluster_common::get_power()
+{
+  return power->is_on();
+}
 
 void Target_cluster_common::set_power(bool is_on)
 {
@@ -842,6 +879,10 @@ Target::Target(Gdb_server *top)
     top->log->debug("Init FC Core %d:%d Thread Id %d\n", core->get_cluster_id(), core->get_core_id(), core->get_thread_id());
     cores.push_back(core);
     cores_from_threadid[core->get_thread_id()] = core;
+    js::config *fc_base_config = config->get("**/soc/base");
+    if (fc_base_config != NULL) {
+      cluster->add_memory_wall(fc_base_config->get_int(), config->get("**/soc/size")->get_int());
+    }
   }
 
   js::config *cluster_config = config->get("**/soc/cluster");
@@ -855,8 +896,9 @@ Target::Target(Gdb_server *top)
       if (base_config != NULL)
         cluster_base = base_config->get_int();
 
-      Target_cluster *cluster = new Target_cluster(config, cluster_config, top, cluster_base + 0x400000 * i, cluster_base + 0x400000 * i, i);
-
+      uint32_t this_cluster_base = cluster_base + 0x400000 * i;
+      Target_cluster *cluster = new Target_cluster(config, cluster_config, top, this_cluster_base, this_cluster_base, i);
+      cluster->add_memory_wall(this_cluster_base, 0x400000);
       clusters.push_back(cluster);
       for (int j=0; j<cluster->get_nb_core(); j++)
       {
@@ -964,6 +1006,15 @@ bool Target::mem_write(uint32_t addr, uint32_t length, char * buffer)
   bool ret = top->cable->access(true, addr, length, buffer);
   top->log->detail("write memory (addr: 0x%08x, len: %d, ret: %d)\n", addr, length, ret);
   return ret;
+}
+
+bool Target::check_mem_access(uint32_t addr, uint32_t length)
+{
+  for (auto &cluster: clusters) {
+    if (!cluster->get_power() && cluster->memory_wall_overlaps(addr, length))
+      return false;
+  }
+  return true;
 }
 
 void Target::halt()
