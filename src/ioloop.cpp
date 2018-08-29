@@ -46,6 +46,8 @@ private:
   std::thread *thread;
   Cable *cable;
   bool end = false;
+  std::mutex joined_mutex;
+  bool joined = false;
   unsigned int debug_struct_addr;
   int status = 0;
   std::atomic<int> delay;
@@ -54,29 +56,46 @@ private:
 
 int Ioloop::stop(bool kill)
 {
+  log->debug("ioloop: stop (kill: %d)\n", kill);
   if (thread) {
     if (kill) end = true;
-    if (thread->joinable()) {
-      thread->join();
+    {
+      std::lock_guard<std::mutex> guard(joined_mutex);
+      if (joined||!thread->joinable()) {
+        log->debug("ioloop: stop (kill: %d) completed (already joined or not joinable)\n", kill);
+        return status;
+      }
+      joined = true;
     }
+    log->debug("ioloop: stop (kill: %d) joining thread\n", kill);
+    thread->join();
     delete(thread);
     thread = NULL;
   }
+  log->debug("ioloop: stop (kill: %d) completed\n", kill);
   return status;
 }
 
 hal_debug_struct_t *Ioloop::activate()
 {
   hal_debug_struct_t *debug_struct = NULL;
+  while(!(end||debug_struct)) {
 
-  cable->access(false, debug_struct_addr, 4, (char*)&debug_struct);
+    if (!cable->access(false, debug_struct_addr, 4, (char*)&debug_struct))
+      return NULL;
 
-  if (debug_struct != NULL) {
-    // The binary has just started, we need to tell him we want to watch for printf
-    unsigned int value = 0;
-    cable->access(true, PTR_2_INT(&debug_struct->use_internal_printf), 4, (char*)&value);
+    if (debug_struct != NULL) {
+      // The binary has just started, we need to tell him we want to watch for printf
+      unsigned int value = 0;
+      if (!cable->access(true, PTR_2_INT(&debug_struct->use_internal_printf), 4, (char*)&value))
+        return NULL;
+    }
+
+    // We use a fast loop to miss as few printf as possible as the binary will
+    // start without waiting for any acknolegment in case
+    // no host loader is connected
+    usleep(1);
   }
-
   return debug_struct;
 }
 
@@ -96,35 +115,42 @@ void Ioloop::ioloop_routine()
       // debugStruct_ptr is used to synchronize with the runtime at the first start or 
       // when we switch from one binary to another
       // Each binary will initialize when it boots will wait until we set it to zero before stopping
-      while(!end) {
-        if ((debug_struct = activate()) != NULL) break;
-
-        // We use a fast loop to miss as few printf as possible as the binary will
-        // start without waiting for any acknolegment in case
-        // no host loader is connected
-        usleep(1);
-      }
+      debug_struct = activate();
 
       if (end) break;
 
       // First check if the application has exited
-      cable->access(false, PTR_2_INT(&debug_struct->exit_status), 4, (char*)&value);
+      if (!cable->access(false, PTR_2_INT(&debug_struct->exit_status), 4, (char*)&value)) {
+        end = true;
+        break;
+      }
+
       if (value >> 31) {
         status = ((int)value << 1) >> 1;
         log->user("Detected end of application, exiting with status: %d\n", status);
-        return;
+        end = true;
+        break;
       }
 
       // Check printf
       // The target application should quickly dumps the characters, so we can loop on printf
       // until we don't find anything
       while(!end) {
-        cable->access(false, PTR_2_INT(&debug_struct->pending_putchar), 4, (char*)&value);
+        if (!cable->access(false, PTR_2_INT(&debug_struct->pending_putchar), 4, (char*)&value)) {
+          end = true;
+          break;
+        }
         if (value == 0) break;
         std::vector<char> buff(value + 1);
-        cable->access(false, PTR_2_INT(&debug_struct->putc_buffer), value, &(buff[0]));
+        if (!cable->access(false, PTR_2_INT(&debug_struct->putc_buffer), value, &(buff[0]))) {
+          end = true;
+          break;
+        }
         unsigned int zero = 0;
-        cable->access(true, PTR_2_INT(&debug_struct->pending_putchar), 4, (char*)&zero);
+        if (!cable->access(true, PTR_2_INT(&debug_struct->pending_putchar), 4, (char*)&zero)) {
+          end = true;
+          break;
+        }
         for (unsigned int i=0; i<value; i++) putchar(buff[i]);
         fflush(NULL);
       }
@@ -132,9 +158,14 @@ void Ioloop::ioloop_routine()
       if (end) break;
       
       // Small sleep to not poll too often
-      usleep(delay);
+      int total_delay = delay;
+      while (!end && total_delay > 0){
+        usleep(DEFAULT_LOOP_DELAY);
+        total_delay -= DEFAULT_LOOP_DELAY;
+      }
     }
   }
+  log->debug("ioloop thread exited\n");
 }
 
 void Ioloop::set_poll_delay(int delay)
@@ -146,7 +177,7 @@ void Ioloop::set_poll_delay(int delay)
 Ioloop::Ioloop(Cable *cable, unsigned int debug_struct_addr) : cable(cable),
   debug_struct_addr(debug_struct_addr), delay(DEFAULT_LOOP_DELAY), log(new Log())
 {
-  activate();
+  // activate();
   thread = new std::thread(&Ioloop::ioloop_routine, this);
 }
 

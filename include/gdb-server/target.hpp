@@ -91,7 +91,7 @@ private:
 class Target_cluster_ctrl
 {
 public:
-  virtual bool init() { return true; }
+  virtual void init() {}
   virtual bool has_xtrigger() { return false; }
 };
 
@@ -101,11 +101,11 @@ class Target_cluster_ctrl_xtrigger : public Target_cluster_ctrl
 {
 public:
   Target_cluster_ctrl_xtrigger(Gdb_server *top, uint32_t cluster_ctrl_addr);
-  bool init();
+  void init();
   bool has_xtrigger() { return true; }
-  bool set_halt_mask(uint32_t mask);
-  bool get_halt_mask(uint32_t *mask);
-  bool get_halt_status(uint32_t *status);
+  void set_halt_mask(uint32_t mask);
+  uint32_t get_halt_mask();
+  uint32_t get_halt_status();
 
 private:
   Gdb_server *top;

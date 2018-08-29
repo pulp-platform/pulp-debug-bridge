@@ -39,15 +39,13 @@ Breakpoints::Breakpoints(Gdb_server *top)
 #define FIND(m, addr) (m).find((addr)) != (m).end()
 #define FIND_IT(m, addr, it) ((it)=(m).find((addr))) != (m).end()
 
-bool
-Breakpoints::insert(unsigned int addr) {
+void Breakpoints::insert(unsigned int addr) {
   breakpoints_map_t::iterator it;
-  bool retval;
 
   if (FIND(breakpoints, addr))
   {
     top->log->error("breakpoint already inserted at 0x%08x\n", addr);
-    return false;
+    return;
   }
 
   top->log->debug("Insert breakpoint at addr: 0x%08x\n", addr);
@@ -64,16 +62,12 @@ Breakpoints::insert(unsigned int addr) {
   }
 
   breakpoints[addr] = sp_bp;
-  retval = sp_bp->enable();
-
-  return retval;
+  sp_bp->enable();
 }
 
-bool
-Breakpoints::remove_it(breakpoints_map_t::iterator it) {
-  bool retval;
+void Breakpoints::remove_it(breakpoints_map_t::iterator it) {
   breakpoint_ptr_t sp_bp = it->second;
-  retval = sp_bp->disable();
+  sp_bp->disable();
 
   breakpoints_map_t::iterator it_enabled;
   if (FIND_IT(enabled_bps, it->first, it_enabled)) {
@@ -83,20 +77,17 @@ Breakpoints::remove_it(breakpoints_map_t::iterator it) {
   }
 
   breakpoints.erase(it);
-
-  return retval;
 }
 
-bool
-Breakpoints::remove(unsigned int addr) {
+void Breakpoints::remove(unsigned int addr) {
   breakpoints_map_t::iterator it;
 
   if (!(FIND_IT(breakpoints, addr, it)))
   {
     top->log->debug("No breakpoint to remove at 0x%08x\n", addr);
-    return false;
+    return;
   }
-  return this->remove_it(it);
+  this->remove_it(it);
 }
 
 // Clears the history of additions and removals
@@ -112,16 +103,12 @@ Breakpoints::have_changed() {
   return enabled_bps.size() > 0 || disabled_bps.size() > 0;
 }
 
-bool
-Breakpoints::clear() {
+void Breakpoints::clear() {
   breakpoints_map_t::iterator it;
-  bool retval = true;
-
   for (it = breakpoints.begin(); it != breakpoints.end(); it++)
   {
-    retval = retval && this->remove_it(it);
+    this->remove_it(it);
   }
-  return retval;
 }
 
 bool
@@ -129,15 +116,12 @@ Breakpoints::at_addr(unsigned int addr) {
   return FIND(breakpoints, addr);
 }
 
-bool
-Breakpoints::enable_all() {
-  bool retval = true;
-
+void Breakpoints::enable_all() {
   top->log->debug("Enable all breakpoints (size: %d)\n", breakpoints.size());
   
   for (breakpoints_map_t::iterator it = breakpoints.begin(); it != breakpoints.end(); it++) {
     breakpoints_map_t::iterator it_disabled;
-    retval = retval && it->second->enable();
+    it->second->enable();
     if (FIND_IT(disabled_bps, it->first, it_disabled))
     {
       disabled_bps.erase(it_disabled);
@@ -147,19 +131,15 @@ Breakpoints::enable_all() {
       enabled_bps[it->first] = it->second;
     }
   }
-
-  return retval;
 }
 
-bool
-Breakpoints::disable_all() {
-  bool retval = true;
+void Breakpoints::disable_all() {
 
   top->log->debug("Disable all breakpoints\n");
 
   for (breakpoints_map_t::iterator it = breakpoints.begin(); it != breakpoints.end(); it++) {
     breakpoints_map_t::iterator it_enabled;
-    retval = retval && it->second->disable();
+    it->second->disable();
     if (FIND_IT(enabled_bps, it->first, it_enabled))
     {
       enabled_bps.erase(it_enabled);
@@ -169,23 +149,20 @@ Breakpoints::disable_all() {
       disabled_bps[it->first] = it->second;
     }
   }
-
-  return retval;
 }
 
 Breakpoints::Breakpoint::Breakpoint(Gdb_server *top, uint32_t addr) : top(top), addr(addr)
 {
 }
 
-bool Breakpoints::Breakpoint::enable()
+void Breakpoints::Breakpoint::enable()
 {
-  bool retval;
 
   if (this->enabled)
     top->log->error("breakpoint at addr: 0x%08x was already enabled\n", addr);
 
   uint32_t insn_orig;
-  retval = top->target->mem_read(addr, 4, (char*)&insn_orig);
+  top->target->mem_read(addr, 4, (char*)&insn_orig);
   is_compressed = INSN_IS_COMPRESSED(insn_orig);
 
   top->log->debug("Enable %sbreakpoint at addr: 0x%08x old_insn: 0x%08x\n", is_compressed?"compressed ":"", addr, insn_orig);
@@ -193,29 +170,27 @@ bool Breakpoints::Breakpoint::enable()
   if (is_compressed) {
     insn_orig16 = insn_orig & 0xffff;
     uint16_t data_bp = INSN_BP_COMPRESSED;
-    retval = retval && top->target->mem_write(addr, 2, (char*)&data_bp);
+    top->target->mem_write(addr, 2, (char*)&data_bp);
   } else {
     insn_orig32 = insn_orig;
     uint32_t data_bp = INSN_BP;
-    retval = retval && top->target->mem_write(addr, 4, (char*)&data_bp);
+    top->target->mem_write(addr, 4, (char*)&data_bp);
   }
 
-  retval = retval && top->target->mem_read(addr, 4, (char*)&insn_orig);
+  top->target->mem_read(addr, 4, (char*)&insn_orig);
   top->log->debug("Written INSN 0x%08x\n", insn_orig);
  
-  this->enabled = retval;
-  return retval;
+  this->enabled = true;
 }
 
-bool Breakpoints::Breakpoint::disable()
+void Breakpoints::Breakpoint::disable()
 {
-  bool retval;
   uint32_t data_bp;
 
   if (!this->enabled)
     top->log->error("breakpoint at addr: 0x%08x was already disabled\n", addr);
 
-  retval = top->target->mem_read(addr, 4, (char*)&data_bp);
+  top->target->mem_read(addr, 4, (char*)&data_bp);
 
   top->log->debug("Disable %sbreakpoint at addr: 0x%08x contents: 0x%08x\n", is_compressed?"compressed ":"", addr, data_bp);
 
@@ -233,15 +208,14 @@ bool Breakpoints::Breakpoint::disable()
   }
 
   if (is_compressed) {
-    retval = retval && top->target->mem_write(addr, 2, (char*)&insn_orig16);
+    top->target->mem_write(addr, 2, (char*)&insn_orig16);
   } else {
-    retval = retval && top->target->mem_write(addr, 4, (char*)&insn_orig32);
+    top->target->mem_write(addr, 4, (char*)&insn_orig32);
   }
 
-  retval = top->target->mem_read(addr, 4, (char*)&data_bp);
+  top->target->mem_read(addr, 4, (char*)&data_bp);
   top->log->debug("Written INSN 0x%08x\n", data_bp);
 
-  this->enabled = !retval;
-  return retval;
+  this->enabled = false;
 }
 

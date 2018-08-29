@@ -71,17 +71,20 @@ void Rsp::client_connected(Tcp_socket::tcp_socket_ptr_t client)
   }
 
   top->log->user("RSP: client disconnected\n");
-  this->halt_target();
 
-  // If we're not aborted leave the target running when nothing is attached
-  if (!this->aborted) {
-    top->log->debug("RSP: clear breakpoints\n");
-    // clear the breakpoints
-    top->bkp->clear();
+  if (!this->cable_error) {
+    this->halt_target();
 
-    // Start everything
-    top->log->debug("RSP: resume target\n");
-    this->resume_target(false);
+    // If we're not aborted leave the target running when nothing is attached
+    if (!this->aborted) {
+      top->log->debug("RSP: clear breakpoints\n");
+      // clear the breakpoints
+      top->bkp->clear();
+
+      // Start everything
+      top->log->debug("RSP: resume target\n");
+      this->resume_target(false);
+    }
   }
 
   top->log->debug("RSP: clean up client\n");
@@ -117,6 +120,7 @@ void Rsp::wait_finished()
 {
   std::unique_lock<std::mutex> lk(m_finished);
   cv_finished.wait(lk, [this]{ return this->aborted; });
+  top->log->debug("RSP: finished waiting for RSP to abort\n");
 }
 
 void Rsp::close(bool wait_finished)
@@ -207,22 +211,36 @@ void Rsp::Client::stop()
 
 void Rsp::Client::client_routine()
 {
-  while(running && !rsp->aborted)
-  {
-    char pkt[PACKET_MAX_LEN];
-    size_t len;
+    while(running && !rsp->aborted)
+    {
+      char pkt[PACKET_MAX_LEN];
+      size_t len;
 
-    len = this->get_packet(pkt, (size_t) PACKET_MAX_LEN);
+      len = this->get_packet(pkt, (size_t) PACKET_MAX_LEN);
 
-    running = len > 0;
+      running = len > 0;
 
-    if (running && !rsp->aborted) {
-      running = this->decode(pkt, len);
-      if (!running) {
-        client->close();
+      if (running && !rsp->aborted) {
+        try {
+          running = this->decode(pkt, len);
+        } catch (CableException e) {
+          top->log->error("Cable error - %s - terminating server\n", e.what());
+          rsp->aborted = true;
+          rsp->set_cable_error();
+        } catch (OffCoreAccessException e) {
+          top->log->error("Debugger attempted to access an off core - terminating server\n");
+          rsp->aborted = true;
+          rsp->set_cable_error();
+        } catch (std::exception e) {
+          top->log->error("Unknown exception - %s - terminating server\n", e.what());
+          rsp->aborted = true;
+          rsp->set_cable_error();
+        }
+        if (!running) {
+          client->close();
+        }
       }
     }
-  }
   // close the connection when aborted
   if (running) {
     client->close();
@@ -448,8 +466,7 @@ bool Rsp::Client::mem_read(char* data, size_t)
   }
 
   if (top->target->check_mem_access(addr, length)) {
-    if (!top->target->mem_read(addr, length, (char *)buffer))
-      return this->send_str("E02");
+    top->target->mem_read(addr, length, (char *)buffer);
 
     for(i = 0; i < length; i++) {
       snprintf(&reply[i * 2], 3, "%02x", (uint32_t)buffer[i]);
@@ -521,14 +538,11 @@ bool Rsp::Client::mem_write_ascii(char* data, size_t len)
   if (!top->target->check_mem_access(addr, buffer_len))
     return this->send_str("E03");
 
-  bool ret = top->target->mem_write(addr, buffer_len, buffer);
+  top->target->mem_write(addr, buffer_len, buffer);
 
   free(buffer);
 
-  if (ret)
-    return this->send_str("OK");
-  else
-    return this->send_str("E02");
+  return this->send_str("OK");
 }
 
 bool Rsp::Client::mem_write(char* data, size_t len)
@@ -558,10 +572,8 @@ bool Rsp::Client::mem_write(char* data, size_t len)
   if (!top->target->check_mem_access(addr, len))
     return this->send_str("E03");
 
-  if (top->target->mem_write(addr, len, data))
-    return this->send_str("OK");
-  else
-    return this->send_str("E02");
+  top->target->mem_write(addr, len, data);
+  return this->send_str("OK");
 }
 
 
@@ -609,7 +621,6 @@ bool Rsp::Client::reg_read(char* data, size_t)
     return false;
   }
 
-  bool ret = false;
   // Note: if invalid registers are read return "xx" (not available) not ""
   // otherwise gdb gives up reading more.
   // Letting gdb do what it wants results in a core crash
@@ -619,15 +630,15 @@ bool Rsp::Client::reg_read(char* data, size_t)
     return this->send_str("xx");
   } else if (addr < 32) {
     top->log->debug("Read register 0x%02x\n", addr);
-    ret = core->gpr_read(addr, &rdata);
+    core->gpr_read(addr, &rdata);
   } else if (addr == 0x20) {
     top->log->debug("Read PC\n");
-    ret = core->actual_pc_read(&rdata);
+    core->actual_pc_read(&rdata);
   } else if (addr >= 0x41) { // Read CSR
     uint32_t csr_num = addr - 0x41;
     if (valid_csr(csr_num)) {
       top->log->debug("Read CSR 0x%04x\n", csr_num);
-      ret = core->csr_read(csr_num, &rdata);
+      core->csr_read(csr_num, &rdata);
     } else {
       return this->send_str("xx");
     }
@@ -635,13 +646,9 @@ bool Rsp::Client::reg_read(char* data, size_t)
     return this->send_str("xx");
   }
 
-  if (ret) {
-    rdata = htonl(rdata);
-    snprintf(data_str, 9, "%08x", rdata);
-    return this->send_str(data_str);
-  } else {
-    return this->send_str("E02");
-  }
+  rdata = htonl(rdata);
+  snprintf(data_str, 9, "%08x", rdata);
+  return this->send_str(data_str);
 }
 
 
@@ -657,20 +664,19 @@ bool Rsp::Client::reg_write(char* data, size_t)
     return false;
   }
 
-  bool ret = false;
   wdata = ntohl(wdata);
   core = this->top->target->get_thread(thread_sel);
   if (addr < 32) {
     top->log->debug("Write register 0x%02x 0x08x\n", addr, wdata);
-    ret = core->gpr_write(addr, wdata);
+    core->gpr_write(addr, wdata);
   } else if (addr == 32) {
     top->log->debug("Write NPC 0x08x\n", wdata);
-    ret = core->write(DBG_NPC_REG, wdata);
+    core->write(DBG_NPC_REG, wdata);
   } else if (addr >= 0x41) {
     uint32_t csr_num = addr - 0x41;
     if (valid_csr(csr_num)) {
       top->log->debug("Write CSR 0x%04x 0x08x\n", csr_num, wdata);
-      ret = this->top->target->get_thread(thread_sel)->csr_write(csr_num, wdata);
+      this->top->target->get_thread(thread_sel)->csr_write(csr_num, wdata);
     } else {
       return this->send_str("E01");
     }
@@ -678,10 +684,7 @@ bool Rsp::Client::reg_write(char* data, size_t)
     return this->send_str("E01");
   }
 
-  if (ret)
-    return this->send_str("OK");
-  else
-    return this->send_str("E02");
+  return this->send_str("OK");
 }
 
 bool Rsp::Client::regs_send()
@@ -697,18 +700,17 @@ bool Rsp::Client::regs_send()
   core = this->top->target->get_thread(thread_sel);
 
   if (core->get_power()) {
-    bool ret = core->gpr_read_all(gpr);
+    core->gpr_read_all(gpr);
 
     // now build the string to send back
     for(i = 0; i < 32; i++) {
       snprintf(&regs_str[i * 8], 9, "%08x", (unsigned int)htonl(gpr[i]));
     }
-    ret = ret && core->actual_pc_read(&pc);
-    snprintf(&regs_str[32 * 8], 9, "%08x", (unsigned int)htonl(pc));
-
-    if (ret)
+  
+    if (core->actual_pc_read(&pc)) {
+      snprintf(&regs_str[32 * 8], 9, "%08x", (unsigned int)htonl(pc));
       return this->send_str(regs_str);
-    else
+    } else
       return this->send_str("E02");
   } else {
     // core is off so indicate that none of its registers are available
@@ -756,8 +758,7 @@ int Rsp::Client::get_signal(Target_core *core)
 {
   if (core->is_stopped()) {
     bool is_hit, is_sleeping;
-    if (!core->read_hit(&is_hit, &is_sleeping))
-      return TARGET_SIGNAL_NONE;
+    core->read_hit(&is_hit, &is_sleeping);
     if (is_hit)
       return TARGET_SIGNAL_TRAP;
     else if (is_sleeping)
@@ -921,66 +922,66 @@ bool Rsp::Client::decode(char* data, size_t len)
 
   top->log->detail("Received packet: '%s' (len: %d)\n", data, len);
   switch (data[0]) {
-  case 'q':
-    top->log->detail("call query\n");
-    return this->query(data, len);
+    case 'q':
+      top->log->detail("call query\n");
+      return this->query(data, len);
 
-  case 'g':
-    return this->regs_send();
+    case 'g':
+      return this->regs_send();
 
-  case 'p':
-    return this->reg_read(&data[1], len-1);
+    case 'p':
+      return this->reg_read(&data[1], len-1);
 
-  case 'P':
-    return this->reg_write(&data[1], len-1);
+    case 'P':
+      return this->reg_write(&data[1], len-1);
 
-  case 'c':
-  case 'C':
-    return this->cont(&data[0], len);
+    case 'c':
+    case 'C':
+      return this->cont(&data[0], len);
 
-  case 's':
-  case 'S':
-    return this->step(&data[0], len);
+    case 's':
+    case 'S':
+      return this->step(&data[0], len);
 
-  case 'H':
-    return this->multithread(&data[1], len-1);
+    case 'H':
+      return this->multithread(&data[1], len-1);
 
-  case 'm':
-    return this->mem_read(&data[1], len-1);
+    case 'm':
+      return this->mem_read(&data[1], len-1);
 
-  case '?':
-    return this->signal();
+    case '?':
+      return this->signal();
 
-  case 'v':
-    return this->v_packet(&data[0], len);
+    case 'v':
+      return this->v_packet(&data[0], len);
 
-  case 'M':
-    return this->mem_write_ascii(&data[1], len-1);
+    case 'M':
+      return this->mem_write_ascii(&data[1], len-1);
 
-  case 'X':
-    return this->mem_write(&data[1], len-1);
+    case 'X':
+      return this->mem_write(&data[1], len-1);
 
-  case 'z':
-    return this->bp_remove(&data[0], len);
+    case 'z':
+      return this->bp_remove(&data[0], len);
 
-  case 'Z':
-    return this->bp_insert(&data[0], len);
+    case 'Z':
+      return this->bp_insert(&data[0], len);
 
-  case 'T':
-    return this->send_str("OK"); // threads are always alive
+    case 'T':
+      return this->send_str("OK"); // threads are always alive
 
-  case 'D':
-    this->send_str("OK");
-    return false;
+    case 'D':
+      this->send_str("OK");
+      return false;
 
-  // case '!':
-  //   return this->send_str("OK"); // extended mode supported
+    // case '!':
+    //   return this->send_str("OK"); // extended mode supported
 
-  default:
-    top->log->error("Unknown packet: starts with %c\n", data[0]);
-    break;
+    default:
+      top->log->error("Unknown packet: starts with %c\n", data[0]);
+      break;
   }
-
+  
   return false;
 }
 
@@ -1243,10 +1244,7 @@ bool Rsp::Client::bp_insert(char* data, size_t len)
     return this->send_str("");
   }
 
-  if (!top->bkp->insert(addr)) {
-    top->log->error("Unable to insert breakpoint\n");
-    return this->send_str("E02");
-  }
+  top->bkp->insert(addr);
 
   top->log->debug("Breakpoint inserted at 0x%08x\n", addr);
   return this->send_str("OK");
@@ -1272,10 +1270,7 @@ bool Rsp::Client::bp_remove(char* data, size_t len)
     return this->send_str("");
   }
 
-  if (!top->bkp->remove(addr)) {
-    top->log->error("Unable to remove breakpoint\n");
-    return this->send_str("E02");
-  }
+  top->bkp->remove(addr);
 
   return this->send_str("OK");
 }

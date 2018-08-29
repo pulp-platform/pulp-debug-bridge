@@ -29,9 +29,13 @@
 
 #include <fcntl.h>
 #include <string.h>
+#include <stdarg.h>
+
+#define MAX_ERROR_LEN 256
 
 #include <thread>
 #include <unordered_map>
+#include <exception>
 
 #include "cable.hpp"
 #include "json.hpp"
@@ -83,6 +87,30 @@ class Target_cluster_common;
 class Target_cluster;
 class Target_core;
 
+
+class CableException : public std::exception 
+{
+public:
+  CableException(const char * format, ...) : std::exception() {
+    va_list args;
+    va_start(args, format);
+    vsnprintf(error_msg, MAX_ERROR_LEN, format, args);
+    va_end(args);
+  }
+  const char * what() const throw() {return error_msg;}
+private:
+  char error_msg[MAX_ERROR_LEN];
+};
+
+class OffCoreAccessException: public std::exception
+{
+public:
+  const char* what() const throw()
+  {
+    return "Attempt to access core that is switched off";
+  }
+};
+
 class Gdb_server
 {
 public:
@@ -113,11 +141,11 @@ public:
   void set_power(bool is_on);
   bool get_power();
   bool has_power_state_change();
-  bool read(uint32_t addr, uint32_t* rdata);
-  bool write(uint32_t addr, uint32_t wdata);
-  bool csr_read(unsigned int i, uint32_t *data);
-  bool csr_write(unsigned int i, uint32_t data);
-  bool ie_write(uint32_t data);
+  void read(uint32_t addr, uint32_t* rdata);
+  void write(uint32_t addr, uint32_t wdata);
+  void csr_read(unsigned int i, uint32_t *data);
+  void csr_write(unsigned int i, uint32_t data);
+  void ie_write(uint32_t data);
   int get_thread_id() { return this->thread_id; }
   int get_cluster_id();
   int get_core_id() { return this->core_id; }
@@ -125,13 +153,13 @@ public:
 
   bool actual_pc_read(unsigned int* pc);
   bool is_stopped();
-  bool read_hit(bool *ss_hit, bool *is_sleeping);
+  void read_hit(bool *ss_hit, bool *is_sleeping);
   bool is_stopped_on_trap() { return pc_is_cached && on_trap; }
   uint32_t get_cause();
   uint32_t check_stopped();
 
-  bool stop();
-  bool halt();
+  void stop();
+  void halt();
   void prepare_resume(bool step=false);
   void clear_resume() { resume_prepared = false; }
   void commit_resume();
@@ -142,9 +170,9 @@ public:
   void flush();
   void init();
 
-  bool gpr_read_all(uint32_t *data);
-  bool gpr_read(unsigned int i, uint32_t *data);
-  bool gpr_write(unsigned int i, uint32_t data);
+  void gpr_read_all(uint32_t *data);
+  void gpr_read(unsigned int i, uint32_t *data);
+  void gpr_write(unsigned int i, uint32_t data);
 
 private:
   Gdb_server *top;
@@ -183,8 +211,8 @@ public:
   void reinitialize();
   void update_power();
   bool is_stopped() { return !started; }
-  bool mem_read(uint32_t addr, uint32_t length, char * buffer);
-  bool mem_write(uint32_t addr, uint32_t length, char * buffer);
+  void mem_read(uint32_t addr, uint32_t length, char * buffer);
+  void mem_write(uint32_t addr, uint32_t length, char * buffer);
   bool check_mem_access(uint32_t addr, uint32_t length);
 
   Target_core * check_stopped();
@@ -210,8 +238,8 @@ class Breakpoints {
         Breakpoint(Gdb_server *top, uint32_t addr);
       private:
         friend class Breakpoints;
-        bool enable();
-        bool disable();
+        void enable();
+        void disable();
         Gdb_server *top;
         uint32_t addr;
         union {
@@ -224,13 +252,13 @@ class Breakpoints {
 
     Breakpoints(Gdb_server *top);
 
-    bool insert(unsigned int addr);
-    bool remove(unsigned int addr);
+    void insert(unsigned int addr);
+    void remove(unsigned int addr);
 
-    bool enable_all();
-    bool disable_all();
+    void enable_all();
+    void disable_all();
 
-    bool clear();
+    void clear();
     void clear_history();
     bool have_changed();
     bool at_addr(unsigned int addr);
@@ -245,11 +273,11 @@ class Breakpoints {
     breakpoints_map_t disabled_bps;
     Gdb_server *top;
 
-    bool remove_it(breakpoints_map_t::iterator it);
+    void remove_it(breakpoints_map_t::iterator it);
 
     // These do not keep history as yet so should not be used externally
-    bool disable(unsigned int addr);
-    bool enable(unsigned int addr);
+    void disable(unsigned int addr);
+    void enable(unsigned int addr);
 };
 
 enum capability_support {
@@ -285,6 +313,7 @@ class Rsp {
     void close(bool wait_finished);
     void init();
     void wait_finished();
+    void set_cable_error() { cable_error = true; }
 
     class Client
     {
@@ -372,6 +401,7 @@ class Rsp {
     std::condition_variable cv_finished, cv_rsp_client;
     int conn_cnt=0;
     bool aborted = false;
+    bool cable_error = false;
 };
 
 #endif

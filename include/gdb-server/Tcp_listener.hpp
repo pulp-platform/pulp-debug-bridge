@@ -32,7 +32,7 @@
   typedef int port_t;
   typedef SOCKET socket_t;
   typedef int func_ret_t;
-  #define LST_SHUT_RDWR SD_BOTH
+  #define LST_SHUT_RDWR SD_SEND
 #else
   #include <sys/socket.h>
   #include <netinet/in.h>
@@ -44,7 +44,7 @@
   #define INVALID_SOCKET -1
   typedef int func_ret_t;
   #define SOCKET_ERROR -1
-  #define LST_SHUT_RDWR SHUT_RDWR
+  #define LST_SHUT_RDWR SHUT_WR
 #endif
 
 #include <fcntl.h>

@@ -19,7 +19,6 @@
  */
 
 #include <stdio.h>
-#include <thread>
 #include "cable.hpp"
 #include "cables/log.h"
 #include "debug_bridge/debug_bridge.h"
@@ -28,12 +27,29 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 
+#include <thread>
+#include <mutex>
+#include <condition_variable>
+#include <atomic>
+
 #if defined(__USE_SDL__)
 #include <SDL.h>
 #endif
 
 #define PTR_2_INT(__addr) ((unsigned int)(reinterpret_cast<std::uintptr_t>(__addr)&0xffffffff))
 #define INT_2_PTR(__addr) (reinterpret_cast<std::uintptr_t>((size_t)__addr))
+
+#define DEFAULT_LOOP_DELAY 50000
+#define DEFAULT_SLOW_LOOP_DELAY 100000 * 1000
+
+class ReqloopCableException: public std::exception
+{
+public:
+  const char* what() const throw()
+  {
+    return "Exception accessing cable";
+  }
+};
 
 class Reqloop
 {
@@ -42,7 +58,7 @@ public:
   void reqloop_routine();
   int stop(bool kill);
   hal_debug_struct_t *activate();
-
+  void set_poll_delay(int delay);
 private:
   void reply_req(hal_debug_struct_t *debug_struct, hal_bridge_req_t *target_req, hal_bridge_req_t *req);
   bool handle_req_connect(hal_debug_struct_t *debug_struct, hal_bridge_req_t *target_req, hal_bridge_req_t *req);
@@ -54,12 +70,17 @@ private:
   bool handle_req_fb_update(hal_debug_struct_t *debug_struct, hal_bridge_req_t *req, hal_bridge_req_t *target_req);
   bool handle_req_disconnect(hal_debug_struct_t *debug_struct, hal_bridge_req_t *target_req, hal_bridge_req_t *req);
   bool handle_req(hal_debug_struct_t *debug_struct, hal_bridge_req_t *target_req, hal_bridge_req_t *req);
+  void access(bool write, unsigned int addr, int len, char * buf);
 
   Log *log;
-  std::thread *thread;
+  std::thread *thread = NULL;
   Cable *cable;
+  std::mutex joined_mutex;
+  bool joined = false;
   bool end = false;
   unsigned int debug_struct_addr;
+  std::atomic<int> delay;
+  bool cable_error = false;
   int status = 0;
 };
 
@@ -161,7 +182,7 @@ void Framebuffer::update(uint32_t addr, int posx, int posy, int width, int heigh
 
   int size = width*height*pixel_size;
   uint8_t buffer[size];
-  this->cable->access(false, addr, size, (char*)buffer);
+  this->access(false, addr, size, (char*)buffer);
 
   for (int j=0; j<height; j++)
   {
@@ -180,23 +201,45 @@ void Framebuffer::update(uint32_t addr, int posx, int posy, int width, int heigh
 }
 #endif
 
+
 int Reqloop::stop(bool kill)
 {
-  if (kill) end = true;
-  thread->join();
+  log->debug("reqloop: stop (kill: %d)\n", kill);
+  if (thread) {
+    if (kill) end = true;
+    {
+      std::lock_guard<std::mutex> guard(joined_mutex);
+      if (joined||!thread->joinable()) {
+        log->debug("reqloop: stop (kill: %d) completed (already joined or not joinable)\n", kill);
+        return status;
+      }
+      joined = true;
+    }
+    log->debug("reqloop: stop (kill: %d) joining thread\n", kill);
+    thread->join();
+    delete(thread);
+    thread = NULL;
+  }
+  log->debug("reqloop: stop (kill: %d) completed\n", kill);
   return status;
+}
+
+void Reqloop::access(bool write, unsigned int addr, int len, char * buf)
+{
+  if (!cable->access(write, addr, len, buf))
+    throw ReqloopCableException();
 }
 
 hal_debug_struct_t *Reqloop::activate()
 {
   hal_debug_struct_t *debug_struct = NULL;
 
-  cable->access(false, debug_struct_addr, 4, (char*)&debug_struct);
+  access(false, debug_struct_addr, 4, (char*)&debug_struct);
 
   if (debug_struct != NULL) {
     // The binary has just started, we need to tell him we want to watch for requests
     uint32_t connected = 1;
-    cable->access(true, PTR_2_INT(&debug_struct->bridge_connected), 4, (char*)&connected);
+    access(true, PTR_2_INT(&debug_struct->bridge_connected), 4, (char*)&connected);
   }
 
   return debug_struct;
@@ -207,14 +250,14 @@ hal_debug_struct_t *Reqloop::activate()
 void Reqloop::reply_req(hal_debug_struct_t *debug_struct, hal_bridge_req_t *target_req, hal_bridge_req_t *)
 {
   uint32_t value = 1;
-  this->cable->access(true, PTR_2_INT(&target_req->done), sizeof(target_req->done), (char*)&value);
+  this->access(true, PTR_2_INT(&target_req->done), sizeof(target_req->done), (char*)&value);
 
   uint32_t notif_req_addr;
   uint32_t notif_req_value;
-  cable->access(false, PTR_2_INT(&debug_struct->notif_req_addr), 4, (char*)&notif_req_addr);
-  cable->access(false, PTR_2_INT(&debug_struct->notif_req_value), 4, (char*)&notif_req_value);
+  access(false, PTR_2_INT(&debug_struct->notif_req_addr), 4, (char*)&notif_req_addr);
+  access(false, PTR_2_INT(&debug_struct->notif_req_value), 4, (char*)&notif_req_value);
 
-  cable->access(true, notif_req_addr, 4, (char*)&notif_req_value);
+  access(true, notif_req_addr, 4, (char*)&notif_req_value);
 }
 
 #if 0
@@ -253,11 +296,11 @@ bool Reqloop::handle_req_open(hal_debug_struct_t *debug_struct, hal_bridge_req_t
 {
   std::vector<char> name(req->open.name_len+1);
 
-  cable->access(false, (unsigned int)req->open.name, req->open.name_len+1, &(name[0]));
+  access(false, (unsigned int)req->open.name, req->open.name_len+1, &(name[0]));
 
   int res = open(&(name[0]), req->open.flags, req->open.mode);
 
-  cable->access(true, PTR_2_INT(&target_req->open.retval), 4, (char*)&res);
+  access(true, PTR_2_INT(&target_req->open.retval), 4, (char*)&res);
 
   this->reply_req(debug_struct, target_req, req);
 
@@ -283,14 +326,14 @@ bool Reqloop::handle_req_read(hal_debug_struct_t *debug_struct, hal_bridge_req_t
       break;
     }
 
-    cable->access(true, PTR_2_INT(ptr), iter_size, (char*)buffer);
+    access(true, PTR_2_INT(ptr), iter_size, (char*)buffer);
 
     res += iter_size;
     ptr += iter_size;
     size -= iter_size;
   }
 
-  cable->access(true, PTR_2_INT(&target_req->read.retval), 4, (char*)&res);
+  access(true, PTR_2_INT(&target_req->read.retval), 4, (char*)&res);
 
   this->reply_req(debug_struct, target_req, req);
   return false;
@@ -308,7 +351,7 @@ bool Reqloop::handle_req_write(hal_debug_struct_t *debug_struct, hal_bridge_req_
     if (iter_size > 4096)
       iter_size = 4096;
 
-    cable->access(false, PTR_2_INT(ptr), iter_size, (char*)buffer);
+    access(false, PTR_2_INT(ptr), iter_size, (char*)buffer);
 
     iter_size = write(req->write.file, (void *)buffer, iter_size);
 
@@ -323,7 +366,7 @@ bool Reqloop::handle_req_write(hal_debug_struct_t *debug_struct, hal_bridge_req_
   if (res == 0)
     res = -1;
 
-  cable->access(true, PTR_2_INT(&target_req->write.retval), 4, (char*)&res);
+  access(true, PTR_2_INT(&target_req->write.retval), 4, (char*)&res);
 
   this->reply_req(debug_struct, target_req, req);
   return false;
@@ -332,7 +375,7 @@ bool Reqloop::handle_req_write(hal_debug_struct_t *debug_struct, hal_bridge_req_
 bool Reqloop::handle_req_close(hal_debug_struct_t *debug_struct, hal_bridge_req_t *req, hal_bridge_req_t *target_req)
 {
   int res = close(req->close.file);
-  cable->access(true, PTR_2_INT(&target_req->write.retval), 4, (char*)&res);
+  access(true, PTR_2_INT(&target_req->write.retval), 4, (char*)&res);
   this->reply_req(debug_struct, target_req, req);
   return false;
 }
@@ -341,7 +384,7 @@ bool Reqloop::handle_req_close(hal_debug_struct_t *debug_struct, hal_bridge_req_
 bool Reqloop::handle_req_fb_open(hal_debug_struct_t *debug_struct, hal_bridge_req_t *req, hal_bridge_req_t *target_req)
 {
   char name[req->fb_open.name_len+1];
-  cable->access(false, PTR_2_INT(req->fb_open.name), req->fb_open.name_len+1, (char*)name);
+  access(false, PTR_2_INT(req->fb_open.name), req->fb_open.name_len+1, (char*)name);
 
   Framebuffer *fb = new Framebuffer(cable, name, req->fb_open.width, req->fb_open.height, req->fb_open.format);
 
@@ -353,7 +396,7 @@ bool Reqloop::handle_req_fb_open(hal_debug_struct_t *debug_struct, hal_bridge_re
     fb = NULL;
   }
 
-  cable->access(true, PTR_2_INT(&target_req->fb_open.screen), 8, (char*)&fb);
+  access(true, PTR_2_INT(&target_req->fb_open.screen), 8, (char*)&fb);
 
   this->reply_req(debug_struct, target_req, req);
   return false;
@@ -405,67 +448,80 @@ bool Reqloop::handle_req(hal_debug_struct_t *debug_struct, hal_bridge_req_t *req
 void Reqloop::reqloop_routine()
 {
   if (debug_struct_addr) {
+    try {
+      // In case the debug struct pointer is found, iterate to receive IO requests
+      // from runtime
+      while(!end)
+      {
 
-    // In case the debug struct pointer is found, iterate to receive IO requests
-    // from runtime
-    while(!end)
-    {
+        hal_debug_struct_t *debug_struct = NULL;
 
-      hal_debug_struct_t *debug_struct = NULL;
+        uint32_t value;
 
-      uint32_t value;
+        // debugStruct_ptr is used to synchronize with the runtime at the first start or 
+        // when we switch from one binary to another
+        // Each binary will initialize when it boots will wait until we set it to zero before stopping
+        while(!end) {
+          if ((debug_struct = activate()) != NULL) break;
 
-      // debugStruct_ptr is used to synchronize with the runtime at the first start or 
-      // when we switch from one binary to another
-      // Each binary will initialize when it boots will wait until we set it to zero before stopping
-      while(!end) {
-        if ((debug_struct = activate()) != NULL) break;
+          // We use a fast loop to miss as few printf as possible as the binary will
+          // start without waiting for any acknolegment in case
+          // no host loader is connected
+          usleep(1);
+        }
 
-        // We use a fast loop to miss as few printf as possible as the binary will
-        // start without waiting for any acknolegment in case
-        // no host loader is connected
-        usleep(1);
+        // Check printf
+        // The target application should quickly dumps the characters, so we can loop on printf
+        // until we don't find anything
+        while(!end) {
+          hal_bridge_req_t *first_bridge_req = NULL;
+
+          access(false, PTR_2_INT(&debug_struct->first_bridge_req), 4, (char*)&first_bridge_req);
+
+          if (first_bridge_req == NULL)
+            break;
+
+          hal_bridge_req_t req;
+          access(false, PTR_2_INT(first_bridge_req), sizeof(hal_bridge_req_t), (char*)&req);
+
+          value = 1;
+          access(true, PTR_2_INT(&first_bridge_req->popped), sizeof(first_bridge_req->popped), (char*)&value);
+          access(true, PTR_2_INT(&debug_struct->first_bridge_req), 4, (char*)&req.next);
+
+          if (this->handle_req(debug_struct, &req, first_bridge_req))
+            return;
+        }
+
+        int total_delay = delay;
+        while (!end && total_delay > 0){
+          usleep(DEFAULT_LOOP_DELAY);
+          total_delay -= DEFAULT_LOOP_DELAY;
+        }
       }
-
-      // Check printf
-      // The target application should quickly dumps the characters, so we can loop on printf
-      // until we don't find anything
-      while(!end) {
-        hal_bridge_req_t *first_bridge_req = NULL;
-
-        if (!cable->access(false, PTR_2_INT(&debug_struct->first_bridge_req), 4, (char*)&first_bridge_req)) goto end;
-
-        if (first_bridge_req == NULL)
-          break;
-
-        hal_bridge_req_t req;
-        if (!this->cable->access(false, PTR_2_INT(first_bridge_req), sizeof(hal_bridge_req_t), (char*)&req)) goto end;
-
-        value = 1;
-        if (!cable->access(true, PTR_2_INT(&first_bridge_req->popped), sizeof(first_bridge_req->popped), (char*)&value)) goto end;
-        if (!cable->access(true, PTR_2_INT(&debug_struct->first_bridge_req), 4, (char*)&req.next)) goto end;
-
-        if (this->handle_req(debug_struct, &req, first_bridge_req))
-          return;
-      }
-
-      // Small sleep to not poll too often
-      usleep(500);
+    } catch (ReqloopCableException e) {
+      log->error("Cable error in reqloop");
     }
   }
   else
   {
     log->warning("Trying to launch request loop (command reqloop) while no binary is provided\n");
   }
-
-end:
-  log->warning("Got access error in reqloop\n");
 }
 
-Reqloop::Reqloop(Log* log, Cable *cable, unsigned int debug_struct_addr) : log(log), cable(cable), debug_struct_addr(debug_struct_addr)
+void Reqloop::set_poll_delay(int delay)
 {
-  activate();
-  thread = new std::thread(&Reqloop::reqloop_routine, this);
+  log->debug("reqloop delay set to %d\n", delay);
+  this->delay = delay;
+}
+
+Reqloop::Reqloop(Log* log, Cable *cable, unsigned int debug_struct_addr) : log(log), cable(cable), debug_struct_addr(debug_struct_addr), delay(DEFAULT_LOOP_DELAY)
+{
+  try {
+    activate();
+    thread = new std::thread(&Reqloop::reqloop_routine, this);
+  } catch (ReqloopCableException e) {
+    log->error("Cable error starting reqloop");
+  }
 }
 
 extern "C" void *bridge_reqloop_open(void *cable, unsigned int debug_struct_addr)
@@ -479,4 +535,12 @@ extern "C" void bridge_reqloop_close(void *arg, int kill)
   reqloop->stop(kill);
 }
 
+extern "C" void bridge_reqloop_set_poll_delay(void *arg, int high_rate)
+{
+  Reqloop *reqloop = (Reqloop *)arg;
+  if (high_rate)
+    reqloop->set_poll_delay(DEFAULT_LOOP_DELAY);
+  else
+    reqloop->set_poll_delay(DEFAULT_SLOW_LOOP_DELAY);
 
+}

@@ -46,7 +46,8 @@ void Target_cluster_cache::flush()
   this->top->log->detail("Flushing cluster cache (addr: 0x%x)\n", addr);
 
   uint32_t data = 0xFFFFFFFF;
-  top->cable->access(true, addr + 0x04, 4, (char*)&data);
+  if (!top->cable->access(true, addr + 0x04, 4, (char*)&data))
+    throw CableException("Error writing to 0x%08x", addr + 0x04);
 }
 
 
@@ -62,7 +63,8 @@ void Target_fc_cache::flush()
   this->top->log->detail("Flushing FC cache (addr: 0x%x)\n", addr);
 
   uint32_t data = 0xFFFFFFFF;
-  top->cable->access(true, addr + 0x04, 4, (char*)&data);
+  if (!top->cable->access(true, addr + 0x04, 4, (char*)&data))
+    throw CableException("Error writing to 0x%08x", addr + 0x04);
 }
 
 
@@ -72,33 +74,31 @@ Target_cluster_ctrl_xtrigger::Target_cluster_ctrl_xtrigger(Gdb_server *top, uint
 
 }
 
-bool Target_cluster_ctrl_xtrigger::init()
+void Target_cluster_ctrl_xtrigger::init()
 {
   current_mask = 0;
-  return this->set_halt_mask(0xFFFFFFFF);
+  this->set_halt_mask(0xFFFFFFFF);
 }
 
-bool Target_cluster_ctrl_xtrigger::set_halt_mask(uint32_t mask)
+void Target_cluster_ctrl_xtrigger::set_halt_mask(uint32_t mask)
 {
   if (current_mask != mask) {
-    bool res = top->cable->access(true, cluster_ctrl_addr + 0x000038, 4, (char*)&mask);
-    if (res) {
-      current_mask = mask;
-    }
-    return res;
+    if (!top->cable->access(true, cluster_ctrl_addr + 0x000038, 4, (char*)&mask))
+      throw CableException("Target_cluster_ctrl_xtrigger::set_halt_mask() Error writing to 0x%08x", cluster_ctrl_addr + 0x000038);
+    current_mask = mask;
   }
-  return false;
 }
 
-bool Target_cluster_ctrl_xtrigger::get_halt_mask(uint32_t *mask) { 
-  *mask = this->current_mask;
-  return true;
+uint32_t Target_cluster_ctrl_xtrigger::get_halt_mask() { 
+  return this->current_mask;
 }
 
-bool Target_cluster_ctrl_xtrigger::get_halt_status(uint32_t *status)
+uint32_t Target_cluster_ctrl_xtrigger::get_halt_status()
 {
-  *status = 0;
-  return top->cable->access(true, cluster_ctrl_addr + 0x000028, 4, (char*)status);
+  uint32_t status = 0;
+  if (!top->cable->access(true, cluster_ctrl_addr + 0x000028, 4, (char*)&status))
+    throw CableException("Target_cluster_ctrl_xtrigger::get_halt_mask() Error writing to 0x%08x", cluster_ctrl_addr + 0x000028);
+  return status;
 }
 
 Target_cluster_power_bypass::Target_cluster_power_bypass(Gdb_server *top, uint32_t reg_addr, int bit)
@@ -111,7 +111,8 @@ Target_cluster_power_bypass::Target_cluster_power_bypass(Gdb_server *top, uint32
 bool Target_cluster_power_bypass::is_on()
 {
   uint32_t info = 0;
-  top->cable->access(false, reg_addr, 4, (char*)&info);
+  if (!top->cable->access(false, reg_addr, 4, (char*)&info))
+    throw CableException("Error reading from to 0x%08x", reg_addr);
   top->log->debug("Cluster power bypass 0x%08x\n", info);
   return (info >> bit) & 1;
 }
@@ -146,7 +147,6 @@ int Target_core::first_free_thread_id = 0;
 void Target_core::flush()
 {
   this->top->log->debug("Flushing core prefetch buffer (cluster: %d, core: %d)\n", this->get_cluster_id(), core_id);
-
   // Write back the value of NPC so that it triggers a flush of the prefetch buffer
   uint32_t npc;
   this->read(DBG_NPC_REG, &npc);
@@ -155,37 +155,38 @@ void Target_core::flush()
 
 
 
-bool Target_core::gpr_read_all(uint32_t *data)
+void Target_core::gpr_read_all(uint32_t *data)
 {
-  if (!is_on) return false;
+  if (!is_on) throw OffCoreAccessException();
   this->top->log->debug("Reading all registers (cluster: %d, core: %d)\n", this->get_cluster_id(), core_id);
 
   // Write back the valu
-  return top->cable->access(false, dbg_unit_addr + 0x0400, 32 * 4, (char*)data);
+  if (!top->cable->access(false, dbg_unit_addr + 0x0400, 32 * 4, (char*)data))
+    throw CableException("Error reading from to 0x%08x", dbg_unit_addr + 0x0400);
 }
 
 
 
-bool Target_core::gpr_read(unsigned int i, uint32_t *data)
+void Target_core::gpr_read(unsigned int i, uint32_t *data)
 {
-  if (!is_on) return false;
-  return this->read(0x0400 + i * 4, data);
+  if (!is_on) throw OffCoreAccessException();
+  this->read(0x0400 + i * 4, data);
 }
 
 
 
-bool Target_core::gpr_write(unsigned int i, uint32_t data)
+void Target_core::gpr_write(unsigned int i, uint32_t data)
 {
-  if (!is_on) return false;
-  return this->write(0x0400 + i * 4, data);
+  if (!is_on) throw OffCoreAccessException();
+  this->write(0x0400 + i * 4, data);
 }
 
 
-bool Target_core::ie_write(uint32_t data)
+void Target_core::ie_write(uint32_t data)
 {
-  if (!is_on) return false;
+  if (!is_on) return;
   top->log->print(LOG_DEBUG, "%d:%d -----> TRAP ENABLED\n", this->get_cluster_id(), core_id);
-  return this->write(DBG_IE_REG, data);
+  this->write(DBG_IE_REG, data);
 }
 
 bool Target_core::has_power_state_change()
@@ -222,57 +223,54 @@ void Target_core::set_power(bool is_on)
       // // core_id = hartid & 0x1f;
 
       // top->log->print(LOG_DEBUG, "Found a core with id %X (cluster: %d, core: %d)\n", hartid, this->get_cluster_id(), core_id);
-      is_on = this->ie_write(1<<3|1<<2); // traps on illegal instructions and ebrks
+      this->ie_write(1<<3|1<<2); // traps on illegal instructions and ebrks
       // if (!stopped) resume();
     } else {
       top->log->print(LOG_DEBUG, "Core %d:%d off\n", this->get_cluster_id(), core_id);
-      is_on = false;
     }
   }
 }
 
-bool Target_core::read(uint32_t addr, uint32_t* rdata)
+
+
+void Target_core::read(uint32_t addr, uint32_t* rdata)
 {
-  if (!is_on) return false;
+  if (!is_on) throw OffCoreAccessException();
   uint32_t offset = dbg_unit_addr + addr;
   bool res = top->cable->access(false, offset, 4, (char*)rdata);
   if (res) {
     top->log->detail("Reading register (addr: 0x%x, contents: 0x%08x)\n", offset, *rdata);
   } else {
-    top->log->error("Error reading register (addr: 0x%x)\n", offset);
+    throw CableException("Error reading register (addr: 0x%x)", offset);
   }
-  return res;
 }
 
 
 
-bool Target_core::write(uint32_t addr, uint32_t wdata)
+void Target_core::write(uint32_t addr, uint32_t wdata)
 {
-  if (!is_on) return false;
+  if (!is_on) throw OffCoreAccessException();
   uint32_t offset = dbg_unit_addr + addr;
   bool res = top->cable->access(true, offset, 4, (char*)&wdata);
   if (res) {
     top->log->detail("Writing register (addr: 0x%x, value: 0x%x)\n", offset, wdata);
   } else {
-    top->log->error("Error writing register (addr: 0x%x)\n", offset);
+    throw CableException("Error writing register (addr: 0x%x)", offset);
   }
-  return res;
 }
 
 
 
-bool Target_core::csr_read(unsigned int i, uint32_t *data)
+void Target_core::csr_read(unsigned int i, uint32_t *data)
 {
-  if (!is_on) return false;
   top->log->detail("Reading CSR at offset 0x%08x\n", i);
-  return this->read(0x4000 + i * 4, data);
+  this->read(0x4000 + i * 4, data);
 }
 
-bool Target_core::csr_write(unsigned int i, uint32_t data)
+void Target_core::csr_write(unsigned int i, uint32_t data)
 {
-  if (!is_on) return false;
   top->log->detail("Writing CSR at offset 0x%08x\n", i);
-  return this->write(0x4000 + i * 4, data);
+  this->write(0x4000 + i * 4, data);
 }
 
 
@@ -280,10 +278,7 @@ bool Target_core::is_stopped() {
   if (!is_on) return false;
 
   uint32_t data;
-  if (!this->read(DBG_CTRL_REG, &data)) {
-    fprintf(stderr, "debug_is_stopped: Reading from CTRL reg failed\n");
-    return false;
-  }
+  this->read(DBG_CTRL_REG, &data);
 
   this->stopped = data & 0x10000;
 
@@ -293,30 +288,23 @@ bool Target_core::is_stopped() {
 }
 
 
-bool Target_core::stop()
+void Target_core::stop()
 {
-  if (!is_on||this->stopped) return false;
+  if (!is_on||this->stopped) return;
 
   this->top->log->debug("Halting core (cluster: %d, core: %d, is_on: %d)\n", this->get_cluster_id(), core_id, is_on);
   uint32_t data;
-  if (!this->read(DBG_CTRL_REG, &data)) {
-    fprintf(stderr, "debug_is_stopped: Reading from CTRL reg failed\n");
-    return false;
-  }
+  this->read(DBG_CTRL_REG, &data);
 
   data |= 0x1 << 16;
-  if (!this->write(DBG_CTRL_REG, data)) {
-    fprintf(stderr, "debug_is_stopped: Writing to CTRL reg failed\n");
-    return false;
-  }
-  return true;
+  this->write(DBG_CTRL_REG, data);
 }
 
 
 
-bool Target_core::halt()
+void Target_core::halt()
 {
-  return stop();
+  stop();
 }
 
 
@@ -379,21 +367,17 @@ bool Target_core::actual_pc_read(unsigned int* pc)
   return true;
 }
 
-bool Target_core::read_hit(bool *is_hit, bool *is_sleeping)
+void Target_core::read_hit(bool *is_hit, bool *is_sleeping)
 {
-  if (!is_on) return false;
-
-  uint32_t hit;
-  if (this->read(DBG_HIT_REG, &hit)) {
-    *is_hit = step && ((hit & 0x1) == 0x1);
-    *is_sleeping = ((hit & 0x10) == 0x10);
-
-    return true;
-  } else {
+  if (!is_on){
     *is_hit = false; 
     *is_sleeping = false;
-    return false;
+    return;
   }
+  uint32_t hit;
+  this->read(DBG_HIT_REG, &hit);
+  *is_hit = step && ((hit & 0x1) == 0x1);
+  *is_sleeping = ((hit & 0x10) == 0x10);
 }
 
 uint32_t Target_core::get_cause()
@@ -401,10 +385,7 @@ uint32_t Target_core::get_cause()
   if (!is_on) return 0x1f;
 
   uint32_t cause;
-  if (!this->read(DBG_CAUSE_REG, &cause)){
-    top->log->debug("unable to read cause register\n");
-    return false;
-  }
+  this->read(DBG_CAUSE_REG, &cause);
 
   top->log->debug("core %d:%d stop cause %x\n", this->get_cluster_id(), this->get_core_id(), cause);
   return cause;
@@ -479,9 +460,7 @@ void Target_core::commit_resume()
 
   this->commit_step_mode();
   // clear hit register, has to be done before CTRL
-  if (!this->write(DBG_HIT_REG, 0)) {
-    top->log->error("Core %d:%d - unable to clear hit register\n", this->get_cluster_id(), this->get_core_id());
-  }
+  this->write(DBG_HIT_REG, 0);
 }
 
 
@@ -492,9 +471,7 @@ void Target_core::resume()
 
   this->top->log->debug("Resuming (cluster: %d, core: %d, step: %d)\n",  this->get_cluster_id(), core_id, step);
 
-  if (!this->write(DBG_CTRL_REG, step)) {
-    top->log->error("Core %d:%d - unable to write ctrl register\n", this->get_cluster_id(), this->get_core_id());
-  }
+  this->write(DBG_CTRL_REG, step);
 
   uint32_t test;
   this->read(DBG_CTRL_REG, &test);
@@ -623,8 +600,7 @@ void Target_cluster_common::flush()
 
   this->top->log->debug("Flushing cluster instruction cache (cluster: %d, is_on: %d)\n", cluster_id, is_on);
 
-  if (this->cache)
-    this->cache->flush();
+  if (this->cache) this->cache->flush();
 }
 
 
@@ -753,7 +729,8 @@ void Target_cluster_common::halt()
   uint32_t pc;
   for (auto &core: cores)
   {
-    core->actual_pc_read(&pc);
+    if (!core->actual_pc_read(&pc))
+      return;
 
     // If there is a breakpoint at the address of the actual program counter
     // it must have executed at the same time as a breakpoint on another
@@ -994,18 +971,18 @@ void Target::update_power()
   }
 }
 
-bool Target::mem_read(uint32_t addr, uint32_t length, char * buffer)
+void Target::mem_read(uint32_t addr, uint32_t length, char * buffer)
 {
-  bool ret = top->cable->access(false, addr, length, buffer);
-  top->log->detail("read memory (addr: 0x%08x, len: %d, ret: %d)\n", addr, length, ret);
-  return ret;
+  if (!top->cable->access(false, addr, length, buffer))
+    throw CableException("Error reading memory (addr: 0x%08x, len: %d)", addr, length);
+  top->log->detail("read memory (addr: 0x%08x, len: %d)\n", addr, length);
 }
 
-bool Target::mem_write(uint32_t addr, uint32_t length, char * buffer)
+void Target::mem_write(uint32_t addr, uint32_t length, char * buffer)
 {
-  bool ret = top->cable->access(true, addr, length, buffer);
-  top->log->detail("write memory (addr: 0x%08x, len: %d, ret: %d)\n", addr, length, ret);
-  return ret;
+  if(!top->cable->access(true, addr, length, buffer))
+    throw CableException("Error writing memory (addr: 0x%08x, len: %d)", addr, length);
+  top->log->detail("write memory (addr: 0x%08x, len: %d)\n", addr, length);
 }
 
 bool Target::check_mem_access(uint32_t addr, uint32_t length)

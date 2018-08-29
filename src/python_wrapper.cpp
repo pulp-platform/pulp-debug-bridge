@@ -208,10 +208,10 @@ extern "C" void cable_read(void *cable, unsigned int addr, int size, const char 
   adu->access(false, addr, size, (char *)data);
 }
 
-extern "C" void chip_reset(void *handler, bool active)
+extern "C" int chip_reset(void *handler, bool active)
 {
   Adv_dbg_itf *cable = (Adv_dbg_itf *)handler;
-  cable->chip_reset(active);
+  return cable->chip_reset(active);
 }
 
 extern "C" void jtag_reset(void *handler, bool active)
@@ -252,6 +252,7 @@ extern "C" void cable_unlock(void *handler)
 }
 
 static void init_sigint_handler(int) {
+  printf("sig int raised\n");
   raise(SIGTERM);
 }
 

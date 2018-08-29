@@ -74,6 +74,7 @@ class Ctype_cable(object):
 
         self.module.chip_reset.argtypes = \
             [ctypes.c_void_p, ctypes.c_bool]
+        self.module.chip_reset.restype = ctypes.c_bool
 
         self.module.jtag_reset.argtypes = \
             [ctypes.c_void_p, ctypes.c_bool]
@@ -147,7 +148,7 @@ class Ctype_cable(object):
         return result
 
     def chip_reset(self, value):
-        self.module.chip_reset(self.instance, value)
+        return self.module.chip_reset(self.instance, value)
 
     def jtag_reset(self, value):
         self.module.jtag_reset(self.instance, value)
@@ -185,7 +186,6 @@ class debug_bridge(object):
         self.gdb_handle = None
         self.cable_config = config.get('**/debug_bridge/cable')
         self.is_started = None
-        self.do_exit = False
         # Load the library which provides generic services through
         # python / C++ bindings
         # The library is located in the same directory as this file
@@ -210,6 +210,8 @@ class debug_bridge(object):
         self.module.bridge_reqloop_open.restype = ctypes.c_void_p
 
         self.module.bridge_reqloop_close.argtypes = [ctypes.c_void_p, ctypes.c_int]
+
+        self.module.bridge_reqloop_set_poll_delay.argtypes = [ctypes.c_void_p, ctypes.c_int]
 
         self.module.bridge_init(config.dump_to_string().encode('utf-8'), verbose)
 
@@ -409,7 +411,7 @@ class debug_bridge(object):
 
         return 0
 
-    def is_ioloop_active():
+    def is_ioloop_active(self):
         return self.ioloop_handle is not None
 
     def reqloop(self):
@@ -478,8 +480,7 @@ class debug_bridge(object):
             return self.encode_bytes("E00", buf, buf_len)
 
     def qrcmd_shutdown(self, cmd, buf, buf_len):
-        self.do_exit = True
-        self.module.gdb_server_close(self.gdb_handle, 1)
+        self.close()
         return self.encode_bytes("OK", buf, buf_len)
 
     def hex_string(self, s):
@@ -578,14 +579,24 @@ class debug_bridge(object):
 
                 return self.qrcmd_cb(cmd[1], buf, buf_len)
             # disabled for the moment since this causes issues with breakpoints for an unknown reason
-            # elif cmd.startswith("__gdb_tgt_res"):
-            #     if self.ioloop_handle is not None:
-            #         self.module.bridge_ioloop_set_poll_delay(self.ioloop_handle, 1)
-            #         return 1
-            # elif cmd.startswith("__gdb_tgt_hlt"):
-            #     if self.ioloop_handle is not None:
-            #         self.module.bridge_ioloop_set_poll_delay(self.ioloop_handle, 0)
-            #         return 1
+            elif cmd.startswith("__gdb_tgt_res"):
+                ret = 0
+                if self.ioloop_handle is not None:
+                    self.module.bridge_ioloop_set_poll_delay(self.ioloop_handle, 1)
+                    ret = 1
+                if self.reqloop_handle is not None:
+                    self.module.bridge_reqloop_set_poll_delay(self.reqloop_handle, 1)
+                    ret = 1
+                return ret
+            elif cmd.startswith("__gdb_tgt_hlt"):
+                ret = 0
+                if self.ioloop_handle is not None:
+                    self.module.bridge_ioloop_set_poll_delay(self.ioloop_handle, 0)
+                    ret = 1
+                if self.reqloop_handle is not None:
+                    self.module.bridge_reqloop_set_poll_delay(self.reqloop_handle, 0)
+                    ret = 1
+                return ret
             elif cmd.startswith("__is_started"):
                 return self.is_started and 1 or 0
             elif cmd.startswith("__start_target"):
@@ -612,21 +623,37 @@ class debug_bridge(object):
             self.capabilities_str)
         return 0
 
+    def close(self):
+        if self.gdb_handle is not None:
+            self.module.gdb_server_close(self.gdb_handle, 1)
+            return
+        if self.ioloop_handle is not None:
+            self.module.bridge_ioloop_close(self.ioloop_handle, 1)
+            return
+        if self.reqloop_handle is not None:
+            self.module.bridge_reqloop_close(self.reqloop_handle, 1)
+
     def wait(self):
         exiting = 0
         if self.gdb_handle is not None:
+            self.log(1, "Waiting for RSP server to close")
             self.module.gdb_server_close(self.gdb_handle, exiting)
             exiting = 1
             self.gdb_handle = None
+            self.log(1, "RSP server exited")
 
         if self.ioloop_handle is not None:
-            res = self.module.bridge_ioloop_close(self.ioloop_handle, exiting)
+            self.log(1, "Waiting for ioloop to close")
+            self.module.bridge_ioloop_close(self.ioloop_handle, exiting)
             exiting = 1
             self.ioloop_handle = None
+            self.log(1, "Ioloop exited")
 
         if self.reqloop_handle is not None:
+            self.log(1, "Waiting for reqloop to close")
             self.module.bridge_reqloop_close(self.reqloop_handle, exiting)
             self.reqloop_handle = None
+            self.log(1, "Reqloop exited")
 
         self.log(1, "Wait is exiting")
 
