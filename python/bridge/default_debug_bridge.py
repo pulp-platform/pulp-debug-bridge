@@ -187,7 +187,7 @@ class debug_bridge(object):
         return self.cable
 
     def load_jtag(self):
-        raise Exception('JTAG boot is not supported on this target')
+        return self.load_default()
 
     def load_jtag_hyper(self):
         raise Exception('JTAG boot is not supported on this target')
