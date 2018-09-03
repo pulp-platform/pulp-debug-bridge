@@ -33,7 +33,7 @@
 class Jtag_proxy : public Cable {
   public:
 
-    Jtag_proxy(Log* log);
+    Jtag_proxy(Log* log, cable_cb_t cable_state_cb);
     ~Jtag_proxy() = default;
     
     bool connect(js::config *config);
@@ -60,5 +60,5 @@ class Jtag_proxy : public Cable {
 
     bool proxy_stream(char* instream, char* outstream, unsigned int n_bits, bool last, int bit);
     Log * log;
-
+    cable_cb_t cable_state_cb;
 };

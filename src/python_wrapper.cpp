@@ -141,7 +141,7 @@ extern "C" int get_max_log_level()
   return LOG_LEVEL_MAX;
 }
 
-extern "C" void *cable_new(const char *config_string, const char *system_config_string)
+extern "C" void *cable_new(const char *config_string, const char *system_config_string, cable_cb_t state_cb)
 {
   const char *cable_name = NULL;
   js::config *config = NULL;
@@ -167,7 +167,7 @@ extern "C" void *cable_new(const char *config_string, const char *system_config_
 #ifdef __USE_FTDI__
     Ftdi::FTDIDeviceID id = Ftdi::Olimex;
     if (strcmp(cable_name, "ftdi@digilent") == 0) id = Ftdi::Digilent;
-    Adv_dbg_itf *adu = new Adv_dbg_itf(system_config, new Log("FTDI"), new Ftdi(system_config, s_log, id));
+    Adv_dbg_itf *adu = new Adv_dbg_itf(system_config, new Log("FTDI"), new Ftdi(system_config, s_log, id, state_cb));
     if (!adu->connect(config)) return NULL;
     int tap = 0;
     if (config->get("tap")) tap = config->get("tap")->get_int();
@@ -180,7 +180,7 @@ extern "C" void *cable_new(const char *config_string, const char *system_config_
   }
   else if (strcmp(cable_name, "jtag-proxy") == 0)
   {
-    Adv_dbg_itf *adu = new Adv_dbg_itf(system_config, new Log("JPROX"), new Jtag_proxy(s_log));
+    Adv_dbg_itf *adu = new Adv_dbg_itf(system_config, new Log("JPROX"), new Jtag_proxy(s_log, state_cb));
     if (!adu->connect(config)) return NULL;
     int tap = 0;
     if (config->get("tap")) tap = config->get("tap")->get_int();
@@ -283,13 +283,24 @@ extern "C" void bridge_init(const char *config_string, int log_level)
 
 extern "C" void *gdb_server_open(void *cable, int socket_port, cmd_cb_t cmd_cb, const char * capabilities)
 {
-  return (void *)new Gdb_server(new Log("GDB_SRV"), (Cable *)cable, system_config, socket_port, cmd_cb, capabilities);
+  try {
+    return (void *)new Gdb_server(new Log("GDB_SRV"), (Cable *)cable, system_config, socket_port, cmd_cb, capabilities);
+  } catch (CableException e) {
+    s_log->error("error initializing GDB server %s\n", e.what());
+    return NULL;
+  }
 }
 
 extern "C" void gdb_server_close(void *arg, int kill)
 {
   Gdb_server *server = (Gdb_server *)arg;
   server->stop(kill);
+}
+
+extern "C" void gdb_server_abort(void *arg)
+{
+  Gdb_server *server = (Gdb_server *)arg;
+  server->abort();
 }
 
 extern "C" int gdb_send_str(void *arg, const char * str)

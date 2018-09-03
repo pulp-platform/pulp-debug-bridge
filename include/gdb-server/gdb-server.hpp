@@ -36,6 +36,7 @@
 #include <thread>
 #include <unordered_map>
 #include <exception>
+#include <atomic>
 
 #include "cable.hpp"
 #include "json.hpp"
@@ -117,6 +118,7 @@ public:
   Gdb_server(Log *log, Cable *cable, js::config *config, int socket_port,
     cmd_cb_t cmd_cb, const char * capabilities);
   int stop(bool kill);
+  void abort();
   void print(const char *format, ...);
   int target_is_started();
   void start_target();
@@ -308,22 +310,23 @@ class Rsp {
   public:
     Rsp(Gdb_server *top, int port);
 
-
-    bool open();
-    void close(bool wait_finished);
+    bool start();
+    void stop(bool wait_finished);
+    void abort();
     void init();
     void wait_finished();
-    void set_cable_error() { cable_error = true; }
 
     class Client
     {
+      friend Rsp;
       public:
         Client(Rsp *rsp, Tcp_socket::tcp_socket_ptr_t client);
         void stop();
         bool is_running() { return running; };
-        bool is_worker_thread( std::thread::id id) { return thread==nullptr?false:id==thread->get_id(); }
         bool send_str(const char* data);
       private:
+        void await_worker_finished();
+        bool is_worker_thread( std::thread::id id) { return thread==nullptr?false:id==thread->get_id(); }
         bool remote_capability(const char * name) {
           Rsp_capabilities::const_iterator it = remote_caps.find (name);
           return it != remote_caps.end() && it->second.get()->is_supported();
@@ -364,7 +367,10 @@ class Rsp {
         bool bp_insert(char* data, size_t len);
         bool bp_remove(char* data, size_t len);
 
-        bool running = true;
+        std::atomic<bool> running{false};
+        std::mutex m_rsp_worker;
+        bool aborted = false;
+
         Rsp_capabilities remote_caps;
         Gdb_server *top;
 
@@ -382,9 +388,13 @@ class Rsp {
 
 
   private:
+    void stop_locked(std::unique_lock<std::mutex> lk, bool wait_finished);
+    void cleanup_client();
+    void lock_and_clientup_client();
     void client_connected(Tcp_socket::tcp_socket_ptr_t client);
     void client_disconnected(Tcp_socket::tcp_socket_ptr_t client);
     void rsp_client_finished();
+    void notify_finished();
     void resume_target(bool step=false, int tid=-1);
     void halt_target();
     void indicate_halt();
@@ -397,11 +407,13 @@ class Rsp {
 
     int m_thread_init;
     int port;
-    std::mutex m_finished, m_rsp_client;
-    std::condition_variable cv_finished, cv_rsp_client;
-    int conn_cnt=0;
+    std::mutex m_rsp_listener;
+    std::condition_variable cv_rsp_listener, cv_rsp_client;
+    bool listener_stopping = false;
+    int conn_cnt = 0;
     bool aborted = false;
-    bool cable_error = false;
+    bool running = false;
+    bool stopped_by_worker = true;
 };
 
 #endif

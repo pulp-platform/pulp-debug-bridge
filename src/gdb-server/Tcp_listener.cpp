@@ -145,14 +145,15 @@ Tcp_socket::tcp_socket_ptr_t Tcp_client::connect(const char * address, int port)
   return client;
 }
 
-Tcp_listener::Tcp_listener(Log *log, port_t port, Tcp_socket::socket_cb_t connected_cb, Tcp_socket::socket_cb_t disconnected_cb)
-  : Tcp_socket_owner(log, connected_cb, disconnected_cb), port(port)
+Tcp_listener::Tcp_listener(Log *log, port_t port, Tcp_socket::socket_cb_t connected_cb, Tcp_socket::socket_cb_t disconnected_cb, listener_state_cb_t l_cb)
+  : Tcp_socket_owner(log, connected_cb, disconnected_cb), port(port), l_cb(l_cb)
 {
   log->debug("create listener conn_cb: %s disconn_cb: %s\n", (connected_cb==NULL?"no":"yes"), (disconnected_cb==NULL?"no":"yes"));
 }
 
 void Tcp_listener::listener_routine()
 {
+  l_cb(LISTENER_STARTED);
   while(is_running)
   {
     socket_t socket_client;
@@ -168,7 +169,7 @@ void Tcp_listener::listener_routine()
     FD_SET(socket_in, &set);
 
     ret = select(socket_in+1, &set, NULL, NULL, &tv);
-
+    log->debug("select returned %d\n", ret);
     if (ret > 0) {
       socket_client = INVALID_SOCKET;
       if((socket_client = accept(socket_in, NULL, NULL)) == INVALID_SOCKET)
@@ -193,6 +194,7 @@ void Tcp_listener::listener_routine()
       if (c_cb) {
         log->debug("Tcp_listener: call connected callback\n");
         c_cb(client);
+        log->debug("Tcp_listener: connected callback returns (is_running: %d)\n", is_running);
       } else {
         log->debug("Tcp_listener: no connected callback - closing socket\n");
       }
@@ -205,6 +207,7 @@ void Tcp_listener::listener_routine()
     }
   }
   log->debug("listener thread finished\n");
+  l_cb(LISTENER_STOPPED);
 }
 
 void Tcp_listener::client_disconnected(Tcp_socket *)
@@ -215,6 +218,11 @@ void Tcp_listener::client_disconnected(Tcp_socket *)
   }
 }
 
+void Tcp_listener::listener_state_change(listener_state_t state)
+{
+  if (l_cb) l_cb(state);
+}
+
 void Tcp_listener::stop()
 {
   if (this->is_stopping) return;
@@ -222,13 +230,17 @@ void Tcp_listener::stop()
   log->debug("Tcp_listener stopped (running %d)\n", this->is_running);
   if (this->is_running) {
     if (client) {
+    log->debug("Close client\n");
       client->close();
     }
     this->is_running = false;
     ::close(socket_in);
+    log->debug("Join worker\n");
     listener_thread->join();
   }
+    log->debug("deinit\n");
   Tcp_socket_owner::socket_deinit();
+    log->debug("done\n");
   this->is_stopping = false;
 }
 

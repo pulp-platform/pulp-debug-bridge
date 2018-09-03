@@ -20,7 +20,7 @@
 
 #include "jtag-proxy.hpp"
 
-Jtag_proxy::Jtag_proxy(Log* log) : log(log)
+Jtag_proxy::Jtag_proxy(Log* log, cable_cb_t cable_state_cb) : log(log), cable_state_cb(cable_state_cb)
 {
   m_client = new Tcp_client(
     log,
@@ -32,11 +32,13 @@ Jtag_proxy::Jtag_proxy(Log* log) : log(log)
 void Jtag_proxy::client_connected(Tcp_socket::tcp_socket_ptr_t)
 {
   log->user("JTAG Proxy: Connected to (%s:%d)\n", m_server, m_port);
+  cable_state_cb(CABLE_CONNECTED);
 }
 
 void Jtag_proxy::client_disconnected(Tcp_socket::tcp_socket_ptr_t)
 {
   log->user("JTAG Proxy: Disconnected from (%s:%d)\n", m_server, m_port);
+  cable_state_cb(CABLE_DISCONNECTED);
 }
 
 bool Jtag_proxy::connect(js::config *config)

@@ -57,13 +57,15 @@ class XferErrorException(DebugBridgeException):
 
 class Ctype_cable(object):
 
-    def __init__(self, module, config, system_config):
+    def __init__(self, top, module, config, system_config):
 
         self.module = module
         self.gdb_handle = None
 
         # Register entry points with appropriate arguments
-        self.module.cable_new.argtypes = [ctypes.c_char_p, ctypes.c_char_p]
+        self.module.cable_cb_t = ctypes.CFUNCTYPE(None, ctypes.c_int)
+
+        self.module.cable_new.argtypes = [ctypes.c_char_p, ctypes.c_char_p, self.module.cable_cb_t]
         self.module.cable_new.restype = ctypes.c_void_p
 
         self.module.cable_write.argtypes = \
@@ -114,6 +116,8 @@ class Ctype_cable(object):
 
         self.module.gdb_server_close.argtypes = [ctypes.c_void_p, ctypes.c_int]
 
+        self.module.gdb_server_abort.argtypes = [ctypes.c_void_p]
+
         self.module.gdb_server_refresh_target.argtypes = [ctypes.c_void_p]
 
         self.module.get_max_log_level.restype = ctypes.c_int
@@ -123,12 +127,21 @@ class Ctype_cable(object):
         if config is not None:
             config_string = config.dump_to_string().encode('utf-8')
 
-        self.instance = self.module.cable_new(config_string, system_config.dump_to_string().encode('utf-8'))
+        def cmd_cb_hook(state):
+            top.log(0, "Cable state change {}".format(state==0 and "connected" or "disconnected"))
+            if state == 1 and hasattr(self, "disconnected_cb"):
+                self.disconnected_cb()
+
+        self.cb_hook = self.module.cable_cb_t(cmd_cb_hook)
+        self.instance = self.module.cable_new(config_string, system_config.dump_to_string().encode('utf-8'), self.cb_hook)
 
         if self.instance is None:
             raise CableCreationException('Failed to initialize cable with error: ' +
                 self.module.bridge_get_error().decode('utf-8'))
 
+
+    def call_if_disconnected(self, fn):
+        self.disconnected_cb = fn
 
     def get_instance(self):
         return self.instance
@@ -231,7 +244,8 @@ class debug_bridge(object):
 
     def __mount_ctype_cable(self):
 
-        self.cable = Ctype_cable(module = self.module, config = self.cable_config, system_config = self.config)
+        self.cable = Ctype_cable(top=self, module = self.module, config = self.cable_config, system_config = self.config)
+        self.cable.call_if_disconnected(self.abort)
 
     def log(self, level, *args):
         if self.verbose >= level:
@@ -622,6 +636,12 @@ class debug_bridge(object):
             self.cmd_func_ptr,
             self.capabilities_str)
         return 0
+
+    def abort(self):
+        if self.gdb_handle is not None:
+            self.module.gdb_server_abort(self.gdb_handle)
+            return
+        self.close()
 
     def close(self):
         if self.gdb_handle is not None:

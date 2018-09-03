@@ -32,7 +32,7 @@ Gdb_server::Gdb_server(Log *log, Cable *cable, js::config *config, int socket_po
 
   rsp = new Rsp(this, socket_port);
 
-  if (!rsp->open()) throw std::logic_error("Unable to open RSP server");
+  if (!rsp->start()) throw std::logic_error("Unable to start RSP server");
 }
 
 int Gdb_server::target_is_started() {
@@ -62,10 +62,19 @@ int Gdb_server::stop(bool kill)
 {
   if (rsp != NULL)
   {
-    rsp->close(!kill);
+    rsp->stop(!kill);
     rsp = NULL;
   }
   return 1;
+}
+
+void Gdb_server::abort()
+{
+  if (rsp != NULL)
+  {
+    rsp->abort();
+    rsp = NULL;
+  }
 }
 
 void Gdb_server::print(const char *format, ...)

@@ -56,7 +56,7 @@ class Ftdi : public Cable {
       Digilent,
     };
 
-    Ftdi(js::config *config, Log* log, FTDIDeviceID id);
+    Ftdi(js::config *config, Log* log, FTDIDeviceID id, cable_cb_t cable_state_cb);
     ~Ftdi();
 
     bool connect(js::config *config);
@@ -82,6 +82,8 @@ class Ftdi : public Cable {
       device_desc(int vid, int pid, int index) : vid(vid), pid(pid), index(index) {}
       device_desc(int vid, int pid) : vid(vid), pid(pid), index(0) {}
     };
+
+    void fatal_error(const char *str, ...);
 
     bool set_bit_value(int bit, int value);
     bool set_bit_direction(int bit, int isout);
@@ -116,7 +118,8 @@ class Ftdi : public Cable {
     unsigned int bits_value;
     unsigned int bits_direction;
     js::config *config;
-
+    cable_cb_t cable_state_cb;
+    cable_state_t current_state = CABLE_DISCONNECTED;
 };
 
 #endif

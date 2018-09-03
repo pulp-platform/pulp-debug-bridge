@@ -40,7 +40,7 @@
 #define INT_2_PTR(__addr) (reinterpret_cast<std::uintptr_t>((size_t)__addr))
 
 #define DEFAULT_LOOP_DELAY 50000
-#define DEFAULT_SLOW_LOOP_DELAY 100000 * 1000
+#define DEFAULT_SLOW_LOOP_DELAY 250000
 
 class ReqloopCableException: public std::exception
 {

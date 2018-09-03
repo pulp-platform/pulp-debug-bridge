@@ -120,15 +120,22 @@ class Tcp_client : public Tcp_socket_owner {
     void client_disconnected(Tcp_socket * socket);
 };
 
+typedef enum {
+  LISTENER_STARTED = 0,
+  LISTENER_STOPPED = 1
+} listener_state_t;
+
 class Tcp_listener : public Tcp_socket_owner {
 public:
-  Tcp_listener(Log *log, port_t port, Tcp_socket::socket_cb_t connected_cb, Tcp_socket::socket_cb_t disconnected_cb);
+  typedef std::function<void(listener_state_t)> listener_state_cb_t;
+  Tcp_listener(Log *log, port_t port, Tcp_socket::socket_cb_t connected_cb, Tcp_socket::socket_cb_t disconnected_cb, listener_state_cb_t l_cb);
   virtual ~Tcp_listener() {}
   bool start();
   void stop();
 
 private:
   void client_disconnected(Tcp_socket * socket);
+  void listener_state_change(listener_state_t state);
   void listener_routine();
 
   port_t port;
@@ -136,6 +143,7 @@ private:
   bool is_stopping = false;
   Tcp_socket::tcp_socket_ptr_t client;
   std::thread *listener_thread;
+  listener_state_cb_t l_cb;
 };
 
 #endif

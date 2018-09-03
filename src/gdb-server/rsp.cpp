@@ -59,47 +59,48 @@ void Rsp::init()
 void Rsp::client_connected(Tcp_socket::tcp_socket_ptr_t client)
 {
   top->log->user("RSP: client connected\n");
+  {
+    std::unique_lock<std::mutex> lk(m_rsp_listener);
 
-  // Make sure target is halted
-  this->halt_target();
-  this->client = std::make_shared<Rsp::Client>(this, client);
+    // Make sure target is halted
+    this->halt_target();
+    this->client = std::make_shared<Rsp::Client>(this, client);
+  }
 
   // hang the listener until the client stops (i.e. gdb session completed)
+  // this is safe outside the mutex since the client protects itself
+  this->client->await_worker_finished();
+
+  top->log->user("RSP: client disconnected (aborted: %d)\n", this->aborted);
+
+  this->cleanup_client();
+
+  if (!this->aborted)
   {
-    std::unique_lock<std::mutex> lk(m_rsp_client);
-    cv_rsp_client.wait(lk, [this]{return !this->client->is_running(); });
+    top->log->debug("RSP: clear breakpoints\n");
+    // clear the breakpoints
+    top->bkp->clear();
+
+    // Start everything
+    top->log->debug("RSP: resume target\n");
+    this->resume_target(false);
   }
 
-  top->log->user("RSP: client disconnected\n");
-
-  if (!this->cable_error) {
-    this->halt_target();
-
-    // If we're not aborted leave the target running when nothing is attached
-    if (!this->aborted) {
-      top->log->debug("RSP: clear breakpoints\n");
-      // clear the breakpoints
-      top->bkp->clear();
-
-      // Start everything
-      top->log->debug("RSP: resume target\n");
-      this->resume_target(false);
-    }
+  if (this->stopped_by_worker)
+  {
+      this->stop(false);
   }
+}
 
+void Rsp::cleanup_client()
+{
   top->log->debug("RSP: clean up client\n");
-
-  // Clean up the client
-  this->client->stop();
-  top->log->debug("RSP: delete client\n");
-  this->client = nullptr;
-
-  top->log->debug("RSP: notify finished\n");
-  {
-    std::unique_lock<std::mutex> lk(m_finished);
-    cv_finished.notify_one();
+  if (this->client) {
+    top->log->debug("RSP: delete client\n");
+    this->aborted = this->aborted || this->client->aborted;
+    this->client->stop();
+    this->client = nullptr;
   }
-  top->log->debug("RSP: finished notified\n");
 }
 
 void Rsp::client_disconnected(Tcp_socket::tcp_socket_ptr_t)
@@ -107,51 +108,57 @@ void Rsp::client_disconnected(Tcp_socket::tcp_socket_ptr_t)
   top->log->user("RSP: TCP client disconnected\n");
 }
 
-void Rsp::rsp_client_finished()
+void Rsp::abort()
 {
-  top->log->print(LOG_INFO, "RSP: client finished!\n");
-  // indicate that the client has finished
-  std::unique_lock<std::mutex> lk(m_rsp_client);
-  conn_cnt++;
-  cv_rsp_client.notify_one();
+  top->log->debug("RSP: Aborted!\n");
+  this->aborted = true;
+  this->stop(false);
 }
 
-void Rsp::wait_finished()
+void Rsp::stop(bool wait_finished)
 {
-  std::unique_lock<std::mutex> lk(m_finished);
-  cv_finished.wait(lk, [this]{ return this->aborted; });
-  top->log->debug("RSP: finished waiting for RSP to abort\n");
+  {
+    std::unique_lock<std::mutex> lk(m_rsp_listener);
+    top->log->debug("RSP: stop (wait_finished: %d)\n", wait_finished);
+    if (client && client->is_worker_thread(std::this_thread::get_id())) {
+      assert(!wait_finished); // wait_finished cannot be true if we are called from the RSP worker thread
+      stopped_by_worker = true;
+      return;
+    }
+    if (wait_finished) {
+      top->log->debug("RSP: Wait for RSP server to finish\n");
+      cv_rsp_listener.wait(lk, [this]{ return !this->running; });
+      top->log->debug("RSP: RSP server is finished\n");
+    }
+    if (client) {
+      client->stop();
+    }
+    if (listener) {
+      listener_stopping = true;
+      listener->stop();
+      listener_stopping = false;
+      delete listener;
+      listener = NULL;
+    }
+    running = false;
+  }
+  cv_rsp_listener.notify_all();
 }
 
-void Rsp::close(bool wait_finished)
-{
-  if (this->client && this->client->is_worker_thread(std::this_thread::get_id())) {
-    assert(!wait_finished); // wait_finished cannot be true if we are called from the RSP worker thread
-    this->aborted = true;
-    return;
-  }
-  if (wait_finished) {
-    top->log->debug("RSP: Wait for RSP client to finish\n");
-    this->wait_finished();
-    top->log->debug("RSP: RSP client is finished\n");
-  }
-  if (this->client) {
-    client->stop();
-  }
-  if (this->listener) {
-    listener->stop();
-    delete listener;
-    listener = NULL;
-  }
-}
 
-
-bool Rsp::open() {
+bool Rsp::start() {
+  std::lock_guard<std::mutex> lk(m_rsp_listener);
+  running = true;
+  stopped_by_worker = false;
   listener = new Tcp_listener(
     this->top->log,
     port,
     [this](Tcp_socket::tcp_socket_ptr_t client) { return this->client_connected(client); }, 
-    [this](Tcp_socket::tcp_socket_ptr_t client) { return this->client_disconnected(client); }
+    [this](Tcp_socket::tcp_socket_ptr_t client) { return this->client_disconnected(client); },
+    [this](listener_state_t state) {
+      this->top->log->debug("RSP: Listener status %d stopping %d\n", state, listener_stopping);
+      if (!listener_stopping&&state == LISTENER_STOPPED) this->stop(false);
+    }
   );
   return listener->start();
 }
@@ -198,56 +205,69 @@ Rsp::Client::Client(Rsp *rsp, Tcp_socket::tcp_socket_ptr_t client) : top(rsp->to
   thread = new std::thread(&Rsp::Client::client_routine, this);
 }
 
+void::Rsp::Client::await_worker_finished()
+{
+  // potentially multiple threads could call this so protect
+  top->log->debug("RSP await_worker_finished\n");
+  std::unique_lock<std::mutex> lk(m_rsp_worker);
+  top->log->debug("RSP passed mutex\n");
+  if (thread) {
+    if (thread->joinable()) {
+      top->log->debug("RSP client joining\n");
+      thread->join();
+    }
+    thread = NULL;
+  }
+}
+
 void Rsp::Client::stop()
 {
-  top->log->debug("RSP client stopping\n");
-  this->client->close();
+  if (running.exchange(false)) {
+    top->log->debug("RSP client stopping\n");
+    this->client->close();
+  }
   top->log->debug("RSP client joining\n");
-  thread->join();
+  this->await_worker_finished();
   top->log->debug("RSP client joined\n");
 }
 
 
-
 void Rsp::Client::client_routine()
 {
-    while(running && !rsp->aborted)
-    {
-      char pkt[PACKET_MAX_LEN];
-      size_t len;
+  running = true;
+  while(running)
+  {
+    char pkt[PACKET_MAX_LEN];
+    size_t len;
 
-      len = this->get_packet(pkt, (size_t) PACKET_MAX_LEN);
+    len = this->get_packet(pkt, (size_t) PACKET_MAX_LEN);
 
-      running = len > 0;
+    if (len <= 0) {
+      break;
+    }
 
-      if (running && !rsp->aborted) {
-        try {
-          running = this->decode(pkt, len);
-        } catch (CableException e) {
-          top->log->error("Cable error - %s - terminating server\n", e.what());
-          rsp->aborted = true;
-          rsp->set_cable_error();
-        } catch (OffCoreAccessException e) {
-          top->log->error("Debugger attempted to access an off core - terminating server\n");
-          rsp->aborted = true;
-          rsp->set_cable_error();
-        } catch (std::exception e) {
-          top->log->error("Unknown exception - %s - terminating server\n", e.what());
-          rsp->aborted = true;
-          rsp->set_cable_error();
-        }
-        if (!running) {
-          client->close();
-        }
+    if (running) {
+      try {
+        if(!this->decode(pkt, len)) break;
+      } catch (CableException e) {
+        top->log->error("Cable error - %s - terminating connection\n", e.what());
+        this->aborted = true;
+        break;
+      } catch (OffCoreAccessException e) {
+        top->log->error("Debugger attempted to access an off core - terminating connection\n");
+        this->aborted = true;
+        break;
+      } catch (std::exception e) {
+        top->log->error("Unknown exception - %s - terminating connection\n", e.what());
+        this->aborted = true;
+        break;
       }
     }
-  // close the connection when aborted
-  if (running) {
-    client->close();
-    running = false;
+  }
+  if (running.exchange(false)) {
+    this->client->close();
   }
   top->log->debug("RSP client routine finished\n");
-  rsp->rsp_client_finished();
 }
 
 

@@ -49,6 +49,7 @@
 #include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdarg.h>
 #include <string.h>
 #include <unistd.h>
 
@@ -75,7 +76,7 @@
 
 //-----------------------------------------------------------------------------
 
-Ftdi::Ftdi(js::config *config, Log* log, FTDIDeviceID id) : log (log), m_id (id), config(config)
+Ftdi::Ftdi(js::config *config, Log* log, FTDIDeviceID id, cable_cb_t cable_state_cb) : log (log), m_id (id), config(config), cable_state_cb(cable_state_cb)
 {
   // add all our known devices to the map
   m_descriptors[Olimex].push_back(device_desc(0x15ba, 0x002a));
@@ -92,6 +93,18 @@ Ftdi::~Ftdi()
 
   if (m_params.send_buf) free(m_params.send_buf);
   if (m_params.recv_buf) free(m_params.recv_buf);
+}
+
+void Ftdi::fatal_error(const char *str, ...)
+{
+  va_list va;
+  va_start(va, str);
+  log->print(LOG_ERROR, str, va);
+  va_end(va);
+  if (current_state == CABLE_CONNECTED) {
+    current_state = CABLE_DISCONNECTED;
+    if (cable_state_cb) cable_state_cb(CABLE_DISCONNECTED);
+  }
 }
 
 bool
@@ -242,7 +255,8 @@ Ftdi::connect(js::config *config)
   }
 
   flush();
-
+  current_state = CABLE_CONNECTED;
+  cable_state_cb(CABLE_CONNECTED);
   return true;
 
 fail:
@@ -261,7 +275,7 @@ bool Ftdi::purge()
   m_params.recv_read_idx  = 0;
   ret = ftdi_usb_purge_buffers(&m_ftdic);
   if (ret < 0) {
-    log->warning("ft2232: ftdi_usb_purge_buffers() failed - %s\n", ftdi_get_error_string(&m_ftdic));
+    fatal_error("ft2232: ftdi_usb_purge_buffers() failed - %s\n", ftdi_get_error_string(&m_ftdic));
     return false;
   }
   return true;
@@ -312,13 +326,13 @@ Ftdi::ft2232_seq_purge(int /* purge_rx */, int /* purge_tx */) {
 
   ret = ftdi_usb_purge_buffers(&m_ftdic);
   if (ret < 0) {
-    log->warning("ft2232: ftdi_usb_purge_buffers() failed - %s\n", ftdi_get_error_string(&m_ftdic));
+    fatal_error("ft2232: ftdi_usb_purge_buffers() failed - %s\n", ftdi_get_error_string(&m_ftdic));
     return -1;
   }
 
   ret = ftdi_read_data(&m_ftdic, &buf, 1);
   if (ret < 0) {
-    log->warning("ft2232: ftdi_read_data() failed - %s\n", ftdi_get_error_string(&m_ftdic));
+    fatal_error("ft2232: ftdi_read_data() failed - %s\n", ftdi_get_error_string(&m_ftdic));
     return -1;
   }
 
@@ -328,12 +342,12 @@ Ftdi::ft2232_seq_purge(int /* purge_rx */, int /* purge_tx */) {
 int
 Ftdi::ft2232_seq_reset() {
   if (ftdi_usb_reset(&m_ftdic) < 0) {
-    log->warning("ft2232: ftdi_usb_reset() failed - %s\n", ftdi_get_error_string(&m_ftdic));
+    fatal_error("ft2232: ftdi_usb_reset() failed - %s\n", ftdi_get_error_string(&m_ftdic));
     return -1;
   }
 
   if(ft2232_seq_purge(1, 1) < 0) {
-    log->warning("ft2232: Could not purge\n");
+    fatal_error("ft2232: Could not purge\n");
     return -1;
   }
 
@@ -349,7 +363,7 @@ Ftdi::flush() {
     return 0;
 
   if ((xferred = ftdi_write_data(&m_ftdic, (uint8_t*)m_params.send_buf, m_params.send_buffered)) < 0) {
-    log->warning("ft2232: ftdi_write_data() failed - %s (%d)\n", ftdi_get_error_string(&m_ftdic), xferred);
+    fatal_error("ft2232: ftdi_write_data() failed - %s (%d)\n", ftdi_get_error_string(&m_ftdic), xferred);
     return -1;
   }
 
@@ -374,7 +388,7 @@ Ftdi::flush() {
     while (recvd == 0) {
       recvd = ftdi_read_data(&m_ftdic, (uint8_t*)&(m_params.recv_buf[m_params.recv_write_idx]), m_params.to_recv);
       if (recvd < 0)
-        log->warning("Error from ftdi_read_data() - %s (%d)\n", ftdi_get_error_string(&m_ftdic), recvd);
+        fatal_error("Error from ftdi_read_data() - %s (%d)\n", ftdi_get_error_string(&m_ftdic), recvd);
     }
 
     if ((unsigned int) recvd < m_params.to_recv)
@@ -425,7 +439,7 @@ Ftdi::ft2232_read(char* buf, int len) {
     while (recvd == 0) {
       recvd = ftdi_read_data(&m_ftdic, (uint8_t*)&(buf[cpy_len]), len);
       if (recvd < 0)
-        log->warning("ft2232: Error from ftdi_read_data() - %s (%d)\n", ftdi_get_error_string(&m_ftdic), recvd);
+        fatal_error("ft2232: Error from ftdi_read_data() - %s (%d)\n", ftdi_get_error_string(&m_ftdic), recvd);
     }
   }
 
@@ -635,14 +649,14 @@ Ftdi::stream_out_internal(char* outstream, unsigned int n_bits, bool postread, b
 
   if(len_bytes > 0) {
     if (ft2232_write_bytes(outstream, len_bytes, postread) < 0) {
-      log->warning("ft2232: ftdi_stream_out has failed\n");
+      fatal_error("ft2232: ftdi_stream_out has failed\n");
       return false;
     }
   }
 
   if(len_bits > 0) {
     if (ft2232_write_bits(&(outstream[len_bytes]), len_bits, postread, 0) < 0) {
-      log->warning("ft2232: ftdi_stream_out has failed\n");
+      fatal_error("ft2232: ftdi_stream_out has failed\n");
       return false;
     }
   }
@@ -650,7 +664,7 @@ Ftdi::stream_out_internal(char* outstream, unsigned int n_bits, bool postread, b
   if(len_tms_bits > 0) {
     buf = outstream[len_bytes] >> len_bits;
     if (ft2232_write_bits(&buf, 1, postread, 1) < 0) {
-      log->warning("ft2232: ftdi_stream_out has failed\n");
+      fatal_error("ft2232: ftdi_stream_out has failed\n");
       return false;
     }
   }
@@ -671,21 +685,21 @@ Ftdi::stream_in(char* instream, unsigned int n_bits, bool last)
 
   if(len_bytes > 0) {
     if (ft2232_read_packed_bits(instream, len_bytes, 8, 0) < 0) {
-      log->warning("ft2232: fdti_stream_in has failed\n");
+      fatal_error("ft2232: fdti_stream_in has failed\n");
       return false;
     }
   }
 
   if(len_bits > 0) {
     if (ft2232_read_packed_bits(instream, 1, len_bits, len_bytes * 8) < 0) {
-      log->warning("ft2232: fdti_stream_in has failed\n");
+      fatal_error("ft2232: fdti_stream_in has failed\n");
       return false;
     }
   }
 
   if(len_tms_bits > 0) {
     if (ft2232_read_packed_bits(instream, 1, 1, (len_bits + (len_bytes * 8))) < 0) {
-      log->warning("ft2232: fdti_stream_in has failed\n");
+      fatal_error("ft2232: fdti_stream_in has failed\n");
       return false;
     }
   }
@@ -760,7 +774,7 @@ Ftdi::ft2232_write_bytes(char *buf, int len, bool postread)
     /// Finally we can transmit the command
     xferred = ft2232_write(mybuf, cur_command_size, (postread ? cur_chunk_len : 0) );
     if(xferred != cur_command_size) {
-      log->warning("ft2232: could not transmit command\n");
+      fatal_error("ft2232: could not transmit command\n");
       free(mybuf);
       return -1;
     }
@@ -830,7 +844,7 @@ Ftdi::ft2232_write_bits(char *buf, int len, bool postread, bool with_tms)
     // Finally we can transmit the command
     xferred = ft2232_write(mybuf, max_command_size, (postread ? 1 : 0) );
     if(xferred != max_command_size) {
-      log->warning("ft2232: ftdi write has failed\n");
+      fatal_error("ft2232: ftdi write has failed\n");
       return -1;
     }
 
@@ -864,7 +878,7 @@ Ftdi::ft2232_read_packed_bits(char *buf, int packet_len, int bits_per_packet, in
   if (offset == 0 && bits_per_packet == 8)
   {
     if(ft2232_read(buf, packet_len) < 0) {
-      log->warning("Read failed\n");
+      fatal_error("Read failed\n");
       return -1;
     }
   }
@@ -872,7 +886,7 @@ Ftdi::ft2232_read_packed_bits(char *buf, int packet_len, int bits_per_packet, in
   {
     mybuf = (char*) malloc(packet_len);
     if(ft2232_read(mybuf, packet_len) < 0) {
-      log->warning("Read failed\n");
+      fatal_error("Read failed\n");
       free(mybuf);
       return -1;
     }

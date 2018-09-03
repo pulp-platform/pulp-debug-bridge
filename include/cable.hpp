@@ -24,6 +24,12 @@
 #include "json.hpp"
 #include "cables/log.h"
 
+typedef enum {
+  CABLE_CONNECTED=0,
+  CABLE_DISCONNECTED=1
+} cable_state_t;
+
+typedef void (*cable_cb_t)(cable_state_t state);
 
 class Cable_jtag_itf
 {
