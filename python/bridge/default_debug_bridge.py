@@ -132,7 +132,9 @@ class debug_bridge(object):
     def __init__(self, config, binaries=[], verbose=False):
         self.config = config
         self.cable = None
-        self.cable_name = config.get('**/debug_bridge/cable/type').get()
+        self.cable_name = config.get_child_str('**/debug_bridge/cable/type')
+        if self.cable_name is None:
+            self.cable_name = 'ftdi'
         self.binaries = binaries
         self.ioloop_handle = None
         self.reqloop_handle = None
@@ -237,7 +239,10 @@ class debug_bridge(object):
         return 0
 
     def load(self):
-        mode = self.config.get('**/debug_bridge/boot-mode').get()
+        mode = self.config.get_child_str('**/debug_bridge/boot-mode')
+        if mode is None:
+            mode = 'jtag'
+
         if mode == 'jtag':
             return self.load_jtag()
         elif mode == 'jtag_hyper':

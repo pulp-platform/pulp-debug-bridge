@@ -116,8 +116,8 @@ $(INSTALL_DIR)/lib/libpulpdebugbridge.so: $(BUILD_DIR)/libpulpdebugbridge.so
 	install -D $< $@
 
 deps:
-	make -C $(DEP_SRC_DIR)/json-tools all BUILD_DIR=$(BUILD_DIR)/json-tools INSTALL_DIR=$(INSTALL_DIR)
-	make -C $(DEP_SRC_DIR)/pulp-configs all BUILD_DIR=$(BUILD_DIR)/pulp-configs INSTALL_DIR=$(INSTALL_DIR)
+	make -C $(DEP_SRC_DIR)/json-tools all install BUILD_DIR=$(BUILD_DIR)/json-tools INSTALL_DIR=$(INSTALL_DIR)
+	make -C $(DEP_SRC_DIR)/pulp-configs all install BUILD_DIR=$(BUILD_DIR)/pulp-configs INSTALL_DIR=$(INSTALL_DIR)
 
 build: $(INSTALL_HEADERS) $(INSTALL_DIR)/lib/libpulpdebugbridge.so
 
