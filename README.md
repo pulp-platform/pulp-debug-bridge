@@ -35,7 +35,7 @@ The following python package is also needed:
 
 To build this tool, you have to clone the following repository:
 
-    $ git clone git@github.com:pulp-platform/pulp-builder.git
+    $ git clone git@github.com:pulp-platform/pulp-builder.git --recursive
 
 Then go inside pulp-builder and execute the following command:
 
