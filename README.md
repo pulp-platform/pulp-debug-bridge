@@ -33,13 +33,15 @@ The following python package is also needed:
 
 ### Installation
 
-To build this tool, execute this command from the root directory:
+To build this tool, you have to clone the following repository:
 
-    $ make all
+    $ git clone git@github.com:pulp-platform/pulp-builder.git
 
-This will checkout sources from other modules needed by the bridge. In case the sources are already checked out and you just want to build the bridge, you can execute this command:
+Then go inside pulp-builder and execute the following command:
 
-    $ make build
+    $ ./scripts/build-debug-bridge
+
+This will checkout all sources inluding other modules needed by the bridge, build everything and install that under the `install` directory.
     
 All what is needed to use the tool is then inside the directory `install`. You can define the following paths in order to use it:
 

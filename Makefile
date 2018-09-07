@@ -1,12 +1,6 @@
-ifndef INSTALL_DIR
-STAND_ALONE_INSTALL=1
-endif
-
-
 INSTALL_DIR ?= $(CURDIR)/install
 TARGET_INSTALL_DIR ?= $(CURDIR)/install
 BUILD_DIR   ?= $(CURDIR)/build
-DEP_SRC_DIR ?= $(BUILD_DIR)/dep_src
 
 
 
@@ -67,11 +61,7 @@ SRCS = src/python_wrapper.cpp src/ioloop.cpp src/cables/jtag.cpp src/reqloop.cpp
 src/cables/adv_dbg_itf/adv_dbg_itf.cpp src/gdb-server/gdb-server.cpp \
 src/gdb-server/rsp.cpp src/gdb-server/target.cpp src/gdb-server/breakpoints.cpp
 
-ifdef STAND_ALONE_INSTALL
 LDFLAGS += -L$(INSTALL_DIR)/lib
-else
-LDFLAGS += $(foreach dir,$(DEP_DIRS),-L$(dir)/lib)
-endif
 LDFLAGS += -ljson
 
 ifneq '$(USE_FTDI)' ''
@@ -91,17 +81,7 @@ $(foreach file, $(HEADER_FILES), $(eval $(call declareInstallFile,$(file))))
 $(foreach file, $(TARGET_HEADER_FILES), $(eval $(call declareTargetInstallFile,$(file))))
 
 
-all: checkout deps build
-
-$(DEP_SRC_DIR)/json-tools:
-	mkdir -p $(DEP_SRC_DIR)
-	cd $(DEP_SRC_DIR) && git clone https://github.com/pulp-platform/json-tools.git
-
-$(DEP_SRC_DIR)/pulp-configs:
-	mkdir -p $(DEP_SRC_DIR)
-	cd $(DEP_SRC_DIR) && git clone https://github.com/pulp-platform/pulp-configs.git
-
-checkout: $(DEP_SRC_DIR)/json-tools $(DEP_SRC_DIR)/pulp-configs
+all: build
 
 -include $(OBJS:.o=.d)
 
@@ -114,10 +94,6 @@ $(BUILD_DIR)/libpulpdebugbridge.so: $(OBJS)
 
 $(INSTALL_DIR)/lib/libpulpdebugbridge.so: $(BUILD_DIR)/libpulpdebugbridge.so
 	install -D $< $@
-
-deps:
-	make -C $(DEP_SRC_DIR)/json-tools all install BUILD_DIR=$(BUILD_DIR)/json-tools INSTALL_DIR=$(INSTALL_DIR)
-	make -C $(DEP_SRC_DIR)/pulp-configs all install BUILD_DIR=$(BUILD_DIR)/pulp-configs INSTALL_DIR=$(INSTALL_DIR)
 
 build: $(INSTALL_HEADERS) $(INSTALL_DIR)/lib/libpulpdebugbridge.so
 
