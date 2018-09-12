@@ -35,7 +35,7 @@ The following python package is also needed:
 
 To build this tool, you have to clone the following repository:
 
-    $ git clone git@github.com:pulp-platform/pulp-builder.git --recursive
+    $ git clone git@github.com:pulp-platform/pulp-builder.git
 
 Then go inside pulp-builder and execute the following command:
 
@@ -45,10 +45,10 @@ This will checkout all sources inluding other modules needed by the bridge, buil
     
 All what is needed to use the tool is then inside the directory `install`. You can define the following paths in order to use it:
 
-    $ export PATH=$PWD/install/bin:$PATH
-    $ export PYTHONPATH=$PWD/install/python:$PYTHONPATH
-    $ export LD_LIBRARY_PATH=$PWD/install/lib:$LD_LIBRARY_PATH
-    $ export PULP_CONFIGS_PATH=$PWD/install/configs
+    export PATH=$PWD/install/ws/bin:$PATH
+    export PYTHONPATH=$PWD/install/ws/python:$PYTHONPATH
+    export LD_LIBRARY_PATH=$PWD/install/ws/lib:$LD_LIBRARY_PATH
+    export PULP_CONFIGS_PATH=$PWD/install/ws/configs
 
 
 ### Usage
