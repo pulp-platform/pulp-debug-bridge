@@ -81,22 +81,24 @@ bool Jtag_proxy::proxy_stream(char* instream, char* outstream, unsigned int n_bi
 
   std::vector<uint8_t> buffer(n_bits, 0);
   uint8_t value = 0;
-  if (outstream)
+  for (size_t i=0; i<n_bits; i++)
   {
-    for (size_t i=0; i<n_bits; i++)
-    {
 
-      if ((i % 8) == 0)
+    if ((i % 8) == 0)
+    {
+      if (outstream)
       {
         value = *(unsigned char *)outstream;
         outstream++;
       }
-
-      buffer[i] = (value & 1) << bit;
-      if (bit != DEBUG_BRIDGE_JTAG_TRST) buffer[i] |= 1 << DEBUG_BRIDGE_JTAG_TRST;
-
-      value >>= 1;
+      else
+        value = 0;
     }
+
+    buffer[i] = (value & 1) << bit;
+    if (bit != DEBUG_BRIDGE_JTAG_TRST) buffer[i] |= 1 << DEBUG_BRIDGE_JTAG_TRST;
+
+    value >>= 1;
   }
 
   if (last)
