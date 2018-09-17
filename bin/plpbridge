@@ -108,7 +108,10 @@ def write(bridge):
 
 def load(bridge, binaries=None, mode=None):
     if binaries is None:
-        binaries = config.get('**/loader/binaries').get_dict()
+        binaries = []
+        binaries_conf = bridge.config.get('**/loader/binaries')
+        if binaries_conf is not None:
+            binaries = binaries_conf.get_dict()
 
     if args.verbose >= 4:
         print ('Loading ELF binaries (path: %s)' % ' '.join(binaries))
@@ -302,18 +305,39 @@ config = js.import_config_from_file(config_path)
 
 # And overloads it with the specified options
 if args.boot_mode is not None:
+    if config.get('**/debug_bridge') is None:
+        config.set('debug_bridge', {})
+
     config.get('**/debug_bridge').set('boot-mode', args.boot_mode)
 
 if args.cable is not None:
+    if config.get('**/debug_bridge') is None:
+        config.set('debug_bridge', {})
+
     config.get('**/debug_bridge').set('cable/type', args.cable)
 
 if args.port is not None:
+    if config.get('**/debug_bridge') is None:
+        config.set('debug_bridge', {})
+
+    if config.get('**/debug_bridge/cable') is None:
+        config.get('**/debug_bridge').set('cable', {})
+
+    if config.get('**/debug_bridge/cable/jtag-proxy') is None:
+        config.get('**/debug_bridge/cable').set('jtag-proxy', {})
+
     config.get('**/debug_bridge/cable/jtag-proxy').set('port', args.port)
 
 if args.host is not None:
     config.get('**/debug_bridge/cable/jtag-proxy').set('host', args.host)
 
 for binary in args.binaries:
+    if config.get('**/loader') is None:
+        config.set('loader', {})
+
+    if config.get('**/loader/binaries') is None:
+        config.get('**/loader').set('binaries', [])
+
     config.get('**/loader').set('binaries', binary)
 
 
@@ -325,7 +349,12 @@ if len(args.command) == 0:
         args.command = json_commands.get().split()
 
 
-bridge = db.get_bridge(config=config, verbose=args.verbose, binaries=config.get('**/loader/binaries').get_dict())
+binaries = []
+binaries_conf = config.get('**/loader/binaries')
+if binaries_conf is not None:
+    binaries = binaries_conf.get_dict()
+
+bridge = db.get_bridge(config=config, verbose=args.verbose, binaries=binaries)
 
 if args.ipython:
   embed()

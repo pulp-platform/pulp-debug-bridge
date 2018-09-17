@@ -179,7 +179,9 @@ class debug_bridge(object):
         self.verbose = verbose
         self.config = config
         self.cable = None
-        self.cable_name = config.get('**/debug_bridge/cable/type').get()
+        self.cable_name = config.get_child_str('**/debug_bridge/cable/type')
+        if self.cable_name is None:
+            self.cable_name = 'ftdi'
         self.binaries = binaries
         self.ioloop_handle = None
         self.reqloop_handle = None
@@ -244,7 +246,7 @@ class debug_bridge(object):
         return self.cable
 
     def load_jtag(self):
-        raise Exception('JTAG boot is not supported on this target')
+        return self.load_default()
 
     def load_jtag_hyper(self):
         raise Exception('JTAG boot is not supported on this target')
@@ -294,7 +296,9 @@ class debug_bridge(object):
 
     def load(self, mode=None):
         if mode is None:
-            mode = self.config.get('**/debug_bridge/boot-mode').get()
+            mode = self.config.get_child_str('**/debug_bridge/boot-mode')
+            if mode is None:
+                mode = 'jtag'
 
         if mode == 'jtag':
             return self.load_jtag()
