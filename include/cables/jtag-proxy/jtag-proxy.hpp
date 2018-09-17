@@ -54,6 +54,7 @@ class Jtag_proxy : public Cable {
     Tcp_socket::tcp_socket_ptr_t m_socket;
     int m_port = 0;
     const char *m_server;
+    int timeout;
 
     void client_connected(Tcp_socket::tcp_socket_ptr_t);
     void client_disconnected(Tcp_socket::tcp_socket_ptr_t);

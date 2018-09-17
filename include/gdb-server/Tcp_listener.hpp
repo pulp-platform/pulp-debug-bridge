@@ -73,6 +73,7 @@ class Tcp_socket {
     func_ret_t send(const void * buf, size_t len);
     func_ret_t receive_at_least(void * buf, size_t max_len, size_t min_len, int ms);
     func_ret_t receive_blocking(void * buf, size_t len);
+    func_ret_t receive(void * buf, size_t len, int ms);
     void close();
     void shutdown();
     void set_finished_cb(finished_cb_t finished_cb);

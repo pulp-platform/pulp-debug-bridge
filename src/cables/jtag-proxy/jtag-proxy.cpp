@@ -43,6 +43,12 @@ bool Jtag_proxy::connect(js::config *config)
 {
   js::config *proxy_config = config->get("jtag-proxy");
 
+  this->timeout = config->get_int("**/access_timeout_us");
+  if (this->timeout == 0)
+    this->timeout = 1000;
+  else
+    this->timeout /= 1000;
+
   if (proxy_config == NULL || proxy_config->get("port") == NULL)
   {
     log->error("Didn't find any information for JTAG proxy\n");
@@ -112,9 +118,10 @@ bool Jtag_proxy::proxy_stream(char* instream, char* outstream, unsigned int n_bi
   {
 
     ::memset((void *)instream, 0, (n_bits + 7) / 8);
-    if (m_socket->receive_blocking((void *)instream, (n_bits + 7) / 8) != (func_ret_t)((n_bits + 7) / 8))
+    if (m_socket->receive((void *)instream, (n_bits + 7) / 8, this->timeout) != (func_ret_t)((n_bits + 7) / 8))
       return false;
   }
+
   return true;
 }
 

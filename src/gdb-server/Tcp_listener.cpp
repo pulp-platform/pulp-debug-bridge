@@ -513,6 +513,11 @@ func_ret_t Tcp_socket::receive_blocking(void * buf, size_t len)
   return this->recvsend(false, buf, len, len, -1);
 }
 
+func_ret_t Tcp_socket::receive(void * buf, size_t len, int ms)
+{
+  return this->recvsend(false, buf, len, len, ms);
+}
+
 func_ret_t Tcp_socket::send(const void * buf, size_t len, int ms)
 {
   return this->recvsend(true, const_cast<void *>(buf), len, len, ms);
