@@ -32,7 +32,8 @@ typedef enum {
   HAL_BRIDGE_REQ_CLOSE = 5,
   HAL_BRIDGE_REQ_FB_OPEN = 6,
   HAL_BRIDGE_REQ_FB_UPDATE = 7,
-  HAL_BRIDGE_REQ_FIRST_USER = 8
+  HAL_BRIDGE_REQ_TARGET_STATUS_SYNC = 8,
+  HAL_BRIDGE_REQ_FIRST_USER = 9
 } hal_bridge_req_e;
 
 typedef enum {
@@ -86,11 +87,25 @@ typedef struct hal_bridge_req_s {
       uint32_t width;
       uint32_t height;
     } fb_update;
+    struct {
+    } target_status_sync;
   };
 } hal_bridge_req_t;
 
+typedef struct {
+  volatile int32_t available;
+} hal_target_state_t;
+
+typedef struct {
+  volatile int32_t connected;
+} hal_bridge_state_t;
+
 // This structure can be used to interact with the host loader
 typedef struct {
+
+  hal_target_state_t target;
+
+  hal_bridge_state_t bridge;
 
   // Used by external debug bridge to get exit status when using the board
   uint32_t exit_status;
@@ -112,8 +127,6 @@ typedef struct {
 
   uint32_t notif_req_addr;
   uint32_t notif_req_value;
-
-  uint32_t bridge_connected;
 
 } hal_debug_struct_t;
 

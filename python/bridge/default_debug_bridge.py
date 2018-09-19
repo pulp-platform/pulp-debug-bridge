@@ -136,7 +136,6 @@ class debug_bridge(object):
         if self.cable_name is None:
             self.cable_name = 'ftdi'
         self.binaries = binaries
-        self.ioloop_handle = None
         self.reqloop_handle = None
         self.verbose = verbose
         self.gdb_handle = None
@@ -148,12 +147,6 @@ class debug_bridge(object):
         # python / C++ bindings
         lib_path=os.path.join('libpulpdebugbridge.so')
         self.module = ctypes.CDLL(lib_path)
-
-        self.module.bridge_ioloop_open.argtypes = [ctypes.c_void_p, ctypes.c_uint]
-        self.module.bridge_ioloop_open.restype = ctypes.c_void_p
-
-        self.module.bridge_ioloop_close.argtypes = [ctypes.c_void_p, ctypes.c_int]
-        self.module.bridge_ioloop_close.restype = ctypes.c_int
 
         self.module.bridge_reqloop_open.argtypes = [ctypes.c_void_p, ctypes.c_uint]
         self.module.bridge_reqloop_open.restype = ctypes.c_void_p
@@ -331,15 +324,6 @@ class debug_bridge(object):
 
     def ioloop(self):
 
-        # First get address of the structure used to communicate between
-        # the bridge and the runtime
-        addr = self._get_binary_symbol_addr('__rt_debug_struct_ptr')
-        if addr == 0:
-            addr = self._get_binary_symbol_addr('debugStruct_ptr')
-
-        self.ioloop_handle = self.module.bridge_ioloop_open(
-            self.get_cable().get_instance(), addr)
-
         return 0
 
     def reqloop(self):
@@ -366,14 +350,10 @@ class debug_bridge(object):
         if self.gdb_handle is not None:
             self.module.gdb_server_close(self.gdb_handle, 0)
 
-        # The wait function returns in case ioloop has been launched
+        # The wait function returns in case reqloop has been launched
         # as it will check for end of application.
-        # Otherwise it will wait for reqloop for ever
-        if self.ioloop_handle is not None:
-            return self.module.bridge_ioloop_close(self.ioloop_handle, 0)
-
         if self.reqloop_handle is not None:
-            self.module.bridge_reqloop_close(self.reqloop_handle, 0)
+            return self.module.bridge_reqloop_close(self.reqloop_handle, 0)
 
         return 0
 

@@ -49,8 +49,11 @@ private:
   bool handle_req_close(hal_debug_struct_t *debug_struct, hal_bridge_req_t *target_req, hal_bridge_req_t *req);
   bool handle_req_fb_open(hal_debug_struct_t *debug_struct, hal_bridge_req_t *req, hal_bridge_req_t *target_req);
   bool handle_req_fb_update(hal_debug_struct_t *debug_struct, hal_bridge_req_t *req, hal_bridge_req_t *target_req);
+  bool handle_req_target_status_sync(hal_debug_struct_t *debug_struct, hal_bridge_req_t *req, hal_bridge_req_t *target_req);
   bool handle_req_disconnect(hal_debug_struct_t *debug_struct, hal_bridge_req_t *target_req, hal_bridge_req_t *req);
   bool handle_req(hal_debug_struct_t *debug_struct, hal_bridge_req_t *target_req, hal_bridge_req_t *req);
+  void update_target_status(hal_debug_struct_t *debug_struct);
+  void wait_target_available(hal_debug_struct_t *debug_struct);
 
   Log *log;
   std::thread *thread;
@@ -58,6 +61,10 @@ private:
   bool end = false;
   unsigned int debug_struct_addr;
   int status = 0;
+
+  hal_target_state_t target;
+
+
 };
 
 class Framebuffer
@@ -207,7 +214,8 @@ hal_debug_struct_t *Reqloop::activate()
     unsigned int value = 0;
 
     uint32_t connected = 1;
-    cable->access(true, (unsigned int)(long)&debug_struct->bridge_connected, 4, (char*)&connected);
+    cable->access(true, (unsigned int)(long)&debug_struct->bridge.connected, 4, (char*)&connected);
+    cable->access(true, (unsigned int)(long)&debug_struct->use_internal_printf, 4, (char*)&value);
   }
 
   return debug_struct;
@@ -367,6 +375,18 @@ bool Reqloop::handle_req_fb_open(hal_debug_struct_t *debug_struct, hal_bridge_re
   return false;
 }
 
+void Reqloop::update_target_status(hal_debug_struct_t *debug_struct)
+{
+  this->cable->access(false, (unsigned int)(long)&debug_struct->target, sizeof(this->target), (char *)&this->target);
+}
+
+bool Reqloop::handle_req_target_status_sync(hal_debug_struct_t *debug_struct, hal_bridge_req_t *req, hal_bridge_req_t *target_req)
+{
+  this->update_target_status(debug_struct);
+  this->reply_req(debug_struct, target_req, req);
+  return false;
+}
+
 bool Reqloop::handle_req_fb_update(hal_debug_struct_t *debug_struct, hal_bridge_req_t *req, hal_bridge_req_t *target_req)
 {
 #if defined(__USE_SDL__)
@@ -393,10 +413,27 @@ bool Reqloop::handle_req(hal_debug_struct_t *debug_struct, hal_bridge_req_t *req
     case HAL_BRIDGE_REQ_CLOSE:      return this->handle_req_close(debug_struct, req, target_req);
     case HAL_BRIDGE_REQ_FB_OPEN:    return this->handle_req_fb_open(debug_struct, req, target_req);
     case HAL_BRIDGE_REQ_FB_UPDATE:  return this->handle_req_fb_update(debug_struct, req, target_req);
+    case HAL_BRIDGE_REQ_TARGET_STATUS_SYNC:    return this->handle_req_target_status_sync(debug_struct, req, target_req);
     default:
       this->log->print(LOG_ERROR, "Received unknown request from target (type: %d)\n", req->type);
   }
   return false;
+}
+
+
+void Reqloop::wait_target_available(hal_debug_struct_t *debug_struct)
+{
+  if (!this->target.available)
+  {
+    while(1)
+    {
+      unsigned int value;
+      this->cable->jtag_get_reg(7, 4, &value, 0);
+      if (value & 2) break;
+      usleep(10);
+    }
+    this->update_target_status(debug_struct);
+  }
 }
 
 
@@ -413,6 +450,8 @@ void Reqloop::reqloop_routine()
 
       uint32_t value;
 
+      this->wait_target_available(debug_struct);
+
       // debugStruct_ptr is used to synchronize with the runtime at the first start or 
       // when we switch from one binary to another
       // Each binary will initialize when it boots will wait until we set it to zero before stopping
@@ -425,9 +464,28 @@ void Reqloop::reqloop_routine()
         usleep(1);
       }
 
+      // First check if the application has exited
+      cable->access(false, (unsigned int)(long)&debug_struct->exit_status, 4, (char*)&value);
+      if (value >> 31) {
+        status = ((int)value << 1) >> 1;
+        printf("Detected end of application, exiting with status: %d\n", status);
+        return;
+      }
+
       // Check printf
       // The target application should quickly dumps the characters, so we can loop on printf
       // until we don't find anything
+      while(1) {
+        cable->access(false, (unsigned int)(long)&debug_struct->pending_putchar, 4, (char*)&value);
+        if (value == 0) break;
+        char buff[value+1];
+        cable->access(false, (unsigned int)(long)&debug_struct->putc_buffer, value, (char*)buff);
+        unsigned int zero = 0;
+        cable->access(true, (unsigned int)(long)&debug_struct->pending_putchar, 4, (char*)&zero);
+        for (int i=0; i<value; i++) putchar(buff[i]);
+        fflush(NULL);
+      }
+
       while(1) {
         hal_bridge_req_t *first_bridge_req, *last_req, *next, *next_next;
 
@@ -445,6 +503,8 @@ void Reqloop::reqloop_routine()
 
         if (this->handle_req(debug_struct, &req, first_bridge_req))
           return;
+
+        this->wait_target_available(debug_struct);
       }
 
       // Small sleep to not poll too often
