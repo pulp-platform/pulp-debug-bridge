@@ -487,7 +487,7 @@ void Reqloop::reqloop_routine()
       }
 
       while(1) {
-        hal_bridge_req_t *first_bridge_req, *last_req, *next, *next_next;
+        hal_bridge_req_t *first_bridge_req=NULL, *last_req=NULL, *next=NULL, *next_next=NULL;
 
         if (!cable->access(false, (unsigned int)(long)&debug_struct->first_bridge_req, 4, (char*)&first_bridge_req)) goto end;
 
