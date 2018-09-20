@@ -524,6 +524,7 @@ Reqloop::Reqloop(Cable *cable, unsigned int debug_struct_addr) : cable(cable), d
 {
   log = new Log();
   activate();
+  this->target.available = 1;
   thread = new std::thread(&Reqloop::reqloop_routine, this);
 }
 
