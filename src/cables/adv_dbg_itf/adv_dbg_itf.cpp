@@ -50,7 +50,7 @@ Adv_dbg_itf::Adv_dbg_itf(js::config *system_config, Log* log, Cable *m_dev) : co
   log->debug("Using retry count: %d\n", this->retry_count);
 
 
-  conf = system_config->get("**/adv_dbg_unit/check_errors");
+  conf = NULL; //system_config->get("**/adv_dbg_unit/check_errors");
 
   this->check_errors = conf != NULL ? conf->get_bool() : false;
   log->debug("Checking errors: %d\n", this->check_errors);
