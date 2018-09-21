@@ -262,7 +262,6 @@ private:
   static void asyncCallCallback(aeEventLoop* loop, void* context, aeAsyncCallState *state);
   static void loopStopCallback(aeEventLoop* loop);
   aeEventLoop* loop_;
-  int loop_id;
   std::unordered_map<Event *, std::shared_ptr<Event>> active_events;
 };
 
