@@ -91,7 +91,7 @@ struct aeEventLoop;
 struct aeAsyncCallState;
 
 /* Types and data structures */
-typedef void aeFileProc(struct aeEventLoop *eventLoop, int fd, void *clientData, int mask);
+typedef void aeFileProc(struct aeEventLoop *eventLoop, socket_t fd, void *clientData, int mask);
 typedef long long aeTimeProc(struct aeEventLoop *eventLoop, void *clientData);
 typedef void aeAsyncProc(struct aeEventLoop *eventLoop, void *clientData, int cancelled);
 typedef void aeAsyncCallCompleteProc(struct aeAsyncCallState *state);
@@ -153,7 +153,9 @@ typedef struct aeAsyncCallState {
 
 /* State of an event based program */
 typedef struct aeEventLoop {
-    int maxfd;   /* highest file descriptor currently registered */
+#ifndef _WIN32
+    socket_t maxfd;   /* highest file descriptor currently registered */
+#endif
     __attribute__((aligned(8))) long long nextEventId; // Allign to guarantee atomic access
     struct timeval lastTime;     /* Used to detect system clock skew */
     aeFileEvent *events; /* Registered events */

@@ -204,7 +204,11 @@ Tcp_socket::tcp_socket_ptr_t Tcp_client::connect_blocking(const char * address, 
     int err = get_socket_error(connecting_socket);
     if (err != 0) {
       log->error("unable to connect: error %d\n", err);
+#ifdef _WIN32
+      ::closesocket(connecting_socket);
+#else
       ::close(connecting_socket);
+#endif
       connecting_socket = INVALID_SOCKET;
       el->getTimerEvent([this] () {
         if (conn_cb) conn_cb(nullptr);
@@ -214,7 +218,11 @@ Tcp_socket::tcp_socket_ptr_t Tcp_client::connect_blocking(const char * address, 
     }
   } else {
     log->error("unable to connect: connection timed out\n");
+#ifdef _WIN32
+    ::closesocket(connecting_socket);
+#else
     ::close(connecting_socket);
+#endif
     connecting_socket = INVALID_SOCKET;
     el->getTimerEvent([this] () {
       if (conn_cb) conn_cb(nullptr);
@@ -347,7 +355,11 @@ void Tcp_listener::accept_socket()
 
   if (!set_blocking(socket_client, false)) {
     print_error("Tcp_listener: unable to set non blocking: %d\n");
+#ifdef _WIN32
+    ::closesocket(socket_client);
+#else
     ::close(socket_client);
+#endif
     return;
   }
 
@@ -357,7 +369,11 @@ void Tcp_listener::accept_socket()
     log->debug("Tcp_listener: connected callback returns (is_running: %d)\n", is_running);
   } else {
     log->debug("Tcp_listener: no connected callback - closing socket\n");
+#ifdef _WIN32
+    ::closesocket(socket_client);
+#else
     ::close(socket_client);
+#endif
   }
 }
 
@@ -375,7 +391,11 @@ void Tcp_listener::stop()
     close_all();
     this->is_running = false;
     ev_incoming->setEvents(None);
+#ifdef _WIN32
+    ::closesocket(socket_in);
+#else
     ::close(socket_in);
+#endif
   }
   this->is_stopping = false;
   listener_state_change(ListenerStopped);
@@ -713,7 +733,11 @@ void Tcp_socket::close_immediate()
 {
   owner->log->debug("Closing socket immediately (fd %d)\n", socket);
   if (socket != INVALID_SOCKET) {
+#ifdef _WIN32
+    ::closesocket(socket);
+#else
     ::close(socket);
+#endif
   }
   state = SocketClosed;
   socket_events = None;

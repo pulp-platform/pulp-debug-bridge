@@ -49,16 +49,18 @@
 #define zrealloc realloc
 #endif
 
-
+#ifndef min
 #define min(a,b) \
    ({ __typeof__ (a) _a = (a); \
        __typeof__ (b) _b = (b); \
      _a > _b ? _b : _a; })
-
+#endif
+#ifndef max
 #define max(a,b) \
    ({ __typeof__ (a) _a = (a); \
        __typeof__ (b) _b = (b); \
      _a > _b ? _a : _b; })
+#endif
 
 #include "ae_select.c"
 
@@ -78,7 +80,9 @@ aeEventLoop *aeCreateEventLoop(int maxFired, void * loopdata, int flags, aeLoopS
     eventLoop->asyncEvents = NULL;
     eventLoop->nextEventId = 1;
     eventLoop->stop = 0;
+#ifndef _WIN32
     eventLoop->maxfd = -1;
+#endif
     eventLoop->loopdata = loopdata;
     eventLoop->beforesleep = NULL;
     eventLoop->aftersleep = NULL;
@@ -110,9 +114,30 @@ void aeAsyncSocketReadable(aeEventLoop * eventLoop, socket_t fd, void * UNUSED(s
     if (!(events & AE_READABLE)) return;
 
     aeAsyncEvent * ae;
-    while (recv(fd, &ae, sizeof(void *), MSG_DONTWAIT) > 0) {
+    while (recv(fd, ((char*)&ae), sizeof(void *), 0) > 0) {
         DL_APPEND(eventLoop->asyncEvents, ae);
     }
+}
+
+int aeSetBlocking(socket_t fd, int blocking)
+{
+  if (fd < 0) {
+    return 0;
+  }
+
+#ifdef _WIN32
+  unsigned long mode = blocking ? 0 : 1;
+  return ioctlsocket(fd, FIONBIO, &mode) == 0;
+#else
+  int flags = fcntl(fd, F_GETFL, 0);
+  if (flags == -1) {
+    return 0;
+  }
+
+  flags = blocking ? (flags & ~O_NONBLOCK) : (flags | O_NONBLOCK);
+
+  return fcntl(fd, F_SETFL, flags) == 0;
+#endif
 }
 
 int aeCreateAsyncSocket(aeEventLoop *eventLoop) {
@@ -121,9 +146,11 @@ int aeCreateAsyncSocket(aeEventLoop *eventLoop) {
 
     if ((sockfd=socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP)) == INVALID_SOCKET) return 1;
 
+#ifndef _WIN32 // see http://itamarst.org/writings/win32sockets.html
     int enable = 1;
     if (setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &enable, sizeof(int)) < 0)
         return 1;
+#endif
 
     memset((char *) &eventLoop->asyncSocketAddr, 0, sizeof(si));
     eventLoop->asyncSocketAddr.sin_family = AF_INET;
@@ -134,6 +161,8 @@ int aeCreateAsyncSocket(aeEventLoop *eventLoop) {
     
     socklen_t len = sizeof(eventLoop->asyncSocketAddr);
     if(getsockname(sockfd, (struct sockaddr*)&eventLoop->asyncSocketAddr, &len) == SOCKET_ERROR) return 1;
+
+    if (!aeSetBlocking(sockfd, 0)) return 1;
 
     eventLoop->asyncSocket = sockfd;
 
@@ -152,7 +181,11 @@ void aeDeleteEventLoop(aeEventLoop *eventLoop) {
     aeApiFree(eventLoop);
 
     aeAsyncSocketReadable(eventLoop, eventLoop->asyncSocket, NULL, AE_READABLE);
+#ifdef _WIN32
+    closesocket(eventLoop->asyncSocket);
+#else
     close(eventLoop->asyncSocket);
+#endif
 
     aeAsyncEvent *ae = NULL, *tmpae = NULL;
 
@@ -188,8 +221,10 @@ int aeCreateFileEvent(aeEventLoop *eventLoop, aeFileEvent *fe, socket_t fd, int 
     fe->clientData = clientData;
     fe->firedIdx = -1;
 
+#ifndef _WIN32
     if (fd > eventLoop->maxfd)
         eventLoop->maxfd = fd;
+#endif
     DL_APPEND(eventLoop->events, fe);
     return AE_OK;
 }
@@ -217,6 +252,7 @@ int aeDeleteFileEvent(aeEventLoop *eventLoop, aeFileEvent *fe)
     if (fe->mask & AE_WRITABLE) fe->mask |= AE_BARRIER;
     aeApiDelEvent(eventLoop, fe->fd, fe->mask);
     fe->mask = AE_NONE;
+#ifndef _WIN32
     if (fe->fd == eventLoop->maxfd) {
         /* Update the max fd */
         eventLoop->maxfd = -1;
@@ -224,6 +260,7 @@ int aeDeleteFileEvent(aeEventLoop *eventLoop, aeFileEvent *fe)
             if (fe->fd > eventLoop->maxfd) eventLoop->maxfd = fe->fd;
         }
     }
+#endif
     return AE_OK;
 }
 
@@ -556,7 +593,7 @@ int aeProcessEvents(aeEventLoop *eventLoop, int flags)
      * events, in order to sleep until the next time event is ready
      * to fire. But not if there are async events */
 
-    if (eventLoop->maxfd != -1 || ((flags & AE_TIME_EVENTS) && !(flags & AE_DONT_WAIT) && (eventLoop->asyncEvents == NULL))) {
+    if (eventLoop->events || ((flags & AE_TIME_EVENTS) && !(flags & AE_DONT_WAIT) && (eventLoop->asyncEvents == NULL))) {
         struct timeval tv, *tvp = &tv;
         memset(tvp, 0, sizeof(struct timeval));
         if (!eventLoop->asyncEvents) {

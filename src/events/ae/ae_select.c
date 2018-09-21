@@ -77,8 +77,13 @@ static int aeApiPoll(aeEventLoop *eventLoop, struct timeval *tvp) {
     memcpy(&state->_rfds,&state->rfds,sizeof(fd_set));
     memcpy(&state->_wfds,&state->wfds,sizeof(fd_set));
 
+#ifndef _WIN32
     retval = select(eventLoop->maxfd+1,
                 &state->_rfds,&state->_wfds,NULL,tvp);
+#else
+    retval = select(0,
+                &state->_rfds,&state->_wfds,NULL,tvp);
+#endif
 
     if (retval > 0) {
         aeFileEvent *fe, *tmp;
