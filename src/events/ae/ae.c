@@ -121,14 +121,13 @@ void aeAsyncSocketReadable(aeEventLoop * eventLoop, socket_t fd, void * UNUSED(s
 
 int aeSetBlocking(socket_t fd, int blocking)
 {
-  if (fd < 0) {
-    return 0;
-  }
-
 #ifdef _WIN32
   unsigned long mode = blocking ? 0 : 1;
   return ioctlsocket(fd, FIONBIO, &mode) == 0;
 #else
+  if (fd < 0) {
+    return 0;
+  }
   int flags = fcntl(fd, F_GETFL, 0);
   if (flags == -1) {
     return 0;
