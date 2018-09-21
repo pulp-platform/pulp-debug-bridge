@@ -19,7 +19,7 @@
 
 constexpr int kInitialEventLoopSize = 1024;
 
-EventLoop::EventLoop(bool stop_when_empty, int loop_id) : loop_id(loop_id) {
+EventLoop::EventLoop(bool stop_when_empty) {
   loop_ = aeCreateEventLoop(kInitialEventLoopSize, reinterpret_cast<void*>(this), (stop_when_empty?AE_DEFAULT_FLAGS:AE_DEFAULT_FLAGS&~AE_STOP_WHEN_EMPTY), EventLoop::loopStopCallback);
 }
 

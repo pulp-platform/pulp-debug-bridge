@@ -246,7 +246,8 @@ class EventLoop : public std::enable_shared_from_this<EventLoop> {
   void * asyncCall(const AsyncCallCallback& callback);
 
   void terminate_when_empty(bool yes);
-
+  
+  int get_loop_id() { return loop_id; }
 private:
   void cleanup();
   static void fileEventCallback(aeEventLoop* loop, socket_t fd, void* context, int events);
@@ -262,6 +263,7 @@ private:
   static void asyncCallCallback(aeEventLoop* loop, void* context, aeAsyncCallState *state);
   static void loopStopCallback(aeEventLoop* loop);
   aeEventLoop* loop_;
+  int loop_id;
   std::unordered_map<Event *, std::shared_ptr<Event>> active_events;
 };
 
