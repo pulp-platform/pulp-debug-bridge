@@ -196,7 +196,8 @@ extern "C" void bridge_add_wait_exit()
 extern "C" int bridge_start()
 {
   int ret = bridge->m_bridge_commands->start_bridge();
-  if (bridge->m_system_config) delete bridge->m_system_config;
+  // It would be nice to clean up json-config properly but not possible at present
+  // if (bridge->m_system_config) delete bridge->m_system_config;
   delete bridge;
   return ret;
 }
