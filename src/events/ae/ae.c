@@ -36,12 +36,9 @@
 #include <stdio.h>
 #include <sys/time.h>
 #include <sys/types.h>
-#include <unistd.h>
 #include <stdlib.h>
-#include <poll.h>
 #include <string.h>
 #include <time.h>
-#include <errno.h>
 
 #include "ae.h"
 #ifdef USE_ZMALLOC
