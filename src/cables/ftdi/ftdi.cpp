@@ -53,8 +53,8 @@
 #include <string.h>
 #include <unistd.h>
 
-#include "ftdi.hpp"
-#include "cables/log.h"
+#include "ftdi/ftdi.hpp"
+#include "log.hpp"
 
 // Macros to make config commands clearer
 
@@ -76,7 +76,7 @@
 
 //-----------------------------------------------------------------------------
 
-Ftdi::Ftdi(js::config *config, Log* log, FTDIDeviceID id, cable_cb_t cable_state_cb) : log (log), m_id (id), config(config), cable_state_cb(cable_state_cb)
+Ftdi::Ftdi(js::config *config, FTDIDeviceID id, cable_cb_t cable_state_cb) : log ("FDTI"), m_id (id), config(config), cable_state_cb(cable_state_cb)
 {
   // add all our known devices to the map
   m_descriptors[Olimex].push_back(device_desc(0x15ba, 0x002a));
@@ -84,6 +84,7 @@ Ftdi::Ftdi(js::config *config, Log* log, FTDIDeviceID id, cable_cb_t cable_state
 
   m_descriptors[Digilent].push_back(device_desc(0x0403, 0x6010)); // ftdi2232 Gapuino
   m_descriptors[Digilent].push_back(device_desc(0x1d6b, 0x0002)); // ftdi2232 Gapuino
+  memset(&m_params, 0, sizeof(m_params));
 }
 
 Ftdi::~Ftdi()
@@ -99,7 +100,7 @@ void Ftdi::fatal_error(const char *str, ...)
 {
   va_list va;
   va_start(va, str);
-  log->print(LOG_ERROR, str, va);
+  log.print(LOG_ERROR, str, va);
   va_end(va);
   if (current_state == CABLE_CONNECTED) {
     current_state = CABLE_DISCONNECTED;
@@ -132,18 +133,18 @@ Ftdi::connect(js::config *config)
   m_params.recv_buf       = (char*)malloc(m_params.recv_buf_len);
 
   if (!m_params.send_buf || !m_params.recv_buf) {
-    log->error("ftdi2232: Can't allocate memory for ftdi context structures\n");
+    log.error("ftdi2232: Can't allocate memory for ftdi context structures\n");
     goto fail;
   }
 
   error = ftdi_init(&m_ftdic);
   if (error < 0) {
-    log->error("ftdi2232: Unable to initialize LibFTDI context: %d\n", error);
+    log.error("ftdi2232: Unable to initialize LibFTDI context: %d\n", error);
     goto fail;
   }
 
   version = ftdi_get_library_version();
-  log->user("ftdi2232 libftdi version %s (major: %d, minor: %d, micro: %d, snapshot ver: %s)\n",
+  log.user("ftdi2232 libftdi version %s (major: %d, minor: %d, micro: %d, snapshot ver: %s)\n",
       version.version_str, version.major, version.minor, version.micro,
       version.snapshot_str);
 
@@ -160,12 +161,12 @@ Ftdi::connect(js::config *config)
       struct ftdi_device_list* devlist;
       int n = ftdi_usb_find_all(&m_ftdic, &devlist, it->vid, it->pid);
 
-      log->debug("iterating %d devices\n", n);
+      log.debug("iterating %d devices\n", n);
       if (n > 0) {
         for(int i = 0; i < n; ++i) {
-          log->debug("try opening i:0x%X:0x%X:%d\n", it->vid, it->pid, i);
+          log.debug("try opening i:0x%X:0x%X:%d\n", it->vid, it->pid, i);
           if (dev_try_open(it->vid, it->pid, i)) {
-            log->user("Found ftdi device i:0x%X:0x%X:%d\n",
+            log.user("Found ftdi device i:0x%X:0x%X:%d\n",
                        it->vid, it->pid, i);
             dev_available.push_back(device_desc(it->vid, it->pid, (unsigned int)i));
             break;
@@ -177,45 +178,45 @@ Ftdi::connect(js::config *config)
     }
 
     if (dev_available.size() == 0) {
-      log->error("ft2232: Connection failed\n");
+      log.error("ft2232: Connection failed\n");
       goto fail;
     }
 
     dev = &dev_available.front();
-    log->user("Connecting to ftdi device i:0x%X:0x%X:%d\n",
+    log.user("Connecting to ftdi device i:0x%X:0x%X:%d\n",
                dev->vid, dev->pid, dev->index);
     error = ftdi_usb_open_desc_index(&m_ftdic, dev->vid, dev->pid, NULL, NULL, dev->index);
   } else {
-    log->user("Connecting to ftdi device %s\n", description);
+    log.user("Connecting to ftdi device %s\n", description);
     error = ftdi_usb_open_string(&m_ftdic, description);
   }
 
   if (error != 0) {
-    if      (error ==  -1) log->debug("usb_find_busses() failed\n");
-    else if (error ==  -2) log->debug("usb_find_devices() failed\n");
-    else if (error ==  -3) log->debug("usb device not found\n");
-    else if (error ==  -4) log->debug("unable to open device\n");
-    else if (error ==  -5) log->debug("unable to claim device\n");
-    else if (error ==  -6) log->debug("reset failed\n");
-    else if (error ==  -7) log->debug("set baudrate failed\n");
-    else if (error ==  -8) log->debug("get product description failed\n");
-    else if (error ==  -9) log->debug("get serial number failed\n");
-    else if (error == -10) log->debug("unable to close device\n");
-    else if (error == -11) log->debug("ftdi context invalid\n");
-    else if (error == -12) log->debug("libusb_get_device_list() failed\n");
-    else if (error == -13) log->debug("libusb_get_device_descriptor() failed\n");
+    if      (error ==  -1) log.debug("usb_find_busses() failed\n");
+    else if (error ==  -2) log.debug("usb_find_devices() failed\n");
+    else if (error ==  -3) log.debug("usb device not found\n");
+    else if (error ==  -4) log.debug("unable to open device\n");
+    else if (error ==  -5) log.debug("unable to claim device\n");
+    else if (error ==  -6) log.debug("reset failed\n");
+    else if (error ==  -7) log.debug("set baudrate failed\n");
+    else if (error ==  -8) log.debug("get product description failed\n");
+    else if (error ==  -9) log.debug("get serial number failed\n");
+    else if (error == -10) log.debug("unable to close device\n");
+    else if (error == -11) log.debug("ftdi context invalid\n");
+    else if (error == -12) log.debug("libusb_get_device_list() failed\n");
+    else if (error == -13) log.debug("libusb_get_device_descriptor() failed\n");
 
-    log->warning("ft2232: Connection failed\n");
+    log.warning("ft2232: Connection failed\n");
 
     goto fail;
   }
 
   if(!ft2232_mpsse_open()) {
-    log->error("ft2232: Open MPSSE mode failed\n");
+    log.error("ft2232: Open MPSSE mode failed\n");
     goto fail;
   }
 
-  log->debug("Connected to libftdi driver.\n");
+  log.debug("Connected to libftdi driver.\n");
 
   //---------------------------------------------------------------------------
   // Setup layout for different devices
@@ -245,12 +246,12 @@ Ftdi::connect(js::config *config)
   }
   else
   {
-    log->error("ft2232: Unsupported device\n");
+    log.error("ft2232: Unsupported device\n");
     goto fail;
   }
 
   if(ft2232_write((char *)buf, rst_len, 0) != rst_len) {
-    log->error("ft2232: Initial write failed\n");
+    log.error("ft2232: Initial write failed\n");
     goto fail;
   }
 
@@ -260,8 +261,14 @@ Ftdi::connect(js::config *config)
   return true;
 
 fail:
-  if (m_params.send_buf) free(m_params.send_buf);
-  if (m_params.recv_buf) free(m_params.recv_buf);
+  if (m_params.send_buf) {
+    free(m_params.send_buf);
+    m_params.send_buf = NULL;
+  }
+  if (m_params.recv_buf) {
+    free(m_params.recv_buf);
+    m_params.recv_buf = NULL;
+  }
 
   return false;
 }
@@ -283,7 +290,7 @@ bool Ftdi::purge()
 
 bool Ftdi::chip_reset(bool active)
 {
-  log->debug("ft2232: chip reset (active: %d)\n", active);
+  log.debug("ft2232: chip reset (active: %d)\n", active);
   if (m_id == Olimex)
   {
     std::string chip = this->config->get("**/chip/name")->get_str();
@@ -368,7 +375,7 @@ Ftdi::flush() {
   }
 
   if ((unsigned int) xferred < m_params.send_buffered) {
-    log->warning("Written fewer bytes than requested.\n");
+    log.warning("Written fewer bytes than requested.\n");
     return -1;
   }
 
@@ -392,7 +399,7 @@ Ftdi::flush() {
     }
 
     if ((unsigned int) recvd < m_params.to_recv)
-      log->warning("Received less bytes than requested.\n");
+      log.warning("Received less bytes than requested.\n");
 
     m_params.to_recv -= recvd;
     m_params.recv_write_idx += recvd;
@@ -408,12 +415,12 @@ Ftdi::ft2232_read(char* buf, int len) {
 
   /* flush send buffer to get all scheduled receive bytes */
   if (flush() < 0) {
-    log->warning("ft2232: Could not read any data after a flush\n");
+    log.warning("ft2232: Could not read any data after a flush\n");
     return -1;
   }
 
   if (len == 0) {
-    log->warning("ft2232: Please don't read 0 bits\n");
+    log.warning("ft2232: Please don't read 0 bits\n");
     return 0;
   }
 
@@ -460,7 +467,7 @@ Ftdi::ft2232_write(char *buf, int len, int recv) {
     xferred = flush();
 
   if (xferred < 0) {
-    log->warning("ft2232: Flush before write failed\n");
+    log.warning("ft2232: Flush before write failed\n");
     return -1;
   }
 
@@ -507,13 +514,13 @@ Ftdi::ft2232_mpsse_open() {
 
   ret = ftdi_write_data_set_chunksize(&m_ftdic, FTDX_MAXSEND_MPSSE);
   if (ret < 0) {
-    log->warning("ft2232: Got error %s\n", ftdi_get_error_string(&m_ftdic));
+    log.warning("ft2232: Got error %s\n", ftdi_get_error_string(&m_ftdic));
     goto fail;
   }
 
   ret = ftdi_read_data_set_chunksize(&m_ftdic, FTDX_MAXSEND_MPSSE);
   if (ret < 0) {
-    log->warning("ft2232: Got error %s\n", ftdi_get_error_string(&m_ftdic));
+    log.warning("ft2232: Got error %s\n", ftdi_get_error_string(&m_ftdic));
     goto fail;
   }
 
@@ -522,31 +529,31 @@ Ftdi::ft2232_mpsse_open() {
      in short packets (suboptimal performance) */
   ret = ftdi_set_latency_timer(&m_ftdic, 1);
   if (ret < 0) {
-    log->warning("ft2232: ftdi_set_latency_timer() failed\n");
+    log.warning("ft2232: ftdi_set_latency_timer() failed\n");
     goto fail;
   }
 
   ret = ftdi_set_bitmode(&m_ftdic, 0x00, BITMODE_RESET);
   if (ret < 0) {
-    log->warning("ft2232: ftdi_set_bitmode(BITMODE_RESET) failed\n");
+    log.warning("ft2232: ftdi_set_bitmode(BITMODE_RESET) failed\n");
     goto fail;
   }
 
   ret = ftdi_set_bitmode(&m_ftdic, 0x0b, BITMODE_MPSSE);
   if (ret < 0) {
-    log->warning("ft2232: ftdi_set_bitmode(BITMODE_MPSSE) failed\n");
+    log.warning("ft2232: ftdi_set_bitmode(BITMODE_MPSSE) failed\n");
     goto fail;
   }
 
   ret = ftdi_usb_reset(&m_ftdic);
   if (ret < 0) {
-    log->warning("ft2232: ftdi_usb_reset() failed\n");
+    log.warning("ft2232: ftdi_usb_reset() failed\n");
     goto fail;
   }
 
   ret = ft2232_seq_purge(1, 0);
   if (ret < 0) {
-    log->warning("ft2232: Could not purge\n");
+    log.warning("ft2232: Could not purge\n");
     goto fail;
   }
 
@@ -556,7 +563,7 @@ Ftdi::ft2232_mpsse_open() {
   buf[2] = 0x0;
   ret = ft2232_write((char *)buf, 3, 0);
   if (ret < 0) {
-    log->warning("ft2232: Failed to set TCK divisor\n");
+    log.warning("ft2232: Failed to set TCK divisor\n");
     goto fail;
   }
 
@@ -564,7 +571,7 @@ Ftdi::ft2232_mpsse_open() {
   buf[0] = LOOPBACK_END;
   ret = ft2232_write((char *)buf, 1, 0);
   if (ret < 0) {
-    log->warning("ft2232: Failed to switch off loopback\n");
+    log.warning("ft2232: Failed to switch off loopback\n");
     goto fail;
   }
 
@@ -575,13 +582,13 @@ Ftdi::ft2232_mpsse_open() {
 
   ret = ftdi_usb_reset(&m_ftdic);
   if (ret < 0) {
-    log->warning("ft2232: ftdi_usb_reset() failed\n");
+    log.warning("ft2232: ftdi_usb_reset() failed\n");
     goto fail;
   }
 
   ret = ft2232_seq_purge(1, 0);
   if (ret < 0) {
-    log->warning("ft2232: Could not purge\n");
+    log.warning("ft2232: Could not purge\n");
     goto fail;
   }
 
@@ -589,7 +596,7 @@ Ftdi::ft2232_mpsse_open() {
   return true;
 
 fail:
-  log->warning("ft2232: Opening device in mpsse mode failed\n");
+  log.warning("ft2232: Opening device in mpsse mode failed\n");
 
   ftdi_usb_close(&m_ftdic);
   ftdi_deinit(&m_ftdic);
@@ -713,7 +720,7 @@ Ftdi::stream_inout(char* instream, char* outstream, unsigned int n_bits, bool la
   if (outstream)
   {
     if (!stream_out_internal(outstream, n_bits, instream != NULL, last)) {
-      log->warning("ft2232: ftdi_stream_inout has failed\n");
+      log.warning("ft2232: ftdi_stream_inout has failed\n");
       return false;
     }
   }
@@ -722,13 +729,13 @@ Ftdi::stream_inout(char* instream, char* outstream, unsigned int n_bits, bool la
     int bytes = (n_bits + 7) / 8;
     std::vector<char> buffer(bytes, 0);
     if (!stream_out_internal(&(buffer[0]), n_bits, instream != NULL, last)) {
-      log->warning("ft2232: ftdi_stream_inout has failed\n");
+      log.warning("ft2232: ftdi_stream_inout has failed\n");
       return false;
     }
   }
 
   if (instream && !stream_in(instream, n_bits, last)) {
-    log->warning("ft2232: ftdi_stream_inout has failed\n");
+    log.warning("ft2232: ftdi_stream_inout has failed\n");
     return false;
   }
 

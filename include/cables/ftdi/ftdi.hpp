@@ -19,8 +19,7 @@
 #ifndef MEM_FTDI_LL_H
 #define MEM_FTDI_LL_H
 
-#include "cables/adv_dbg_itf/adv_dbg_itf.hpp"
-#include "cable.hpp"
+#include "adv_dbg_itf/adv_dbg_itf.hpp"
 
 #include <stdint.h>
 #include <map>
@@ -56,7 +55,7 @@ class Ftdi : public Cable {
       Digilent,
     };
 
-    Ftdi(js::config *config, Log* log, FTDIDeviceID id, cable_cb_t cable_state_cb);
+    Ftdi(js::config *config, FTDIDeviceID id, cable_cb_t cable_state_cb);
     ~Ftdi();
 
     bool connect(js::config *config);
@@ -111,7 +110,7 @@ class Ftdi : public Cable {
 
     std::map<FTDIDeviceID, std::list<struct device_desc>> m_descriptors;
 
-    Log* log;
+    Log log;
     FTDIDeviceID m_id;
     struct ftdi_param m_params;
     struct ftdi_context m_ftdic;

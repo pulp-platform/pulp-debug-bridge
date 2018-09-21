@@ -66,61 +66,35 @@ class Ctype_cable(object):
         self.module.cable_cb_t = ctypes.CFUNCTYPE(None, ctypes.c_int)
 
         self.module.cable_new.argtypes = [ctypes.c_char_p, ctypes.c_char_p, self.module.cable_cb_t]
-        self.module.cable_new.restype = ctypes.c_void_p
+        self.module.cable_new.restype = ctypes.c_bool
 
         self.module.cable_write.argtypes = \
-            [ctypes.c_void_p, ctypes.c_int, ctypes.c_int, ctypes.c_char_p]
+            [ctypes.c_int, ctypes.c_int, ctypes.c_char_p]
+        self.module.cable_write.restype = ctypes.c_bool
 
         self.module.cable_read.argtypes = \
-            [ctypes.c_void_p, ctypes.c_int, ctypes.c_int, ctypes.c_char_p]
+            [ctypes.c_int, ctypes.c_int, ctypes.c_char_p]
+        self.module.cable_write.restype = ctypes.c_bool
 
         self.module.chip_reset.argtypes = \
-            [ctypes.c_void_p, ctypes.c_bool]
+            [ctypes.c_bool]
         self.module.chip_reset.restype = ctypes.c_bool
 
         self.module.jtag_reset.argtypes = \
-            [ctypes.c_void_p, ctypes.c_bool]
+            [ctypes.c_bool]
+        self.module.cable_write.restype = ctypes.c_bool
 
         self.module.jtag_soft_reset.argtypes = \
             [ctypes.c_void_p]
+        self.module.cable_write.restype = ctypes.c_bool
 
         self.module.cable_jtag_set_reg.argtypes = \
-            [ctypes.c_void_p, ctypes.c_int, ctypes.c_int, ctypes.c_uint]
+            [ctypes.c_int, ctypes.c_int, ctypes.c_uint]
         self.module.cable_jtag_set_reg.restype = ctypes.c_bool
 
         self.module.cable_jtag_get_reg.argtypes = \
-            [ctypes.c_void_p, ctypes.c_int, ctypes.c_int, ctypes.POINTER(ctypes.c_int)]
+            [ctypes.c_int, ctypes.c_int, ctypes.POINTER(ctypes.c_int)]
         self.module.cable_jtag_get_reg.restype = ctypes.c_bool
-
-        self.module.cable_lock.argtypes = \
-            [ctypes.c_void_p]
-
-        self.module.cable_unlock.argtypes = \
-            [ctypes.c_void_p]
-
-        self.module.bridge_get_error.argtypes = []
-        self.module.bridge_get_error.restype = ctypes.c_char_p
-
-        self.module.bridge_init.argtypes = [ctypes.c_char_p, ctypes.c_int]
-
-        self.module.bridge_set_log_level.argtypes = [ctypes.c_int]
-
-        self.cmd_func_typ = ctypes.CFUNCTYPE(ctypes.c_int, ctypes.c_char_p,
-          ctypes.POINTER(ctypes.c_char), ctypes.c_int)
-        self.module.gdb_server_open.argtypes = [ctypes.c_void_p, ctypes.c_int,
-          self.cmd_func_typ, ctypes.c_char_p]
-        self.module.gdb_server_open.restype = ctypes.c_void_p
-
-        self.module.gdb_send_str.argtypes = [ctypes.c_void_p, ctypes.c_char_p]
-        self.module.gdb_send_str.restype = ctypes.c_bool
-
-        self.module.gdb_server_close.argtypes = [ctypes.c_void_p, ctypes.c_int]
-
-        self.module.gdb_server_abort.argtypes = [ctypes.c_void_p]
-
-        self.module.gdb_server_refresh_target.argtypes = [ctypes.c_void_p]
-
-        self.module.get_max_log_level.restype = ctypes.c_int
 
         config_string = None
 
@@ -133,9 +107,7 @@ class Ctype_cable(object):
                 self.disconnected_cb()
 
         self.cb_hook = self.module.cable_cb_t(cmd_cb_hook)
-        self.instance = self.module.cable_new(config_string, system_config.dump_to_string().encode('utf-8'), self.cb_hook)
-
-        if self.instance is None:
+        if not self.module.cable_new(config_string, system_config.dump_to_string().encode('utf-8'), self.cb_hook):
             raise CableCreationException('Failed to initialize cable with error: ' +
                 self.module.bridge_get_error().decode('utf-8'))
 
@@ -143,16 +115,14 @@ class Ctype_cable(object):
     def call_if_disconnected(self, fn):
         self.disconnected_cb = fn
 
-    def get_instance(self):
-        return self.instance
-
     def write(self, addr, size, buffer):
         data = (ctypes.c_char * size).from_buffer(bytearray(buffer))
-        self.module.cable_write(self.instance, addr, size, data)
+        return self.module.cable_write(addr, size, data)
 
     def read(self, addr, size):
         data = (ctypes.c_char * size)()
-        self.module.cable_read(self.instance, addr, size, data)
+        if not self.module.cable_read(addr, size, data):
+            return None
 
         result = []
         for elem in data:
@@ -161,30 +131,23 @@ class Ctype_cable(object):
         return result
 
     def chip_reset(self, value):
-        return self.module.chip_reset(self.instance, value)
+        return self.module.chip_reset(value)
 
     def jtag_reset(self, value):
-        self.module.jtag_reset(self.instance, value)
+        return self.module.jtag_reset(value)
 
     def jtag_soft_reset(self):
-        self.module.jtag_soft_reset(self.instance)
+        return self.module.jtag_soft_reset()
 
     def jtag_set_reg(self, reg, width, value):
-        self.module.cable_jtag_set_reg(self.instance, reg, width, value)
+        return self.module.cable_jtag_set_reg(reg, width, value)
 
     def jtag_get_reg(self, reg, width, value):
         out_value = ctypes.c_int()
-        self.module.cable_jtag_get_reg(self.instance, reg, width, ctypes.byref(out_value), value)
+        if not self.module.cable_jtag_get_reg(reg, width, ctypes.byref(out_value), value):
+            return None
+
         return out_value.value
-
-    def lock(self):
-        self.module.cable_lock(self.instance)
-
-    def unlock(self):
-        self.module.cable_unlock(self.instance)
-
-
-
 
 class debug_bridge(object):
 
@@ -194,11 +157,12 @@ class debug_bridge(object):
         self.cable = None
         self.cable_name = config.get('**/debug_bridge/cable/type').get()
         self.binaries = binaries
-        self.ioloop_handle = None
-        self.reqloop_handle = None
-        self.gdb_handle = None
+        self.callbacks = []
+        # self.ioloop_handle = None
+        # self.reqloop_handle = None
+        # self.gdb_handle = None
         self.cable_config = config.get('**/debug_bridge/cable')
-        self.is_started = None
+        self.is_started = False
         # Load the library which provides generic services through
         # python / C++ bindings
         # The library is located in the same directory as this file
@@ -211,20 +175,57 @@ class debug_bridge(object):
             fullpath = os.path.join(os.path.dirname(__file__), libname)
             self.module = ctypes.CDLL(fullpath)
 
-        self.module.bridge_ioloop_open.argtypes = [ctypes.c_void_p, ctypes.c_uint]
-        self.module.bridge_ioloop_open.restype = ctypes.c_void_p
+        self.module.bridge_get_error.argtypes = []
+        self.module.bridge_get_error.restype = ctypes.c_char_p
 
-        self.module.bridge_ioloop_close.argtypes = [ctypes.c_void_p, ctypes.c_int]
-        self.module.bridge_ioloop_close.restype = ctypes.c_int
+        self.module.bridge_init.argtypes = [ctypes.c_char_p, ctypes.c_int]
 
-        self.module.bridge_ioloop_set_poll_delay.argtypes = [ctypes.c_void_p, ctypes.c_int]
+        self.module.bridge_deinit.argtypes = []
 
-        self.module.bridge_reqloop_open.argtypes = [ctypes.c_void_p, ctypes.c_uint]
-        self.module.bridge_reqloop_open.restype = ctypes.c_void_p
+        self.module.execute_cb_typ = ctypes.CFUNCTYPE(ctypes.c_int, ctypes.c_void_p)
 
-        self.module.bridge_reqloop_close.argtypes = [ctypes.c_void_p, ctypes.c_int]
+        self.module.bridge_add_execute.argtypes = [self.module.execute_cb_typ]
 
-        self.module.bridge_reqloop_set_poll_delay.argtypes = [ctypes.c_void_p, ctypes.c_int]
+        self.module.bridge_add_repeat_start.argtypes = [ctypes.c_longlong, ctypes.c_int]
+
+        self.module.bridge_add_repeat_end.argtypes = []
+
+        self.module.bridge_add_delay.argtypes = [ctypes.c_longlong]
+
+        self.module.bridge_add_wait_exit.argtypes = []
+
+        self.module.bridge_start.argtypes = []
+        self.module.bridge_start.restype = ctypes.c_int
+
+        self.module.bridge_loopmanager_init.argtypes = [ctypes.c_uint]
+
+        self.module.bridge_loopmanager_set_poll_delay.argtypes = [ctypes.c_int]
+
+        self.module.bridge_loopmanager_start.argtypes = []
+
+        self.module.bridge_loopmanager_add_reqloop.argtypes = []
+
+        self.module.bridge_loopmanager_add_ioloop.argtypes = []
+
+        self.module.bridge_set_log_level.argtypes = [ctypes.c_int]
+
+        self.cmd_func_typ = ctypes.CFUNCTYPE(ctypes.c_int, ctypes.c_char_p,
+          ctypes.POINTER(ctypes.c_char), ctypes.c_int)
+
+        self.module.gdb_server_open.argtypes = [ctypes.c_int,
+          self.cmd_func_typ, ctypes.c_char_p]
+        self.module.gdb_server_open.restype = ctypes.c_bool
+
+        self.module.gdb_send_str.argtypes = [ctypes.c_char_p]
+        self.module.gdb_send_str.restype = ctypes.c_bool
+
+        self.module.gdb_server_close.argtypes = []
+
+        self.module.gdb_server_abort.argtypes = []
+
+        self.module.gdb_server_refresh_target.argtypes = []
+
+        self.module.get_max_log_level.restype = ctypes.c_int
 
         self.module.bridge_init(config.dump_to_string().encode('utf-8'), verbose)
 
@@ -277,18 +278,16 @@ class debug_bridge(object):
 
                     self.log(1, 'Loading section (base: 0x%x, size: 0x%x)' % (addr, size))
 
-                    self.write(addr, size, data)
+                    if not self.write(addr, size, data):
+                        return False
 
                     if segment['p_filesz'] < segment['p_memsz']:
                         addr = segment['p_paddr'] + segment['p_filesz']
                         size = segment['p_memsz'] - segment['p_filesz']
 
                         self.log(1, 'Init section to 0 (base: 0x%x, size: 0x%x)' % (addr, size))
-                        self.write(
-                            addr,
-                            size,
-                            [0] * size
-                        )
+                        if not self.write(addr, size, [0] * size):
+                            return False
 
 
             set_pc_addr_config = self.config.get('**/debug_bridge/set_pc_addr')
@@ -304,7 +303,7 @@ class debug_bridge(object):
 
                 return self.write_32(set_pc_addr_config.get_int(), entry)
 
-        return 0
+        return True
 
     def load(self, mode=None):
         if mode is None:
@@ -319,28 +318,29 @@ class debug_bridge(object):
 
     def load_default(self):
         for binary in self.binaries:
-            if self.load_elf(binary=binary):
-                return 1
+            if not self.load_elf(binary=binary):
+                return False
 
-        return 0
+        return True
 
     def start(self):
         start_addr_config = self.config.get('**/debug_bridge/start_addr')
+        print(start_addr_config)
         if start_addr_config is not None:
             self.is_started = True
 
             self.log(1, 'Starting (base: 0x%x, value: 0x%x)' % (start_addr_config.get_int(), self.config.get('**/debug_bridge/start_value').get_int()))
 
-            self.write_32(start_addr_config.get_int(), self.config.get('**/debug_bridge/start_value').get_int())
-        return 0
+            return self.write_32(start_addr_config.get_int(), self.config.get('**/debug_bridge/start_value').get_int())
+        return False
 
     def stop(self):
 
         stop_addr_config = self.config.get('**/debug_bridge/stop_addr')
         if stop_addr_config is not None:
             self.is_started = False
-            self.write_32(stop_addr_config.get_int(), self.config.get('**/debug_bridge/stop_value').get_int()) != 0
-        return 0
+            return self.write_32(stop_addr_config.get_int(), self.config.get('**/debug_bridge/stop_value').get_int()) != 0
+        return True
 
     def decode_addr(self, taddr):
         try:
@@ -397,49 +397,32 @@ class debug_bridge(object):
                                 # t_section=symbol.entry['st_shndx']
                                 t_vaddr=symbol.entry['st_value']
                                 return t_vaddr
-        return 0
+        return True
 
     def reset(self):
-        self.get_cable().jtag_reset(True)
-        self.get_cable().jtag_reset(False)
-        self.get_cable().chip_reset(True)
-        self.get_cable().chip_reset(False)
-        return 0
+        return self.get_cable().jtag_reset(True) and self.get_cable().jtag_reset(False) and self.get_cable().chip_reset(True) and self.get_cable().chip_reset(False)
+
+    def init_loopmanager(self):
+        # First get address of the structure used to communicate between
+        # the bridge and the runtime
+        addr = self._get_binary_symbol_addr('__rt_debug_struct_ptr')
+        if addr == 0:
+            addr = self._get_binary_symbol_addr('debugStruct_ptr')
+        self.log(1, "debug address 0x{:08x} contents 0x{:08x}".format(addr, self.read_32(addr)))
+        self.module.bridge_loopmanager_init(addr)
+        self.has_loopers = True
 
     def ioloop(self):
-        if self.ioloop_handle is not None:
-            print("close existing handle ....")
-            self.module.bridge_ioloop_close(self.ioloop_handle, 1)
-
-        # First get address of the structure used to communicate between
-        # the bridge and the runtime
-        addr = self._get_binary_symbol_addr('__rt_debug_struct_ptr')
-
-        self.log(1, "debug address 0x{:08x} contents 0x{:08x}".format(addr, self.read_32(addr)))
-
-        if addr == 0:
-            addr = self._get_binary_symbol_addr('debugStruct_ptr')
-
-        self.ioloop_handle = self.module.bridge_ioloop_open(
-            self.get_cable().get_instance(), addr)
-
-        return 0
-
-    def is_ioloop_active(self):
-        return self.ioloop_handle is not None
+        self.init_loopmanager()
+        self.module.bridge_loopmanager_add_ioloop()
+        self.module.bridge_loopmanager_start()
+        return True
 
     def reqloop(self):
-
-        # First get address of the structure used to communicate between
-        # the bridge and the runtime
-        addr = self._get_binary_symbol_addr('__rt_debug_struct_ptr')
-        if addr == 0:
-            addr = self._get_binary_symbol_addr('debugStruct_ptr')
-
-        self.reqloop_handle = self.module.bridge_reqloop_open(
-            self.get_cable().get_instance(), addr)
-
-        return 0
+        self.init_loopmanager()
+        self.module.bridge_loopmanager_add_reqloop()
+        self.module.bridge_loopmanager_start()
+        return True
 
     def flash(self):
         raise Exception('Flash is not supported on this target')
@@ -460,15 +443,13 @@ class debug_bridge(object):
         return self.encode_bytes("OK", buf, buf_len)
 
     def doreset(self, run):
-        do_ioloop = self.ioloop_handle is not None
-        if do_ioloop:
-            self.module.bridge_ioloop_close(self.ioloop_handle, 1)
-            self.ioloop_handle = None
+        if self.has_loopers:
+            self.module.bridge_loopmanager_stop()
         self.stop()
         self.load()
-        self.module.gdb_server_refresh_target(self.gdb_handle)
-        if do_ioloop:
-            self.ioloop()
+        self.module.gdb_server_refresh_target()
+        if self.has_loopers:
+            self.module.bridge_loopmanager_start()
         if run:
             self.start()
         return True
@@ -507,7 +488,7 @@ class debug_bridge(object):
         init = 'Command List\n'
         for c in commands:
             self.encode_bytes('O'+self.hex_string(init+commands[c]+'\n'), buf, buf_len)
-            self.module.gdb_send_str(self.gdb_handle, buf)
+            self.module.gdb_send_str(buf)
             init = ''
         return self.encode_bytes("OK", buf, buf_len)
 
@@ -575,112 +556,94 @@ class debug_bridge(object):
         self.capabilities_str = capstr.encode('ascii')
 
     def cmd_cb(self, cmd, buf, buf_len):
-        try:
-            cmd = cmd.decode('ascii')
-            if cmd.startswith("qXfer"):
-                cmd = cmd.split(":")
-                if len(cmd) != 5:
-                    raise Exception()
-                offlen = cmd[4].split(',')
-                if cmd[2] == "read":
-                    return self.qxfer_read_cb(cmd[1], cmd[3], int(offlen[0], base=16), int(offlen[1], base=16), buf, buf_len)
-            elif cmd.startswith("qRcmd"):
-                if len(cmd) < len("qRcmd") + 2:
-                    return self.encode_bytes("E01", buf, buf_len)
-                cmd = cmd.split(',')
-                if len(cmd) != 2:
-                    return self.encode_bytes("E01", buf, buf_len)
+        # try:
+        cmd = cmd.decode('ascii')
+        if cmd.startswith("qXfer"):
+            cmd = cmd.split(":")
+            if len(cmd) != 5:
+                raise Exception()
+            offlen = cmd[4].split(',')
+            if cmd[2] == "read":
+                return self.qxfer_read_cb(cmd[1], cmd[3], int(offlen[0], base=16), int(offlen[1], base=16), buf, buf_len)
+        elif cmd.startswith("qRcmd"):
+            if len(cmd) < len("qRcmd") + 2:
+                return self.encode_bytes("E01", buf, buf_len)
+            cmd = cmd.split(',')
+            if len(cmd) != 2:
+                return self.encode_bytes("E01", buf, buf_len)
 
-                return self.qrcmd_cb(cmd[1], buf, buf_len)
-            # disabled for the moment since this causes issues with breakpoints for an unknown reason
-            elif cmd.startswith("__gdb_tgt_res"):
-                ret = 0
-                if self.ioloop_handle is not None:
-                    self.module.bridge_ioloop_set_poll_delay(self.ioloop_handle, 1)
-                    ret = 1
-                if self.reqloop_handle is not None:
-                    self.module.bridge_reqloop_set_poll_delay(self.reqloop_handle, 1)
-                    ret = 1
-                return ret
-            elif cmd.startswith("__gdb_tgt_hlt"):
-                ret = 0
-                if self.ioloop_handle is not None:
-                    self.module.bridge_ioloop_set_poll_delay(self.ioloop_handle, 0)
-                    ret = 1
-                if self.reqloop_handle is not None:
-                    self.module.bridge_reqloop_set_poll_delay(self.reqloop_handle, 0)
-                    ret = 1
-                return ret
-            elif cmd.startswith("__is_started"):
-                return self.is_started and 1 or 0
-            elif cmd.startswith("__start_target"):
-                return self.start()
-            elif cmd.startswith("__stop_target"):
-                return self.stop()
-            if buf_len > 0:
-                return self.encode_bytes("", buf, buf_len)
-            else:
-                return 0
-        except:
-            print("Unexpected error:", sys.exc_info()[0])
-            return self.encode_bytes("E00", buf, buf_len)
+            return self.qrcmd_cb(cmd[1], buf, buf_len)
+        # disabled for the moment since this causes issues with breakpoints for an unknown reason
+        elif cmd.startswith("__gdb_tgt_res"):
+            ret = 0
+            if self.has_loopers:
+                self.module.bridge_loopmanager_set_poll_delay(True)
+                ret = 1
+            return ret
+        elif cmd.startswith("__gdb_tgt_hlt"):
+            ret = 0
+            if self.has_loopers:
+                self.module.bridge_loopmanager_set_poll_delay(False)
+                ret = 1
+            return ret
+        elif cmd.startswith("__is_started"):
+            return self.is_started and 1 or 0
+        elif cmd.startswith("__start_target"):
+            return self.start()
+        elif cmd.startswith("__stop_target"):
+            return self.stop()
+        if buf_len > 0:
+            return self.encode_bytes("", buf, buf_len)
+        else:
+            return 0
+        # except:
+        #     print("Unexpected error:", sys.exc_info()[0])
+        #     return self.encode_bytes("E00", buf, buf_len)
 
     def gdb(self, port):
         def cmd_cb_hook(cmd, buf, buf_len):
             return self.cmd_cb(cmd, buf, buf_len)
 
-        self.cmd_func_ptr = self.get_cable().cmd_func_typ(cmd_cb_hook)
-        self.gdb_handle = self.module.gdb_server_open(
-            self.get_cable().get_instance(),
+        self.cmd_func_ptr = self.cmd_func_typ(cmd_cb_hook)
+        self.module.gdb_server_open(
             port,
             self.cmd_func_ptr,
             self.capabilities_str)
         return 0
 
     def abort(self):
-        if self.gdb_handle is not None:
-            self.module.gdb_server_abort(self.gdb_handle)
-            return
-        self.close()
+        self.has_loopers = False
+        self.module.bridge_loopmanager_clear()
+        self.module.gdb_server_abort()
 
     def close(self):
-        if self.gdb_handle is not None:
-            self.module.gdb_server_close(self.gdb_handle, 1)
-            return
-        if self.ioloop_handle is not None:
-            self.module.bridge_ioloop_close(self.ioloop_handle, 1)
-            return
-        if self.reqloop_handle is not None:
-            self.module.bridge_reqloop_close(self.reqloop_handle, 1)
+        self.has_loopers = False
+        self.module.bridge_loopmanager_clear()
+        self.module.gdb_server_close()
 
     def wait(self):
-        exiting = 0
-        if self.gdb_handle is not None:
-            self.log(1, "Waiting for RSP server to close")
-            self.module.gdb_server_close(self.gdb_handle, exiting)
-            exiting = 1
-            self.gdb_handle = None
-            self.log(1, "RSP server exited")
+        self.module.bridge_start()
+        self.callbacks = None
+        self.log(1, "Loop exited")
 
-        if self.ioloop_handle is not None:
-            self.log(1, "Waiting for ioloop to close")
-            self.module.bridge_ioloop_close(self.ioloop_handle, exiting)
-            exiting = 1
-            self.ioloop_handle = None
-            self.log(1, "Ioloop exited")
+    def add_execute(self, cb):
+        cbt = self.module.execute_cb_typ(cb)
+        self.callbacks.append(cbt)
+        self.module.bridge_add_execute(cbt)
 
-        if self.reqloop_handle is not None:
-            self.log(1, "Waiting for reqloop to close")
-            self.module.bridge_reqloop_close(self.reqloop_handle, exiting)
-            self.reqloop_handle = None
-            self.log(1, "Reqloop exited")
+    def add_wait_exit(self):
+        self.module.bridge_add_wait_exit()
+        self.log(1, "Program exited")
 
-        self.log(1, "Wait is exiting")
+    def add_repeat_start(self, delay, count):
+        self.module.add_repeat_start(delay, count)
 
-        return 0
+    def add_repeat_end(self):
+        self.module.bridge_add_repeat_end()
 
-    def lock(self):
-        self.get_cable().lock()
+    def add_delay(self, delay):
+        self.module.bridge_add_delay(delay)
 
-    def unlock(self):
-        self.get_cable().unlock()
+    def deinit(self):
+        self.module.bridge_deinit()
+    

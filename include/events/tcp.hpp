@@ -18,41 +18,18 @@
  * Authors: Martin Croome, GreenWaves Technologies (martin.croome@greenwaves-technologies.com)
  */
 
-#ifndef __TCP_LISTENER_H__
-#define __TCP_LISTENER_H__
+#ifndef __TCP_H__
+#define __TCP_H__
 
-#ifdef _WIN32
-  #ifndef _WIN32_WINNT
-    #define _WIN32_WINNT 0x0501
-  #endif
-  #include <winsock2.h>
-  #include <Ws2tcpip.h>
-  #include <Windef.h>
-  #include <windows.h>
-  typedef int port_t;
-  typedef SOCKET socket_t;
-  typedef int func_ret_t;
-  #define LST_SHUT_RDWR SD_SEND
-#else
-  #include <sys/socket.h>
-  #include <netinet/in.h>
-  #include <arpa/inet.h>
-  #include <netdb.h>
-  #include <unistd.h>
-  typedef int port_t;
-  typedef int socket_t;
-  #define INVALID_SOCKET -1
-  typedef int func_ret_t;
-  #define SOCKET_ERROR -1
-  #define LST_SHUT_RDWR SHUT_WR
-#endif
+#include "platform.h"
 
 #include <fcntl.h>
 #include <string.h>
 #include <sys/time.h>
 #include <assert.h>
 
-#include "cables/log.h"
+#include "log.hpp"
+#include "events.hpp"
 
 #include <functional>
 #include <thread>
@@ -90,7 +67,7 @@ class Tcp_socket {
 
 class Tcp_socket_owner {
   public:
-    Tcp_socket_owner(Log *log, Tcp_socket::socket_cb_t connected_cb, Tcp_socket::socket_cb_t disconnected_cb);
+    Tcp_socket_owner(Log *log, EventLoop& loop, Tcp_socket::socket_cb_t connected_cb, Tcp_socket::socket_cb_t disconnected_cb);
     virtual ~Tcp_socket_owner() {};
     friend class Tcp_socket;
   protected:
@@ -104,6 +81,7 @@ class Tcp_socket_owner {
     bool is_running = false;
   private:
     static int instances;
+    EventLoop& loop;
 
   #ifdef _WIN32
     static WSADATA wsa_data;
@@ -112,7 +90,7 @@ class Tcp_socket_owner {
 
 class Tcp_client : public Tcp_socket_owner {
   public:
-    Tcp_client(Log * log, Tcp_socket::socket_cb_t connected_cb, Tcp_socket::socket_cb_t disconnected_cb);
+    Tcp_client(Log * log, EventLoop& loop, Tcp_socket::socket_cb_t connected_cb, Tcp_socket::socket_cb_t disconnected_cb);
     virtual ~Tcp_client() {}
     Tcp_socket::tcp_socket_ptr_t connect(const char * address, int port);
   private:

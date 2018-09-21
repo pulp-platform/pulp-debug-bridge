@@ -18,7 +18,7 @@
 
 cmake_minimum_required(VERSION 3.5)
 
-set (CMAKE_CXX_STANDARD 14)
+set (CMAKE_CXX_STANDARD 11)
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/CMake")
 
 include(ExternalProject)
@@ -33,7 +33,7 @@ option(WithFTDI "Build with FTDI support" ON)
 set(LibFTDIVersion v1.4 CACHE STRING "LibFTDI version/git tag to build")
 
 if(NOT CMAKE_BUILD_TYPE)
-    set(CMAKE_BUILD_TYPE "RelWithDebInfo"
+    set(CMAKE_BUILD_TYPE "Debug"
         CACHE STRING "Choose the type of build, options are: Debug Release RelWithDebInfo MinSizeRel."
         FORCE
     )
@@ -70,6 +70,8 @@ else()
   set(INSTALL_CMD install)
 endif()
 
+add_subdirectory(src)
+
 add_custom_target(plpbridge ALL)
 
 # +++++ plpbridge library
@@ -79,13 +81,15 @@ add_library(libplpbridge MODULE
   src/cables/jtag-proxy/jtag-proxy.cpp
   src/cables/jtag.cpp
   src/python_wrapper.cpp
-  src/reqloop.cpp
   src/gdb-server/gdb-server.cpp
   src/gdb-server/rsp.cpp
+  src/gdb-server/rsp-packet-codec.cpp
   src/gdb-server/target.cpp
-  src/gdb-server/Tcp_listener.cpp
   src/gdb-server/breakpoints.cpp
+  src/reqloop.cpp
   src/ioloop.cpp
+  src/loops.cpp
+  src/bridge-commands.cpp
 )
 
 # Enable all warnings as errors
@@ -93,24 +97,22 @@ if(MSVC)
   target_compile_options(libplpbridge PRIVATE /W4 /WX)
 else(MSVC)
   if (APPLE)
-    target_compile_options(libplpbridge PUBLIC -Wall -Wextra -pedantic -Werror -Wno-unused-private-field -Wno-nested-anon-types)
+    target_compile_options(libplpbridge PUBLIC -Wall -Wextra -Werror -Wno-unused-private-field -Wno-nested-anon-types)
   else(APPLE)
-    target_compile_options(libplpbridge PRIVATE -Wall -Wextra -pedantic -Werror)
+    target_compile_options(libplpbridge PRIVATE -Wall -Wextra -Werror)
   endif(APPLE)
 endif(MSVC)
 
 # All include directories for libplpbridge
 target_include_directories(libplpbridge PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}/include
-  ${CMAKE_CURRENT_SOURCE_DIR}/include/cables/jtag-proxy
-  ${CMAKE_CURRENT_SOURCE_DIR}/include/cables/adv_dbg_itf
-  ${CMAKE_CURRENT_SOURCE_DIR}/include/cables/cables
-  ${CMAKE_CURRENT_SOURCE_DIR}/include/gdb-server
+  ${CMAKE_CURRENT_SOURCE_DIR}/include/cables
+  ${CMAKE_CURRENT_SOURCE_DIR}/include/debug_bridge
   ${CMAKE_INSTALL_PREFIX}/include
 )
 
 # link with json-tools
-target_link_libraries(libplpbridge PRIVATE ${CMAKE_INSTALL_PREFIX}/lib/libjson.a)
+target_link_libraries(libplpbridge PRIVATE ${CMAKE_INSTALL_PREFIX}/lib/libjson.a events)
 
 # link windows sockets
 if (WIN32)

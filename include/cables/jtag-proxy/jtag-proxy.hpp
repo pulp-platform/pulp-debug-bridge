@@ -24,16 +24,14 @@
 #include <string.h>
 #include <stdint.h>
 
-#include "cables/log.h"
-#include "cables/adv_dbg_itf/adv_dbg_itf.hpp"
-#include "debug_bridge/proxy.hpp"
-#include "cable.hpp"
-#include "gdb-server/Tcp_listener.hpp"
+#include "adv_dbg_itf/adv_dbg_itf.hpp"
+#include "proxy.hpp"
+#include "events/tcp-events.hpp"
 
 class Jtag_proxy : public Cable {
   public:
 
-    Jtag_proxy(Log* log, cable_cb_t cable_state_cb);
+    Jtag_proxy(EventLoop::SpEventLoop event_loop, cable_cb_t cable_state_cb);
     ~Jtag_proxy() = default;
     
     bool connect(js::config *config);
@@ -49,9 +47,8 @@ class Jtag_proxy : public Cable {
     bool chip_reset(bool active);
 
   private:
+    std::shared_ptr<Tcp_client> m_client;
 
-    Tcp_client * m_client;
-    Tcp_socket::tcp_socket_ptr_t m_socket;
     int m_port = 0;
     const char *m_server;
 
@@ -59,6 +56,8 @@ class Jtag_proxy : public Cable {
     void client_disconnected(Tcp_socket::tcp_socket_ptr_t);
 
     bool proxy_stream(char* instream, char* outstream, unsigned int n_bits, bool last, int bit);
-    Log * log;
+    Log log;
     cable_cb_t cable_state_cb;
+    std::shared_ptr<Tcp_client> m_tcp_client;
+    Tcp_socket::tcp_socket_ptr_t m_socket;
 };

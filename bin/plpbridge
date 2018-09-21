@@ -57,35 +57,46 @@ class bcolors:
 def fatal_error(error):
     print (bcolors.FAIL + 'FATAL ERROR: ' + error + bcolors.ENDC)
 
+def add_command(bridge, cb):
+    def execute_cb(state):
+        try:
+            return cb(state)
+        except Exception as ex:
+            fatal_error(str(ex))
+            bridge.close()
+            if args.debug:
+                raise
+            return False
+
+    bridge.add_execute(execute_cb)
+
 
 def read(bridge):
     if args.addr == None:
         raise Exception('Access address must be given through option --addr when using command "read"')
 
-    addr = bridge.decode_addr(args.addr)
+    def read_cb(state):
+        size = int(args.size, 0)
+        width = args.width
+        if args.verbose >= 4:
+            print ('Read access command (addr: 0x%x, size: 0x%x)' % (args.addr, size))
 
-    size = int(args.size, 0)
-    width = args.width
+        addr = bridge.decode_addr(args.addr)
+        data = bridge.read(addr=addr, size=size)
+        while size > 0:
+            line = [ '{:08x}'.format(addr) ]
 
-    if args.verbose >= 4:
-        print ('Read access command (addr: 0x%x, size: 0x%x)' % (addr, size))
+            for _ in range(0, 16, width):
+                line.append(' '+''.join('{:02x}'.format(ord(c)) for c in reversed(data[0:width])))
+                size -= width
+                addr += width
+                data = data[width:]
+                if size <= 0:
+                    break
+            print (''.join(line))
+        return True
 
-    data = bridge.read(addr=addr, size=size)
-    while size > 0:
-        line = [ '{:08x}'.format(addr) ]
-
-        for _ in range(0, 16, width):
-            line.append(' '+''.join('{:02x}'.format(ord(c)) for c in reversed(data[0:width])))
-            size -= width
-            addr += width
-            data = data[width:]
-            if size <= 0:
-                break
-        print (''.join(line))
-
-    return 0
-
-
+    add_command(bridge, read_cb)
 
 def write(bridge):
     if args.addr == None:
@@ -98,58 +109,74 @@ def write(bridge):
     size = int(args.size, 0)
     value = int(args.value, 0)
 
-    if args.verbose >= 4:
-        print ('Write access command (addr: 0x%x, size: 0x%x, value: 0x%x)' % (addr, size, value))
+    def write_cb(state):
+        if args.verbose >= 4:
+            print ('Write access command (addr: 0x%x, size: 0x%x, value: 0x%x)' % (addr, size, value))
 
-    bridge.write(addr=addr, size=size, buffer=to_bytes(value, size, byteorder='little'))
+        return bridge.write(addr=addr, size=size, buffer=to_bytes(value, size, byteorder='little'))
 
-    return 0
-
+    add_command(bridge, write_cb)
 
 def load(bridge, binaries=None, mode=None):
     if binaries is None:
         binaries = config.get('**/loader/binaries').get_dict()
 
-    if args.verbose >= 4:
-        print ('Loading ELF binaries (path: %s)' % ' '.join(binaries))
+    def load_cb(state):
+        if args.verbose >= 4:
+            print ('Loading ELF binaries (path: %s)' % ' '.join(binaries))
 
-    bridge.binaries = binaries
-    return bridge.load(mode=mode)
+        bridge.binaries = binaries
+        return bridge.load(mode=mode)
 
+    add_command(bridge, load_cb)
 
 def ioloop(bridge):
-    if args.verbose >= 4:
-        print ('Lauching IO loop')
+    def ioloop_cb(state):
+        if args.verbose >= 4:
+            print ('Lauching IO loop')
 
-    return bridge.ioloop()
+        return bridge.ioloop()
 
+    add_command(bridge, ioloop_cb)
 
 def reqloop(bridge):
-    if args.verbose >= 4:
-        print ('Lauching req loop')
+    def reqloop_cb(state):
+        if args.verbose >= 4:
+            print ('Lauching req loop')
 
-    return bridge.reqloop()
+        return bridge.reqloop()
+
+    add_command(bridge, reqloop_cb)
 
 
 def gdb(bridge):
-    if args.verbose >= 4:
-        print ('Lauching GDB server')
+    def gdb_cb(state):
+        if args.verbose >= 4:
+            print ('Lauching GDB server')
 
-    return bridge.gdb(int(args.rsp_port))
+        return bridge.gdb(int(args.rsp_port))
+
+    add_command(bridge, gdb_cb)
 
 
 def start(bridge):
-    if args.verbose >= 4:
-        print ('Starting execution')
+    def start_cb(state):
+        if args.verbose >= 4:
+            print ('Starting execution')
 
-    return bridge.start()
+        return bridge.start()
+
+    add_command(bridge, start_cb)
 
 
 def stop(bridge):
-    if args.verbose >= 4:
-        print ('Stopping execution')
+    def stop_cb(state):
+        if args.verbose >= 4:
+            print ('Stopping execution')
 
-    return bridge.stop()
+        return bridge.stop()
+
+    add_command(bridge, stop_cb)
 
 
 def wait(bridge):
@@ -165,27 +192,32 @@ def flash(bridge):
     else:
         flasher = os.environ["INSTALL_DIR"] + "/bin/flasher"
 
-    if args.verbose >=4:
-        print("Flashing the flash image")
+    def flash_cb(state):
+        if args.verbose >=4:
+            print("Flashing the flash image")
+        return bridge.flash(args.flash_image)
 
-    retval = load(bridge, binaries=[ flasher ], mode='jtag')
-    retval = retval==0 and ioloop(bridge)
-    retval = retval==0 and start(bridge)
-    retval = retval==0 and bridge.flash(args.flash_image)
-    retval = retval==0 and wait(bridge)
-    retval = retval==0 and stop(bridge)
-    return retval
+    bridge.add_repeat_start(0, 1)
+    load(bridge, binaries=[ flasher ], mode='jtag')
+    ioloop(bridge)
+    start(bridge)
+    add_command(bridge, flash_cb)
+    bridge.bridge_add_wait_exit(bridge)
+    stop(bridge)
+    bridge.add_repeat_end()
 
 def reset(bridge):
-    if args.verbose >= 4:
-        print ('Chip reset')
+    def reset_cb(state):
+        if args.verbose >= 4:
+            print ('Chip reset')
 
-    return bridge.reset()
+        return bridge.reset()
+
+    add_command(bridge, reset_cb)
 
 
-def script(bridge):
-
-    for script in args.scripts:
+def script_function(bridge, script):
+    def script_cb(state):
         if args.verbose >= 4:
             print ('Executing script: ' + script)
 
@@ -198,10 +230,16 @@ def script(bridge):
         module = imp.load_source("user_script", script_name)
 
         entry = getattr(module, script_entry)
-        entry(bridge)
+        result = entry(bridge)
+        if result is None:
+            return True
+        else:
+            return result
+    return script_cb
 
-    return 0
-
+def script(bridge):
+    for script in args.scripts:
+        add_command(bridge, script_function(bridge, script))
 
 
 commands = {
@@ -350,7 +388,6 @@ def handle_commands(bridge):
 
     else:
         cmd_idx = 0
-        looper = None
         while cmd_idx < len(args.command):
             cmd = args.command[cmd_idx]
             cmd_args = split_first_equals(cmd)
@@ -369,49 +406,26 @@ def handle_commands(bridge):
                     if len(loop_args) > 0:
                         repeat = int(loop_args[0])
 
-                looper = { "start": cmd_idx + 1, "repeat": repeat, "delay": delay, "looper": looper }
+                bridge.add_repeat_start(delay, repeat)
             elif cmd == "endloop":
-                if looper is None:
-                    print ()
-                    fatal_error('endloop without matching loop')
-                    exit(1)
-                looper['repeat'] = looper['repeat'] - 1
-                if looper['repeat'] == 0:
-                    looper = looper['looper']
-                else:
-                    if delay > 0:
-                        sleep(delay/1000)
-                    cmd_idx = looper['start']
-                    continue
+                bridge.add_repeat_end()
             elif cmd == 'delay':
                 if cmd_args == None:
                     delay = 1000
                 else:
                     delay = int(cmd_args[0])
-                sleep(delay/1000)
+                bridge.add_delay(delay * 1000)
             else:
                 if commands.get(cmd) is None:
                     fatal_error('Unknown command: ' + cmd)
                     exit(1)
 
-                try:
-                    if cmd_args is not None:
-                        ret = commands.get(cmd)[1](bridge, arguments=cmd_args)
-                    else:
-                        ret = commands.get(cmd)[1](bridge)
-
-                    if ret != 0:
-                        print ()
-                        fatal_error('the command \'%s\' has failed' % (cmd))
-                        exit(1)
-                except Exception as e:
-                    fatal_error('the command \'%s\' has failed with an exception: %s' % (cmd, e))
-                    if args.debug:
-                        raise
-                    exit(1)
+                if cmd_args is not None:
+                    commands.get(cmd)[1](bridge, arguments=cmd_args)
+                else:
+                    commands.get(cmd)[1](bridge)
 
             cmd_idx = cmd_idx + 1
-
 
 handle_commands(bridge)
 print("Exiting!!")

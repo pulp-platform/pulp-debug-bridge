@@ -23,7 +23,6 @@
 #include <stdint.h>
 #include <memory>
 
-#include "cables/log.h"
 #include "cable.hpp"
 
 class FTDILL;
@@ -37,7 +36,7 @@ struct jtag_device {
 
 class Adv_dbg_itf : public Cable  {
   public:
-    Adv_dbg_itf(js::config *system_config, Log* log, Cable *itf);
+    Adv_dbg_itf(js::config *system_config, const std::shared_ptr<Cable> &itf);
     ~Adv_dbg_itf();
 
     bool connect(js::config *config);
@@ -74,12 +73,11 @@ class Adv_dbg_itf : public Cable  {
       AXI_READ64  = 0x8
     };
 
-    Cable* m_dev;
-    Log* log;
+    std::shared_ptr<Cable> m_dev;
+    Log log;
 
     js::config *config;
 
-    pthread_mutex_t mutex;
     unsigned int debug_ir;
     int retry_count;
     int check_errors;

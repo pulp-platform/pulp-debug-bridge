@@ -22,7 +22,7 @@
 #define __CABLES_CABLE_HPP__
 
 #include "json.hpp"
-#include "cables/log.h"
+#include "log/log.hpp"
 
 typedef enum {
   CABLE_CONNECTED=0,

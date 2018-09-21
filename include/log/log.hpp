@@ -21,6 +21,8 @@
 #ifndef LOG_H
 #define LOG_H
 
+#include <stdio.h>
+#include <stdarg.h>
 #include <mutex>
 
 #define MAX_LOG_LINE 1024
@@ -32,7 +34,8 @@ typedef enum
   LOG_INFO = 2,
   LOG_DEBUG = 3,
   LOG_DETAIL = 4,
-  LOG_LEVEL_MAX = LOG_DETAIL
+  LOG_PROTOCOL = 5,
+  LOG_LEVEL_MAX = LOG_PROTOCOL
 } log_level_e;
 
 class Log {
@@ -46,6 +49,7 @@ class Log {
     void user(const char *str, ...) ;
     void debug(const char *str, ...) ;
     void detail(const char *str, ...) ;
+    void protocol(const char *str, ...) ;
     static int log_level;
     static char last_error[MAX_LOG_LINE];
   private:

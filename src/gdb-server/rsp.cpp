@@ -26,7 +26,10 @@
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
-#include "gdb-server.hpp"
+
+#include <functional>
+
+#include "gdb-server/gdb-server.hpp"
 
 #define REPLY_BUF_LEN 256
 #define PACKET_MAX_LEN 4096u
@@ -44,256 +47,220 @@ enum mp_type {
 
 // Rsp
 
-Rsp::Rsp(Gdb_server *top, int port) : top(top), port(port)
+Rsp::Rsp(Gdb_server * top, int port, const EventLoop::SpEventLoop &event_loop, int64_t wait_time_usecs) :
+  m_top(top), m_port(port), m_event_loop(std::move(event_loop)), m_wait_time_usecs(wait_time_usecs), log("RSP")
 {
   init();
 }
 
 void Rsp::init()
 {
-  this->halt_target();
-  main_core = top->target->get_threads().front();
+  halt_target();
+  main_core = m_top->target->get_threads().front();
   m_thread_init = main_core->get_thread_id();
 }
 
-void Rsp::client_connected(Tcp_socket::tcp_socket_ptr_t client)
+void Rsp::client_connected(const Tcp_socket::tcp_socket_ptr_t &client)
 {
-  top->log->user("RSP: client connected\n");
-  {
-    std::unique_lock<std::mutex> lk(m_rsp_listener);
-
+  log.user("RSP: client connected\n");
+  if (m_client) {
+    log.error("RSP: already connected: disconnecting\n");
+    client->close();
+    return;
+  }
     // Make sure target is halted
-    this->halt_target();
-    this->client = std::make_shared<Rsp::Client>(this, client);
+  try {
+    halt_target();
+  } catch (CableException e) {
+    log.user("RSP:cable exception haltimg target\n");
+    m_aborted = true;
+    stop();
+    return;
   }
 
-  // hang the listener until the client stops (i.e. gdb session completed)
-  // this is safe outside the mutex since the client protects itself
-  this->client->await_worker_finished();
+  m_client = std::make_shared<Rsp::Client>(this->shared_from_this(), client);
+}
 
-  top->log->user("RSP: client disconnected (aborted: %d)\n", this->aborted);
+void Rsp::client_disconnected(const Tcp_socket::tcp_socket_ptr_t &UNUSED(sock)) {
+  log.user("RSP: client disconnected (aborted: %d)\n", m_aborted);
 
-  this->cleanup_client();
-
-  if (!this->aborted)
+  if (!m_aborted)
   {
-    top->log->debug("RSP: clear breakpoints\n");
+    log.debug("RSP: clear breakpoints\n");
     // clear the breakpoints
-    top->bkp->clear();
+    m_top->bkp->clear();
 
     // Start everything
-    top->log->debug("RSP: resume target\n");
-    this->resume_target(false);
+    log.debug("RSP: resume target\n");
+    resume_target(false);
   }
-
-  if (this->stopped_by_worker)
-  {
-      this->stop(false);
+  if (m_stopping) {
+    stop_listener();
   }
-}
-
-void Rsp::cleanup_client()
-{
-  top->log->debug("RSP: clean up client\n");
-  if (this->client) {
-    top->log->debug("RSP: delete client\n");
-    this->aborted = this->aborted || this->client->aborted;
-    this->client->stop();
-    this->client = nullptr;
-  }
-}
-
-void Rsp::client_disconnected(Tcp_socket::tcp_socket_ptr_t)
-{
-  top->log->user("RSP: TCP client disconnected\n");
+  m_client = nullptr;
 }
 
 void Rsp::abort()
 {
-  top->log->debug("RSP: Aborted!\n");
-  this->aborted = true;
-  this->stop(false);
+  log.debug("RSP: Aborted!\n");
+  m_aborted = true;
+  stop();
 }
 
-void Rsp::stop(bool wait_finished)
+void Rsp::stop()
 {
-  {
-    std::unique_lock<std::mutex> lk(m_rsp_listener);
-    top->log->debug("RSP: stop (wait_finished: %d)\n", wait_finished);
-    if (client && client->is_worker_thread(std::this_thread::get_id())) {
-      assert(!wait_finished); // wait_finished cannot be true if we are called from the RSP worker thread
-      stopped_by_worker = true;
-      return;
-    }
-    if (wait_finished) {
-      top->log->debug("RSP: Wait for RSP server to finish\n");
-      cv_rsp_listener.wait(lk, [this]{ return !this->running; });
-      top->log->debug("RSP: RSP server is finished\n");
-    }
-    if (client) {
-      client->stop();
-    }
-    if (listener) {
-      listener_stopping = true;
-      listener->stop();
-      listener_stopping = false;
-      delete listener;
-      listener = NULL;
-    }
-    running = false;
+  if (m_stopping) return;
+  m_stopping = true;
+  if (m_client) {
+    m_client->stop();
+    return;
   }
-  cv_rsp_listener.notify_all();
+  stop_listener();
 }
 
+void Rsp::stop_listener()
+{
+  if (m_listener) {
+    m_listener->stop();
+    m_listener = nullptr;
+  }
+  m_stopping = false;
+  m_running = false;
+}
 
-bool Rsp::start() {
-  std::lock_guard<std::mutex> lk(m_rsp_listener);
-  running = true;
-  stopped_by_worker = false;
-  listener = new Tcp_listener(
-    this->top->log,
-    port,
-    [this](Tcp_socket::tcp_socket_ptr_t client) { return this->client_connected(client); }, 
-    [this](Tcp_socket::tcp_socket_ptr_t client) { return this->client_disconnected(client); },
-    [this](listener_state_t state) {
-      this->top->log->debug("RSP: Listener status %d stopping %d\n", state, listener_stopping);
-      if (!listener_stopping&&state == LISTENER_STOPPED) this->stop(false);
+void Rsp::start() {
+  m_running = true;
+  m_listener = std::make_shared<Tcp_listener>(
+    &m_top->log,
+    m_event_loop,
+    m_port);
+
+  using namespace std::placeholders;
+
+  m_listener->set_connected_cb(std::bind(&Rsp::client_connected, this, _1));
+  m_listener->set_disconnected_cb(std::bind(&Rsp::client_disconnected, this, _1));
+
+  m_listener->set_state_cb([this](listener_state_t state) {
+      log.debug("RSP: Listener status %d\n", state);
+      // stop();
     }
   );
-  return listener->start();
+  m_listener->start();
 }
 
 void Rsp::indicate_resume()
 {
-  this->top->cmd_cb("__gdb_tgt_res", NULL, 0);
+  if (!m_stopping && m_running)
+    m_top->cmd_cb("__gdb_tgt_res", NULL, 0);
 }
-
-
 
 void Rsp::indicate_halt()
 {
-  this->top->cmd_cb("__gdb_tgt_hlt", NULL, 0);
+  if (!m_stopping && m_running)
+    m_top->cmd_cb("__gdb_tgt_hlt", NULL, 0);
 }
-
-
 
 void Rsp::halt_target()
 {
-  this->indicate_halt();
-  this->top->target->halt();
+  indicate_halt();
+  m_top->target->halt();
 }
-
-
 
 void Rsp::resume_target(bool step, int tid)
 {
-  this->top->target->clear_resume_all();
+  m_top->target->clear_resume_all();
   if (tid > 0)
-    this->top->target->get_thread(tid)->prepare_resume(step);
+    m_top->target->get_thread(tid)->prepare_resume(step);
   else
-    this->top->target->prepare_resume_all(step);
-  this->indicate_resume();
-  this->top->target->resume_all();
+    m_top->target->prepare_resume_all(step);
+  indicate_resume();
+  m_top->target->resume_all();
 }
 
 
 // Rsp::Client
 
-Rsp::Client::Client(Rsp *rsp, Tcp_socket::tcp_socket_ptr_t client) : top(rsp->top), rsp(rsp), client(client)
+Rsp::Client::Client(const std::shared_ptr<Rsp> rsp, Tcp_socket::tcp_socket_ptr_t client) : m_top(rsp->m_top), m_rsp(std::move(rsp)), m_client(std::move(client)), log("RSPC")
 {
-  thread_sel = rsp->m_thread_init;
-  thread = new std::thread(&Rsp::Client::client_routine, this);
-}
+  // Wait timer. Initially idle
+  m_wait_te = rsp->m_event_loop->getTimerEvent(std::bind(&Rsp::Client::wait_routine, this));
 
-void::Rsp::Client::await_worker_finished()
-{
-  // potentially multiple threads could call this so protect
-  top->log->debug("RSP await_worker_finished\n");
-  std::unique_lock<std::mutex> lk(m_rsp_worker);
-  top->log->debug("RSP passed mutex\n");
-  if (thread) {
-    if (thread->joinable()) {
-      top->log->debug("RSP client joining\n");
-      thread->join();
-    }
-    thread = NULL;
-  }
+  // Packet codec
+  m_codec = std::make_shared<RspPacketCodec>(m_rsp->m_event_loop, std::chrono::milliseconds(m_packet_timeout));
+  m_codec->on_ack([this](){
+    log.error("RSP: received ack\n");
+    // TODO - Should timeout on no ACK
+  });
+  m_codec->on_error([this](const char * err_str){
+    log.error("RSP: packet error: %s\n", err_str);
+    stop();
+  });
+  m_codec->on_packet([this](char * pkt, size_t pkt_len){
+    log.protocol("RSP: >> received packet\n");
+    m_client->write_buffer([this](const Tcp_socket::tcp_socket_ptr_t & UNUSED(sock), const Tcp_socket::circular_buffer_ptr_t &c_buf){
+      log.protocol("RSP: send ack\n");
+      m_codec->encode_ack(c_buf);
+    });
+    if (!try_decode(pkt, pkt_len)) stop();
+    log.protocol("RSP: << end received packet\n");
+  });
+  m_codec->on_ctrlc([this](){
+    log.protocol("RSP: received ctrl-c\n");
+    if (m_state == RSP_TARGET_RUNNING)
+      halt_target();
+    signal(NULL);
+  });
+
+  // socket -> packet codec
+  m_client->set_read_cb([this](const Tcp_socket::tcp_socket_ptr_t& UNUSED(sock), Tcp_socket::circular_buffer_ptr_t buf){
+    m_codec->decode(buf);
+  });
+  m_client->set_events(Readable);
 }
 
 void Rsp::Client::stop()
 {
-  if (running.exchange(false)) {
-    top->log->debug("RSP client stopping\n");
-    this->client->close();
-  }
-  top->log->debug("RSP client joining\n");
-  this->await_worker_finished();
-  top->log->debug("RSP client joined\n");
+  m_wait_te->setTimeout(kEventLoopTimerDone);
+  log.debug("RSP client stopping\n");
+  m_client->close();
 }
 
-
-void Rsp::Client::client_routine()
+bool Rsp::Client::try_decode(char * pkt, size_t pkt_len)
 {
-  running = true;
-  while(running)
-  {
-    char pkt[PACKET_MAX_LEN];
-    size_t len;
-
-    len = this->get_packet(pkt, (size_t) PACKET_MAX_LEN);
-
-    if (len <= 0) {
-      break;
-    }
-
-    if (running) {
-      try {
-        if(!this->decode(pkt, len)) break;
-      } catch (CableException e) {
-        top->log->error("Cable error - %s - terminating connection\n", e.what());
-        this->aborted = true;
-        break;
-      } catch (OffCoreAccessException e) {
-        top->log->error("Debugger attempted to access an off core - terminating connection\n");
-        this->aborted = true;
-        break;
-      } catch (std::exception e) {
-        top->log->error("Unknown exception - %s - terminating connection\n", e.what());
-        this->aborted = true;
-        break;
-      }
-    }
+  try {
+    return decode(pkt, pkt_len);
+  } catch (CableException e) {
+    log.error("Cable error - %s - terminating connection\n", e.what());
+  } catch (OffCoreAccessException e) {
+    log.error("Debugger attempted to access an off core - terminating connection\n");
+  } catch (std::exception e) {
+    log.error("Unknown exception - %s - terminating connection\n", e.what());
   }
-  if (running.exchange(false)) {
-    this->client->close();
-  }
-  top->log->debug("RSP client routine finished\n");
+  return false;
 }
-
-
 
 bool Rsp::Client::v_packet(char* data, size_t len)
 {
-  top->log->debug("V Packet\n");
+  log.debug("V Packet\n");
   if (strncmp ("vKill", data, std::min(strlen ("vKill"), len)) == 0)
   {
-    rsp->halt_target();
-    return this->send_str("OK");
+    halt_target();
+    return send_str("OK");
   }
   // else if (strncmp ("vRun", data, strlen ("vRun")) == 0)
   // {
   //   char *filename = &data[5];
-  //   top->log->print(LOG_DEBUG, "Run: %s\n", filename);
-  //   return this->send_str("X09;process:a410");
+  //   log.print(LOG_DEBUG, "Run: %s\n", filename);
+  //   return send_str("X09;process:a410");
   // }
   else if (strncmp ("vCont?", data, std::min(strlen ("vCont?"), len)) == 0)
   {
-    return this->send_str("vCont;c;s;C;S");
+    return send_str("vCont;c;s;C;S");
   }
   else if (strncmp ("vCont", data, std::min(strlen ("vCont"), len)) == 0)
   {
 
-    this->top->target->clear_resume_all();
+    m_top->target->clear_resume_all();
 
     // vCont can contains several commands, handle them in sequence
     char *str = strtok(&data[6], ";");
@@ -311,7 +278,7 @@ bool Rsp::Client::v_packet(char* data, size_t len)
           tid = tid - 1;
         }
         *delim = 0;
-        thread_sel = tid;
+        m_thread_sel = tid;
       }
 
       bool cont = false;
@@ -324,16 +291,16 @@ bool Rsp::Client::v_packet(char* data, size_t len)
         cont = true;
         step = true;
       } else {
-        top->log->error("Unsupported command in vCont packet: %s\n", str);
+        log.error("Unsupported command in vCont packet: %s\n", str);
         exit(-1);
       }
 
       if (cont) {
         if (tid == -1) {
           thread_is_started = true;
-          this->top->target->prepare_resume_all(step);
+          m_top->target->prepare_resume_all(step);
         } else {
-          Target_core * core = this->top->target->get_thread(tid);
+          auto core = m_top->target->get_thread(tid);
           if (core->get_power()) {
             thread_is_started = true;
             core->prepare_resume(step);
@@ -351,17 +318,18 @@ bool Rsp::Client::v_packet(char* data, size_t len)
         size_t len;
         char str[128];
         len = snprintf(str, 128, "T%02xthread:%1x;", TARGET_SIGNAL_TRAP, stepped_tid + 1);
-        return this->send(str, len);
+        return send(str, len);
       } else
-        return this->send_str("N");
-    } 
-    rsp->indicate_resume();
-    this->top->target->resume_all();
+        return send_str("N");
+    }
+    m_rsp->indicate_resume();
+    m_state = RSP_TARGET_RUNNING;
+    m_top->target->resume_all();
 
-    return this->wait();
+    return wait();
   }
 
-  return this->send_str("");
+  return send_str("");
 }
 
 
@@ -370,38 +338,38 @@ bool Rsp::Client::query(char* data, size_t len)
 {
   int ret;
   char reply[REPLY_BUF_LEN];
-  top->log->debug("Query packet\n");
+  log.debug("Query packet\n");
   if (strncmp ("qSupported", data, strlen ("qSupported")) == 0)
   {
-    top->log->detail("qSupported packet\n");
-    Rsp_capability::parse(data, len, &remote_caps);
-    top->log->debug("swbreak: %d\n", this->remote_capability("swbreak"));
-    if (strlen(top->capabilities) > 0) {
-      snprintf(reply, REPLY_BUF_LEN, "PacketSize=%x;%s", REPLY_BUF_LEN, top->capabilities);
+    log.detail("qSupported packet\n");
+    Rsp_capability::parse(data, len, &m_remote_caps);
+    log.debug("swbreak: %d\n", remote_capability("swbreak"));
+    if (strlen(m_top->capabilities) > 0) {
+      snprintf(reply, REPLY_BUF_LEN, "PacketSize=%x;%s", REPLY_BUF_LEN, m_top->capabilities);
     } else {
       snprintf(reply, REPLY_BUF_LEN, "PacketSize=%x", REPLY_BUF_LEN);
     }
-    return this->send_str(reply);
+    return send_str(reply);
   }
   else if (strncmp ("qTStatus", data, strlen ("qTStatus")) == 0)
   {
     // not supported, send empty packet
-    return this->send_str("");
+    return send_str("");
   }
   else if (strncmp ("qfThreadInfo", data, strlen ("qfThreadInfo")) == 0)
   {
     reply[0] = 'm';
     ret = 1;
-    for (auto &thread : top->target->get_threads())
+    for (auto &thread : m_top->target->get_threads())
     {
       ret += snprintf(&reply[ret], REPLY_BUF_LEN - ret, "%u,", thread->get_thread_id()+1);
     } 
 
-    return this->send(reply, ret-1);
+    return send(reply, ret-1);
   }
   else if (strncmp ("qsThreadInfo", data, strlen ("qsThreadInfo")) == 0)
   {
-    return this->send_str("l");
+    return send_str("l");
   }
   else if (strncmp ("qThreadExtraInfo", data, strlen ("qThreadExtraInfo")) == 0)
   {
@@ -409,10 +377,10 @@ bool Rsp::Client::query(char* data, size_t len)
     char str[REPLY_BUF_LEN];
     unsigned int thread_id;
     if (sscanf(data, "qThreadExtraInfo,%x", &thread_id) != 1) {
-      top->log->error("Could not parse qThreadExtraInfo packet\n");
-      return this->send_str("E01");
+      log.error("Could not parse qThreadExtraInfo packet\n");
+      return send_str("E01");
     }
-    Target_core *thread = top->target->get_thread(thread_id - 1);
+    auto thread = m_top->target->get_thread(thread_id - 1);
     {
       if (thread != NULL)
         thread->get_name(str, REPLY_BUF_LEN);
@@ -424,47 +392,47 @@ bool Rsp::Client::query(char* data, size_t len)
         ret += snprintf(&reply[ret], REPLY_BUF_LEN - ret, "%02X", str[i]);
     }
 
-    return this->send(reply, ret);
+    return send(reply, ret);
   }
   else if (strncmp ("qAttached", data, strlen ("qAttached")) == 0)
   {
-    if (top->target->is_stopped()) {
-      return this->send_str("0");
+    if (m_top->target->is_stopped()) {
+      return send_str("0");
     } else {
-      return this->send_str("1");
+      return send_str("1");
     }
   }
   else if (strncmp ("qC", data, strlen ("qC")) == 0)
   {
-    snprintf(reply, 64, "0.%u", this->top->target->get_thread(thread_sel)->get_thread_id()+1);
-    return this->send_str(reply);
+    snprintf(reply, 64, "0.%u", m_top->target->get_thread(m_thread_sel)->get_thread_id()+1);
+    return send_str(reply);
   }
   else if (strncmp ("qSymbol", data, strlen ("qSymbol")) == 0)
   {
-    return this->send_str("OK");
+    return send_str("OK");
   }
   else if (strncmp ("qOffsets", data, strlen ("qOffsets")) == 0)
   {
-    return this->send_str("Text=0;Data=0;Bss=0");
+    return send_str("Text=0;Data=0;Bss=0");
   }
   else if (strncmp ("qT", data, strlen ("qT")) == 0)
   {
     // not supported, send empty packet
-    return this->send_str("");
+    return send_str("");
   }
   else if (strncmp ("qRcmd", data, strlen ("qRcmd")) == 0||strncmp ("qXfer", data, strlen ("qXfer")) == 0)
   {
-    int ret = this->top->cmd_cb(data, reply, REPLY_BUF_LEN);
+    int ret = m_top->cmd_cb(data, reply, REPLY_BUF_LEN);
     if (ret > 0) {
-      return this->send_str(reply);
+      return send_str(reply);
     } else {
-      return this->send_str("");
+      return send_str("");
     }
   }
 
-  top->log->error("Unknown query packet\n");
+  log.error("Unknown query packet\n");
 
-  return this->send_str("");
+  return send_str("");
 }
 
 
@@ -477,27 +445,27 @@ bool Rsp::Client::mem_read(char* data, size_t)
   uint32_t i;
 
   if (sscanf(data, "%x,%x", &addr, &length) != 2) {
-    top->log->error("Could not parse packet\n");
+    log.error("Could not parse packet\n");
     return false;
   }
 
   if (length >= 512) {
-    return this->send_str("E01");
+    return send_str("E01");
   }
 
-  if (top->target->check_mem_access(addr, length)) {
-    top->target->mem_read(addr, length, (char *)buffer);
+  if (m_top->target->check_mem_access(addr, length)) {
+    m_top->target->mem_read(addr, length, (char *)buffer);
 
     for(i = 0; i < length; i++) {
       snprintf(&reply[i * 2], 3, "%02x", (uint32_t)buffer[i]);
     }
   } else {
-    top->log->detail("Filtered memory read attempt - area is inaccessible\n");
+    log.detail("Filtered memory read attempt - area is inaccessible\n");
     memset(reply, (int)'0', length * 2);
     reply[length * 2] = '\0';
   }
 
-  return this->send(reply, length*2);
+  return send(reply, length*2);
 }
 
 
@@ -513,7 +481,7 @@ bool Rsp::Client::mem_write_ascii(char* data, size_t len)
   int buffer_len;
 
   if (sscanf(data, "%x,%d:", &addr, &length) != 2) {
-    top->log->error("Could not parse packet\n");
+    log.error("Could not parse packet\n");
     return false;
   }
 
@@ -533,7 +501,7 @@ bool Rsp::Client::mem_write_ascii(char* data, size_t len)
   buffer_len = len/2;
   buffer = (char*)malloc(buffer_len);
   if (buffer == NULL) {
-    top->log->error("Failed to allocate buffer\n");
+    log.error("Failed to allocate buffer\n");
     return false;
   }
 
@@ -555,14 +523,14 @@ bool Rsp::Client::mem_write_ascii(char* data, size_t len)
     buffer[j] = wdata;
   }
 
-  if (!top->target->check_mem_access(addr, buffer_len))
-    return this->send_str("E03");
+  if (!m_top->target->check_mem_access(addr, buffer_len))
+    return send_str("E03");
 
-  top->target->mem_write(addr, buffer_len, buffer);
+  m_top->target->mem_write(addr, buffer_len, buffer);
 
   free(buffer);
 
-  return this->send_str("OK");
+  return send_str("OK");
 }
 
 bool Rsp::Client::mem_write(char* data, size_t len)
@@ -572,7 +540,7 @@ bool Rsp::Client::mem_write(char* data, size_t len)
   size_t i;
 
   if (sscanf(data, "%x,%x:", &addr, &length) != 2) {
-    top->log->error("Could not parse packet\n");
+    log.error("Could not parse packet\n");
     return false;
   }
 
@@ -589,13 +557,12 @@ bool Rsp::Client::mem_write(char* data, size_t len)
   data = &data[i+1];
   len = len - i - 1;
 
-  if (!top->target->check_mem_access(addr, len))
-    return this->send_str("E03");
+  if (!m_top->target->check_mem_access(addr, len))
+    return send_str("E03");
 
-  top->target->mem_write(addr, len, data);
-  return this->send_str("OK");
+  m_top->target->mem_write(addr, len, data);
+  return send_str("OK");
 }
-
 
 // This defines the valid CSR registers on GAP8
 // TODO - Move this to config
@@ -628,8 +595,6 @@ bool valid_csr(uint32_t csr_offset)
   return false;
 }
 
-
-
 bool Rsp::Client::reg_read(char* data, size_t)
 {
   uint32_t addr;
@@ -637,7 +602,7 @@ bool Rsp::Client::reg_read(char* data, size_t)
   char data_str[10];
 
   if (sscanf(data, "%x", &addr) != 1) {
-    top->log->error("Could not parse packet\n");
+    log.error("Could not parse packet\n");
     return false;
   }
 
@@ -645,66 +610,63 @@ bool Rsp::Client::reg_read(char* data, size_t)
   // otherwise gdb gives up reading more.
   // Letting gdb do what it wants results in a core crash
 
-  Target_core * core = this->top->target->get_thread(thread_sel);
+  auto core = m_top->target->get_thread(m_thread_sel);
   if (!core->get_power()) {
-    return this->send_str("xx");
+    return send_str("xx");
   } else if (addr < 32) {
-    top->log->debug("Read register 0x%02x\n", addr);
+    log.debug("Read register 0x%02x\n", addr);
     core->gpr_read(addr, &rdata);
   } else if (addr == 0x20) {
-    top->log->debug("Read PC\n");
+    log.debug("Read PC\n");
     core->actual_pc_read(&rdata);
   } else if (addr >= 0x41) { // Read CSR
     uint32_t csr_num = addr - 0x41;
     if (valid_csr(csr_num)) {
-      top->log->debug("Read CSR 0x%04x\n", csr_num);
+      log.debug("Read CSR 0x%04x\n", csr_num);
       core->csr_read(csr_num, &rdata);
     } else {
-      return this->send_str("xx");
+      return send_str("xx");
     }
   } else {
-    return this->send_str("xx");
+    return send_str("xx");
   }
 
   rdata = htonl(rdata);
   snprintf(data_str, 9, "%08x", rdata);
-  return this->send_str(data_str);
+  return send_str(data_str);
 }
-
-
 
 bool Rsp::Client::reg_write(char* data, size_t)
 {
   uint32_t addr;
   uint32_t wdata;
-  Target_core *core;
 
   if (sscanf(data, "%x=%08x", &addr, &wdata) != 2) {
-    top->log->error("Could not parse packet\n");
+    log.error("Could not parse packet\n");
     return false;
   }
 
   wdata = ntohl(wdata);
-  core = this->top->target->get_thread(thread_sel);
+  auto core = m_top->target->get_thread(m_thread_sel);
   if (addr < 32) {
-    top->log->debug("Write register 0x%02x 0x08x\n", addr, wdata);
+    log.debug("Write register 0x%02x 0x08x\n", addr, wdata);
     core->gpr_write(addr, wdata);
   } else if (addr == 32) {
-    top->log->debug("Write NPC 0x08x\n", wdata);
+    log.debug("Write NPC 0x08x\n", wdata);
     core->write(DBG_NPC_REG, wdata);
   } else if (addr >= 0x41) {
     uint32_t csr_num = addr - 0x41;
     if (valid_csr(csr_num)) {
-      top->log->debug("Write CSR 0x%04x 0x08x\n", csr_num, wdata);
-      this->top->target->get_thread(thread_sel)->csr_write(csr_num, wdata);
+      log.debug("Write CSR 0x%04x 0x08x\n", csr_num, wdata);
+      m_top->target->get_thread(m_thread_sel)->csr_write(csr_num, wdata);
     } else {
-      return this->send_str("E01");
+      return send_str("E01");
     }
   } else {
-    return this->send_str("E01");
+    return send_str("E01");
   }
 
-  return this->send_str("OK");
+  return send_str("OK");
 }
 
 bool Rsp::Client::regs_send()
@@ -713,11 +675,10 @@ bool Rsp::Client::regs_send()
   uint32_t pc = 0;
   char regs_str[512];
   int i;
-  Target_core * core;
 
   memset(gpr, 0, sizeof(gpr));
 
-  core = this->top->target->get_thread(thread_sel);
+  auto core = m_top->target->get_thread(m_thread_sel);
 
   if (core->get_power()) {
     core->gpr_read_all(gpr);
@@ -729,27 +690,27 @@ bool Rsp::Client::regs_send()
   
     if (core->actual_pc_read(&pc)) {
       snprintf(&regs_str[32 * 8], 9, "%08x", (unsigned int)htonl(pc));
-      return this->send_str(regs_str);
+      return send_str(regs_str);
     } else
-      return this->send_str("E02");
+      return send_str("E02");
   } else {
     // core is off so indicate that none of its registers are available
-    return this->send_str(UNAVAILABLE33);
+    return send_str(UNAVAILABLE33);
   }
 }
 
-bool Rsp::Client::signal(Target_core *core)
+bool Rsp::Client::signal(const std::shared_ptr<Target_core> &core)
 {
   char str[128];
   int len;
   if (core == NULL) {
-    len = snprintf(str, 128, "S%02x", this->get_signal(this->top->target->get_thread(thread_sel)));
+    len = snprintf(str, 128, "S%02x", get_signal(m_top->target->get_thread(m_thread_sel)));
   } else {
-    int sig = this->get_signal(core);
+    int sig = get_signal(core);
     len = snprintf(str, 128, "T%02xthread:%1x;", sig, core->get_thread_id()+1);
   }
   
-  return this->send(str, len);
+  return send(str, len);
 }
 
 int Rsp::Client::cause_to_signal(uint32_t cause, int * int_num)
@@ -774,7 +735,7 @@ int Rsp::Client::cause_to_signal(uint32_t cause, int * int_num)
   return res;
 }
 
-int Rsp::Client::get_signal(Target_core *core)
+int Rsp::Client::get_signal(std::shared_ptr<Target_core> core)
 {
   if (core->is_stopped()) {
     bool is_hit, is_sleeping;
@@ -784,7 +745,7 @@ int Rsp::Client::get_signal(Target_core *core)
     else if (is_sleeping)
       return TARGET_SIGNAL_NONE;
     else
-      return this->cause_to_signal(core->get_cause());
+      return cause_to_signal(core->get_cause());
   } else {
     return TARGET_SIGNAL_NONE;
   }
@@ -796,7 +757,6 @@ bool Rsp::Client::cont(char* data, size_t)
   uint32_t addr;
   uint32_t npc;
   bool npc_found = false;
-  Target_core *core;
 
   // strip signal first
   if (data[0] == 'C') {
@@ -808,7 +768,7 @@ bool Rsp::Client::cont(char* data, size_t)
   }
 
   if (npc_found) {
-    core = this->top->target->get_thread(thread_sel);
+    auto core = m_top->target->get_thread(m_thread_sel);
     // only when we have received an address
     core->read(DBG_NPC_REG, &npc);
 
@@ -816,13 +776,12 @@ bool Rsp::Client::cont(char* data, size_t)
       core->write(DBG_NPC_REG, addr);
   }
 
-  thread_sel = rsp->m_thread_init;
+  m_thread_sel = m_rsp->m_thread_init;
 
-  rsp->resume_target(false);
-  return this->wait();
+  m_state = RSP_TARGET_RUNNING;
+  m_rsp->resume_target(false);
+  return wait();
 }
-
-
 
 // This should not be used and is probably wrong
 // but GDB should use vCont anyway
@@ -831,7 +790,6 @@ bool Rsp::Client::step(char* data, size_t len)
   uint32_t addr;
   uint32_t npc;
   size_t i;
-  Target_core *core;
 
   if (len < 1) return false;
 
@@ -846,7 +804,7 @@ bool Rsp::Client::step(char* data, size_t len)
   }
 
   if (sscanf(data, "%x", &addr) == 1) {
-    core = this->top->target->get_thread(thread_sel);
+    auto core = m_top->target->get_thread(m_thread_sel);
     // only when we have received an address
     core->read(DBG_NPC_REG, &npc);
 
@@ -854,55 +812,47 @@ bool Rsp::Client::step(char* data, size_t len)
       core->write(DBG_NPC_REG, addr);
   }
 
-  thread_sel = rsp->m_thread_init;
+  m_thread_sel = m_rsp->m_thread_init;
 
-  rsp->resume_target(true);
-  return this->wait();
+  m_state = RSP_TARGET_RUNNING;
+  m_rsp->resume_target(true);
+  return wait();
 }
 
+void Rsp::Client::halt_target() {
+  m_rsp->halt_target();
+  m_wait_te->setTimeout(kEventLoopTimerDone);
+  m_state = RSP_TARGET_STOPPED;
+}
 
+int64_t Rsp::Client::wait_routine()
+{
+  auto stopped_core = m_top->target->check_stopped();
+
+  if (stopped_core) {
+    // move to thread of stopped core
+    m_thread_sel = stopped_core->get_thread_id();
+    log.debug("found stopped core - thread %d\n", m_thread_sel + 1);
+    m_rsp->halt_target();
+    m_state = RSP_TARGET_STOPPED;
+    if (!signal(stopped_core)) stop();
+    return kEventLoopTimerDone;
+  } else {
+    return m_rsp->m_wait_time_usecs;
+  }
+}
 
 bool Rsp::Client::wait()
 {
-  int ret;
-  char pkt;
-
-  while(1) {
-    // Moved into target
-    // // Check if a cluster power state has changed
-    // this->top->target->update_power();
-
-    Target_core *stopped_core = this->top->target->check_stopped();
-
-    if (stopped_core) {
-      // move to thread of stopped core
-      thread_sel = stopped_core->get_thread_id();
-      this->top->log->debug("found stopped core - thread %d\n", thread_sel + 1);
-      rsp->halt_target();
-      return this->signal(stopped_core);
-    }
-
-    // Otherwise wait for a stop request from gdb side for a while
-    ret = this->client->receive_at_least(&pkt, 1, 0, 100);
-
-    if (ret < 0) {
-      return false;
-    } else if (ret == 1 && pkt == 0x3) {
-      this->top->log->debug("!!!!!!!!!!!!!!!!!!!!!!! CTRL-C !!!!!!!!!!!!!!!!!!!!!!!!\n");
-      rsp->halt_target();
-    }
-    // usleep(10000);
-  }
-
+  m_wait_te->setTimeout(m_rsp->m_wait_time_usecs);
+  m_client->set_events(Readable);
   return true;
 }
-
-
 
 bool Rsp::Client::multithread(char* data, size_t len)
 {
   int thread_id;
-  top->log->debug("Subsequent %c operations on thread %s\n", data[0], &data[1]);
+  log.debug("Subsequent %c operations on thread %s\n", data[0], &data[1]);
 
   if (len < 1) return false;
 
@@ -914,91 +864,89 @@ bool Rsp::Client::multithread(char* data, size_t len)
         return false;
 
       if (thread_id == -1) // affects all threads
-        return this->send_str("OK");
+        return send_str("OK");
 
       if (thread_id != 0)
         thread_id = thread_id - 1;
 
       // we got the thread id, now let's look for this thread in our list
-      if (this->top->target->get_thread(thread_id) != NULL) {
-        thread_sel = thread_id;
-        return this->send_str("OK");
+      if (m_top->target->get_thread(thread_id) != NULL) {
+        m_thread_sel = thread_id;
+        return send_str("OK");
       }
 
-      return this->send_str("E01");
+      return send_str("E01");
   }
 
   return false;
 }
 
-
-
 bool Rsp::Client::decode(char* data, size_t len)
 {
-  if (data[0] == 0x03) {
-    top->log->print(LOG_DEBUG, "Received break\n");
-    return this->signal();
-  }
+  // if (data[0] == 0x03) {
+  //   log.print(LOG_DEBUG, "Received break\n");
+  //   return signal();
+  // }
 
-  top->log->detail("Received packet: '%s' (len: %d)\n", data, len);
+  log.detail("Received packet: '%s' (len: %d)\n", data, len);
   switch (data[0]) {
     case 'q':
-      top->log->detail("call query\n");
-      return this->query(data, len);
+      log.detail("call query\n");
+      return query(data, len);
 
     case 'g':
-      return this->regs_send();
+      return regs_send();
 
     case 'p':
-      return this->reg_read(&data[1], len-1);
+      return reg_read(&data[1], len-1);
 
     case 'P':
-      return this->reg_write(&data[1], len-1);
+      return reg_write(&data[1], len-1);
 
     case 'c':
     case 'C':
-      return this->cont(&data[0], len);
+      return cont(&data[0], len);
 
     case 's':
     case 'S':
-      return this->step(&data[0], len);
+      return step(&data[0], len);
 
     case 'H':
-      return this->multithread(&data[1], len-1);
+      return multithread(&data[1], len-1);
 
     case 'm':
-      return this->mem_read(&data[1], len-1);
+      return mem_read(&data[1], len-1);
 
     case '?':
-      return this->signal();
+      return signal();
 
     case 'v':
-      return this->v_packet(&data[0], len);
+      return v_packet(&data[0], len);
 
     case 'M':
-      return this->mem_write_ascii(&data[1], len-1);
+      return mem_write_ascii(&data[1], len-1);
 
     case 'X':
-      return this->mem_write(&data[1], len-1);
+      return mem_write(&data[1], len-1);
 
     case 'z':
-      return this->bp_remove(&data[0], len);
+      return bp_remove(&data[0], len);
 
     case 'Z':
-      return this->bp_insert(&data[0], len);
+      return bp_insert(&data[0], len);
 
     case 'T':
-      return this->send_str("OK"); // threads are always alive
+      return send_str("OK"); // threads are always alive
 
     case 'D':
-      this->send_str("OK");
+      send_str("OK");
       return false;
 
     // case '!':
-    //   return this->send_str("OK"); // extended mode supported
+    //   return send_str("OK"); // extended mode supported
 
     default:
-      top->log->error("Unknown packet: starts with %c\n", data[0]);
+      log.error("Unknown packet: starts with %c\n", data[0]);
       break;
   }
   
@@ -1026,224 +974,19 @@ bool time_has_expired(const timeval* start, const timeval* max_delay)
   return timercmp(max_delay, &used, <);
 }
 
-bool verify_checksum(const char * buf, size_t hash_pos)
-{
-  unsigned int checksum = 0;
-  for(size_t i = 0; i < hash_pos; i++) {
-    checksum += buf[i];
-  }
-
-  checksum = checksum % 256;
-  char checksum_str[3];
-  snprintf(checksum_str, 3, "%02x", checksum);
-  return (buf[hash_pos + 1] == checksum_str[0] && buf[hash_pos + 2] == checksum_str[1]);
-}
-
-void escape(const char *data, size_t len, char *raw, size_t *raw_idx, uint32_t *crc)
-{
-  size_t i;
-  *crc = 0;
-  for (i = 0; i < len; i++) {
-    char c = data[i];
-
-    // check if escaping needed
-    if (c == '#' || c == '%' || c == '}' || c == '*') {
-      raw[(*raw_idx)++] = '}';
-      raw[(*raw_idx)++] = c ^ 0x20;
-      *crc += '}';
-      *crc += c ^ 0x20;
-    } else {
-      raw[(*raw_idx)++] = c;
-      *crc += c;
-    }
-  }
-}
-
-size_t deescape(char * buf, size_t len)
-{
-  size_t i = 0, cur = 0;
-  bool escaped = false;
-  while (i < len) {
-    if (escaped) {
-      escaped = false;
-      buf[cur++] = buf[i++] ^ 0x20;
-    } else if (buf[i] == '}') {
-      escaped = true;
-      i++;
-    } else {
-      if (i != cur) buf[cur] = buf[i];
-      i++; cur++;
-    }
-  }
-  return cur;
-}
-
-bool scan_for_hash(const char *pkt, size_t *cur, bool *escaped, size_t last)
-{
-  while (*cur < last) {
-    if (*escaped) {
-      *escaped = false;
-    } else if (pkt[*cur] == '}') {
-      *escaped = true;
-    } else if (pkt[*cur] == '#') {
-      return true;
-    }
-    (*cur)++;
-  }
-  return false;
-}
-
-enum pkt_rcv_states {
-  STATE_INIT = 0,
-  STATE_LEADIN,
-  STATE_BODY,
-  STATE_CRC,
-  STATE_ACKNOWLEDGE
-};
-
-size_t Rsp::Client::get_packet(char* pkt, size_t max_pkt_len) {
-  // packets follow the format: $packet-data#checksum
-  // checksum is two-digit
-
-  top->log->debug("get packet called\n");
-  size_t cur = 1, last = 1, crc_start = -1, pkt_len = 0;
-  struct timeval start;
-  bool escaped = false;
-  int ret;
-  char c;
-  pkt_rcv_states state = STATE_INIT;
-
-  struct timeval max_delay;
-  max_delay.tv_sec = (packet_timeout * 1000) / 1000000;
-  max_delay.tv_usec = (packet_timeout * 1000) % 1000000;
-
-  while (1) {
-    switch(state) {
-      case STATE_INIT:
-        memset(pkt, 0, max_pkt_len);
-        state = STATE_LEADIN; cur = last = pkt_len = 0; crc_start = -1;
-        escaped = false;
-        break;
-      case STATE_LEADIN:
-        ret = client->receive_at_least(&c, 1, 1, packet_timeout);
-        if (ret == SOCKET_ERROR) return 0;
-        if (ret > 0) {
-          switch(c) {
-            case 0x03:
-              return 1; // special case for 0x03 (asynchronous break)
-            case '$':
-              state = STATE_BODY;
-              ::gettimeofday(&start, NULL);
-              break;
-          }
-        }
-        break;
-      case STATE_CRC:
-        // Look for enough characters to process the CRC
-        if (cur - crc_start >= 3) {
-          if (verify_checksum(pkt, crc_start)) {
-            pkt_len = deescape(pkt, crc_start);
-            // clear the rest of the buffer
-            memset(&(pkt[pkt_len]), 0, max_pkt_len - pkt_len);
-            state = STATE_ACKNOWLEDGE;
-          } else {
-            top->log->error("RSP: Packet CRC error\n");
-            state = STATE_INIT;
-          }
-          break;
-        }
-        /* fall through. */
-      case STATE_BODY:
-        ret = this->client->receive_at_least(&(pkt[cur]), (max_pkt_len - cur), 1, 100);
-
-        if (ret == SOCKET_ERROR) return 0;
-
-        if (ret > 0) {
-          last = cur + ret;
-          if (state == STATE_BODY) {
-            // Look for # skipping escaped characters. Maintain the escaped state in
-            // case a packet is split on the } character
-            if (scan_for_hash(pkt, &cur, &escaped, last)) {
-              crc_start = cur; cur = last; state = STATE_CRC;
-              break;
-            }
-          } else cur = last;
-        }
-        if (state == STATE_BODY || state == STATE_CRC) {
-          if (cur >= max_pkt_len) {
-            top->log->error("RSP: Too many characters received\n");
-            state = STATE_INIT;
-          } else if (time_has_expired(&start, &max_delay)) {
-            // no more time - look for another packet
-            state = STATE_INIT;
-          }
-        }
-        break;
-      case STATE_ACKNOWLEDGE:
-        // Send the acknowledgment
-        if (this->client->send("+", 1) != 1) {
-          top->log->error("RSP: Sending ACK failed\n");
-          return 0;
-        } else {
-          return pkt_len;
-        }
-    }
-  }
-}
-
 bool Rsp::Client::send(const char* data, size_t len)
 {
-  int ret;
-  size_t raw_len = 0;
-  char* raw = (char*)malloc(len * 2 + 4);
-  uint32_t checksum = 0;
-
-  raw[raw_len++] = '$';
-
-  escape(data, len, raw, &raw_len, &checksum);
-
-  // add checksum
-  checksum = checksum % 256;
-  char checksum_str[3];
-  snprintf(checksum_str, 3, "%02x", checksum);
-
-  raw[raw_len++] = '#';
-  raw[raw_len++] = checksum_str[0];
-  raw[raw_len++] = checksum_str[1];
-
-  char ack;
-  do {
-    top->log->print(LOG_DEBUG, "Sending %.*s\n", raw_len, raw);
-
-    if (client->send(raw, raw_len, 1000) == SOCKET_ERROR) {
-      free(raw);
-      top->log->error("Unable to send data to client\n");
-      return false;
-    }
-
-    ret = client->receive_at_least(&ack, 1, 1, 1000);
-    if(ret == SOCKET_ERROR) {
-      free(raw);
-      top->log->error("RSP: Error receiving0\n");
-      return false;
-    }
-    top->log->print(LOG_DEBUG, "Received %c\n", ack);
-
-    if(ret == 0) {
-      // no data available
-      continue;
-    }
-
-  } while (ack != '+');
-
-  free(raw);
+  log.print(LOG_DEBUG, "Sending %s (%d)\n", data, len);
+  m_client->write_buffer([&](const Tcp_socket::tcp_socket_ptr_t & UNUSED(sock), const Tcp_socket::circular_buffer_ptr_t &c_buf){
+    RspPacketCodec::encode(data, len, c_buf);
+  });
   return true;
 }
 
 bool Rsp::Client::send_str(const char* data)
 {
-  top->log->detail("RSP: sending string %s\n", data);
-  return this->send(data, strlen(data));
+  log.detail("RSP: sending string %s\n", data);
+  return send(data, strlen(data));
 }
 
 bool Rsp::Client::bp_insert(char* data, size_t len)
@@ -1255,19 +998,19 @@ bool Rsp::Client::bp_insert(char* data, size_t len)
   if (len < 1) return false;
 
   if (3 != sscanf(data, "Z%1d,%x,%1d", (int *)&type, &addr, &bp_len)) {
-    top->log->error("Could not get three arguments\n");
-    return this->send_str("E01");
+    log.error("Could not get three arguments\n");
+    return send_str("E01");
   }
 
   if (type != BP_MEMORY) {
-    top->log->error("ERROR: Not a memory bp\n");
-    return this->send_str("");
+    log.error("ERROR: Not a memory bp\n");
+    return send_str("");
   }
 
-  top->bkp->insert(addr);
+  m_top->bkp->insert(addr);
 
-  top->log->debug("Breakpoint inserted at 0x%08x\n", addr);
-  return this->send_str("OK");
+  log.debug("Breakpoint inserted at 0x%08x\n", addr);
+  return send_str("OK");
 }
 
 
@@ -1281,18 +1024,18 @@ bool Rsp::Client::bp_remove(char* data, size_t len)
   data[len] = 0;
 
   if (3 != sscanf(data, "z%1d,%x,%1d", (int *)&type, &addr, &bp_len)) {
-    top->log->error("Could not get three arguments\n");
+    log.error("Could not get three arguments\n");
     return false;
   }
 
   if (type != BP_MEMORY) {
-    top->log->error("Not a memory bp\n");
-    return this->send_str("");
+    log.error("Not a memory bp\n");
+    return send_str("");
   }
 
-  top->bkp->remove(addr);
+  m_top->bkp->remove(addr);
 
-  return this->send_str("OK");
+  return send_str("OK");
 }
 
 Rsp_capability::Rsp_capability(const char * name, capability_support support) : name(name), support(support)

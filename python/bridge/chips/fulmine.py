@@ -29,5 +29,4 @@ class fulmine_debug_bridge(debug_bridge):
             config.get('**/debug_bridge/cable').set('tap', 1)
 
     def start(self):
-        self.write_32(0x10200008, 0x1)
-        return 0
+        return self.write_32(0x10200008, 0x1)

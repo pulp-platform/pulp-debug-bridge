@@ -19,7 +19,7 @@
  *          Martin Croome, GreenWaves Technologies (martin.croome@greenwaves-technologies.com)
  */
 
-#include "target.hpp"
+#include "gdb-server/target.hpp"
 
 Memory_wall::Memory_wall(uint32_t start, uint32_t len)
 : start(start), len(len)
@@ -35,41 +35,43 @@ bool Memory_wall::overlaps(uint32_t start, uint32_t len)
 
 
 
-Target_cluster_cache::Target_cluster_cache(Gdb_server *top, uint32_t addr)
-: top(top), addr(addr)
+Target_cluster_cache::Target_cluster_cache(Gdb_server * top, uint32_t addr)
+: m_top(top), addr(addr)
 {
 
 }
 
 void Target_cluster_cache::flush()
 {
-  this->top->log->detail("Flushing cluster cache (addr: 0x%x)\n", addr);
+  uint32_t cache_addr = addr + 4;
+  m_top->log.detail("Flushing cluster cache (addr: 0x%x)\n", cache_addr);
 
   uint32_t data = 0xFFFFFFFF;
-  if (!top->cable->access(true, addr + 0x04, 4, (char*)&data))
-    throw CableException("Error writing to 0x%08x", addr + 0x04);
+  if (!m_top->cable->access(true, cache_addr, 4, (char*)&data))
+    throw CableException("Error writing to 0x%08x", cache_addr);
 }
 
 
 
-Target_fc_cache::Target_fc_cache(Gdb_server *top, uint32_t addr)
-: top(top), addr(addr)
+Target_fc_cache::Target_fc_cache(Gdb_server * top, uint32_t addr)
+: m_top(top), addr(addr)
 {
 
 }
 
 void Target_fc_cache::flush()
 {
-  this->top->log->detail("Flushing FC cache (addr: 0x%x)\n", addr);
+
+  m_top->log.detail("Flushing FC cache (addr: 0x%x)\n", addr);
 
   uint32_t data = 0xFFFFFFFF;
-  if (!top->cable->access(true, addr + 0x04, 4, (char*)&data))
+  if (!m_top->cable->access(true, addr + 0x04, 4, (char*)&data))
     throw CableException("Error writing to 0x%08x", addr + 0x04);
 }
 
 
-Target_cluster_ctrl_xtrigger::Target_cluster_ctrl_xtrigger(Gdb_server *top, uint32_t cluster_ctrl_addr)
-: top(top), cluster_ctrl_addr(cluster_ctrl_addr)
+Target_cluster_ctrl_xtrigger::Target_cluster_ctrl_xtrigger(Gdb_server * top, uint32_t cluster_ctrl_addr)
+: m_top(top), cluster_ctrl_addr(cluster_ctrl_addr)
 {
 
 }
@@ -82,8 +84,9 @@ void Target_cluster_ctrl_xtrigger::init()
 
 void Target_cluster_ctrl_xtrigger::set_halt_mask(uint32_t mask)
 {
+
   if (current_mask != mask) {
-    if (!top->cable->access(true, cluster_ctrl_addr + 0x000038, 4, (char*)&mask))
+    if (!m_top->cable->access(true, cluster_ctrl_addr + 0x000038, 4, (char*)&mask))
       throw CableException("Target_cluster_ctrl_xtrigger::set_halt_mask() Error writing to 0x%08x", cluster_ctrl_addr + 0x000038);
     current_mask = mask;
   }
@@ -95,14 +98,15 @@ uint32_t Target_cluster_ctrl_xtrigger::get_halt_mask() {
 
 uint32_t Target_cluster_ctrl_xtrigger::get_halt_status()
 {
+
   uint32_t status = 0;
-  if (!top->cable->access(true, cluster_ctrl_addr + 0x000028, 4, (char*)&status))
-    throw CableException("Target_cluster_ctrl_xtrigger::get_halt_mask() Error writing to 0x%08x", cluster_ctrl_addr + 0x000028);
-  return status;
+  if (!m_top->cable->access(false, cluster_ctrl_addr + 0x000028, 4, (char*)&status))
+    throw CableException("Target_cluster_ctrl_xtrigger::get_halt_status() Error reading from 0x%08x", cluster_ctrl_addr + 0x000028);
+  return status&current_mask;
 }
 
-Target_cluster_power_bypass::Target_cluster_power_bypass(Gdb_server *top, uint32_t reg_addr, int bit)
-: top(top), reg_addr(reg_addr), bit(bit)
+Target_cluster_power_bypass::Target_cluster_power_bypass(Gdb_server * top, uint32_t reg_addr, int bit)
+: m_top(top), reg_addr(reg_addr), bit(bit)
 {
 }
 
@@ -110,19 +114,20 @@ Target_cluster_power_bypass::Target_cluster_power_bypass(Gdb_server *top, uint32
 
 bool Target_cluster_power_bypass::is_on()
 {
+
   uint32_t info = 0;
-  if (!top->cable->access(false, reg_addr, 4, (char*)&info))
+  if (!m_top->cable->access(false, reg_addr, 4, (char*)&info))
     throw CableException("Error reading from to 0x%08x", reg_addr);
-  top->log->debug("Cluster power bypass 0x%08x\n", info);
+  m_top->log.debug("Cluster power bypass 0x%08x\n", info);
   return (info >> bit) & 1;
 }
 
 
 
-Target_core::Target_core(Gdb_server *top, uint32_t dbg_unit_addr, Target_cluster_common * cluster, int core_id)
-: top(top), dbg_unit_addr(dbg_unit_addr), cluster(cluster), core_id(core_id)
+Target_core::Target_core(Gdb_server * top, uint32_t dbg_unit_addr, Target_cluster_common *cluster, int core_id)
+: m_top(top), dbg_unit_addr(dbg_unit_addr), cluster(cluster), core_id(core_id)
 {
-  top->log->print(LOG_DEBUG, "Instantiated core %d:%d\n", this->get_cluster_id(), this->core_id);
+  m_top->log.print(LOG_DEBUG, "Instantiated core %d:%d\n", this->get_cluster_id(), this->core_id);
   this->thread_id = first_free_thread_id++;
 }
 
@@ -130,7 +135,7 @@ Target_core::Target_core(Gdb_server *top, uint32_t dbg_unit_addr, Target_cluster
 
 void Target_core::init()
 {
-  top->log->print(LOG_DEBUG, "Init core\n");
+  m_top->log.print(LOG_DEBUG, "Init core\n");
   this->is_on = false;
   pc_is_cached = false;
   stopped = false;
@@ -146,7 +151,7 @@ int Target_core::first_free_thread_id = 0;
 
 void Target_core::flush()
 {
-  this->top->log->debug("Flushing core prefetch buffer (cluster: %d, core: %d)\n", this->get_cluster_id(), core_id);
+  m_top->log.debug("Flushing core prefetch buffer (cluster: %d, core: %d)\n", this->get_cluster_id(), core_id);
   // Write back the value of NPC so that it triggers a flush of the prefetch buffer
   uint32_t npc;
   this->read(DBG_NPC_REG, &npc);
@@ -158,10 +163,11 @@ void Target_core::flush()
 void Target_core::gpr_read_all(uint32_t *data)
 {
   if (!is_on) throw OffCoreAccessException();
-  this->top->log->debug("Reading all registers (cluster: %d, core: %d)\n", this->get_cluster_id(), core_id);
 
-  // Write back the valu
-  if (!top->cable->access(false, dbg_unit_addr + 0x0400, 32 * 4, (char*)data))
+  m_top->log.debug("Reading all registers (cluster: %d, core: %d)\n", this->get_cluster_id(), core_id);
+
+  // Write back the value
+  if (!m_top->cable->access(false, dbg_unit_addr + 0x0400, 32 * 4, (char*)data))
     throw CableException("Error reading from to 0x%08x", dbg_unit_addr + 0x0400);
 }
 
@@ -185,7 +191,7 @@ void Target_core::gpr_write(unsigned int i, uint32_t data)
 void Target_core::ie_write(uint32_t data)
 {
   if (!is_on) return;
-  top->log->print(LOG_DEBUG, "%d:%d -----> TRAP ENABLED\n", this->get_cluster_id(), core_id);
+  m_top->log.print(LOG_DEBUG, "%d:%d -----> TRAP ENABLED\n", this->get_cluster_id(), core_id);
   this->write(DBG_IE_REG, data);
 }
 
@@ -203,30 +209,31 @@ bool Target_core::get_power()
 
 void Target_core::set_power(bool is_on)
 {
-  top->log->detail("Core %d:%d check power %d -> %d\n", this->get_cluster_id(), core_id, this->is_on, is_on);
+
+  m_top->log.detail("Core %d:%d check power %d -> %d\n", this->get_cluster_id(), core_id, this->is_on, is_on);
   if (is_on != this->is_on)
   {
-    top->log->debug("Core %d:%d power state changed\n", this->get_cluster_id(), core_id, this->is_on, is_on);
+    m_top->log.debug("Core %d:%d power state changed\n", this->get_cluster_id(), core_id, this->is_on, is_on);
     this->power_state_changed = true;
     this->pc_is_cached = false; // power state has changed - pc cannot be cached
     this->is_on = is_on;
     if (is_on) {
-      top->log->print(LOG_DEBUG, "Core %d:%d on\n", this->get_cluster_id(), core_id);
+      m_top->log.print(LOG_DEBUG, "Core %d:%d on\n", this->get_cluster_id(), core_id);
       // // // let's discover core id and cluster id
       // this->stop();
       // uint32_t hartid_tmp;
       // csr_read(0x014, &hartid_tmp);
       // // csr_read(0xF14, &hartid);
-      // top->log->print(LOG_DEBUG, "Read hart id %d\n", hartid_tmp);
+      // m_top->log.print(LOG_DEBUG, "Read hart id %d\n", hartid_tmp);
 
       // // cluster_id = hartid >> 5;
       // // core_id = hartid & 0x1f;
 
-      // top->log->print(LOG_DEBUG, "Found a core with id %X (cluster: %d, core: %d)\n", hartid, this->get_cluster_id(), core_id);
+      // m_top->log.print(LOG_DEBUG, "Found a core with id %X (cluster: %d, core: %d)\n", hartid, this->get_cluster_id(), core_id);
       this->ie_write(1<<3|1<<2); // traps on illegal instructions and ebrks
       // if (!stopped) resume();
     } else {
-      top->log->print(LOG_DEBUG, "Core %d:%d off\n", this->get_cluster_id(), core_id);
+      m_top->log.print(LOG_DEBUG, "Core %d:%d off\n", this->get_cluster_id(), core_id);
     }
   }
 }
@@ -236,10 +243,11 @@ void Target_core::set_power(bool is_on)
 void Target_core::read(uint32_t addr, uint32_t* rdata)
 {
   if (!is_on) throw OffCoreAccessException();
+
   uint32_t offset = dbg_unit_addr + addr;
-  bool res = top->cable->access(false, offset, 4, (char*)rdata);
+  bool res = m_top->cable->access(false, offset, 4, (char*)rdata);
   if (res) {
-    top->log->detail("Reading register (addr: 0x%x, contents: 0x%08x)\n", offset, *rdata);
+    m_top->log.detail("Reading register (addr: 0x%x, contents: 0x%08x)\n", offset, *rdata);
   } else {
     throw CableException("Error reading register (addr: 0x%x)", offset);
   }
@@ -250,10 +258,11 @@ void Target_core::read(uint32_t addr, uint32_t* rdata)
 void Target_core::write(uint32_t addr, uint32_t wdata)
 {
   if (!is_on) throw OffCoreAccessException();
+
   uint32_t offset = dbg_unit_addr + addr;
-  bool res = top->cable->access(true, offset, 4, (char*)&wdata);
+  bool res = m_top->cable->access(true, offset, 4, (char*)&wdata);
   if (res) {
-    top->log->detail("Writing register (addr: 0x%x, value: 0x%x)\n", offset, wdata);
+    m_top->log.detail("Writing register (addr: 0x%x, value: 0x%x)\n", offset, wdata);
   } else {
     throw CableException("Error writing register (addr: 0x%x)", offset);
   }
@@ -263,13 +272,13 @@ void Target_core::write(uint32_t addr, uint32_t wdata)
 
 void Target_core::csr_read(unsigned int i, uint32_t *data)
 {
-  top->log->detail("Reading CSR at offset 0x%08x\n", i);
+  m_top->log.detail("Reading CSR at offset 0x%08x\n", i);
   this->read(0x4000 + i * 4, data);
 }
 
 void Target_core::csr_write(unsigned int i, uint32_t data)
 {
-  top->log->detail("Writing CSR at offset 0x%08x\n", i);
+  m_top->log.detail("Writing CSR at offset 0x%08x\n", i);
   this->write(0x4000 + i * 4, data);
 }
 
@@ -282,7 +291,7 @@ bool Target_core::is_stopped() {
 
   this->stopped = data & 0x10000;
 
-  top->log->debug("Checking core status (cluster: %d, core: %d, stopped: %d)\n", this->get_cluster_id(), core_id, this->stopped);
+  m_top->log.debug("Checking core status (cluster: %d, core: %d, stopped: %d)\n", this->get_cluster_id(), core_id, this->stopped);
 
   return this->stopped;
 }
@@ -292,7 +301,7 @@ void Target_core::stop()
 {
   if (!is_on||this->stopped) return;
 
-  this->top->log->debug("Halting core (cluster: %d, core: %d, is_on: %d)\n", this->get_cluster_id(), core_id, is_on);
+  m_top->log.debug("Halting core (cluster: %d, core: %d, is_on: %d)\n", this->get_cluster_id(), core_id, is_on);
   uint32_t data;
   this->read(DBG_CTRL_REG, &data);
 
@@ -312,7 +321,7 @@ void Target_core::halt()
 void Target_core::set_step_mode(bool new_step)
 {
   if (new_step != step) {
-    this->top->log->debug("Setting step mode (cluster: %d, core: %d, step: %d, new_step: %d)\n",  this->get_cluster_id(), core_id, step, new_step);
+    m_top->log.debug("Setting step mode (cluster: %d, core: %d, step: %d, new_step: %d)\n",  this->get_cluster_id(), core_id, step, new_step);
     this->step = new_step;
     this->commit_step = true;
   }
@@ -324,7 +333,7 @@ void Target_core::commit_step_mode()
   if (!is_on) return;
 
   if (commit_step) {
-    this->top->log->debug("Committing step mode (cluster: %d, core: %d, step: %d)\n",  this->get_cluster_id(), core_id, step);
+    m_top->log.debug("Committing step mode (cluster: %d, core: %d, step: %d)\n",  this->get_cluster_id(), core_id, step);
     this->write(DBG_CTRL_REG, (1<<16) | step);
     this->commit_step = false;
   }
@@ -339,8 +348,10 @@ bool Target_core::actual_pc_read(unsigned int* pc)
   bool is_hit;
   bool is_sleeping;
 
+
+
   if (pc_is_cached) {
-    this->top->log->debug("PC was cached at 0x%08x Core %d:%d (is_BP: %d)\n", 
+    m_top->log.debug("PC was cached at 0x%08x Core %d:%d (is_BP: %d)\n", 
       pc_cached, this->get_cluster_id(), this->get_core_id(), on_trap);
     *pc = pc_cached;
     return true;
@@ -360,7 +371,7 @@ bool Target_core::actual_pc_read(unsigned int* pc)
     *pc = (EXC_CAUSE_INTERUPT(cause)||cause==EXC_CAUSE_DBG_HALT ? npc : ppc);
     on_trap = cause == EXC_CAUSE_BREAKPOINT;
   }
-  this->top->log->debug("PPC 0x%x NPC 0x%x PC 0x%x Core %d:%d (is_BP: %d)\n", 
+  m_top->log.debug("PPC 0x%x NPC 0x%x PC 0x%x Core %d:%d (is_BP: %d)\n", 
     ppc, npc, *pc, this->get_cluster_id(), this->get_core_id(), on_trap);
   pc_cached = *pc;
   pc_is_cached = true;
@@ -387,35 +398,36 @@ uint32_t Target_core::get_cause()
   uint32_t cause;
   this->read(DBG_CAUSE_REG, &cause);
 
-  top->log->debug("core %d:%d stop cause %x\n", this->get_cluster_id(), this->get_core_id(), cause);
+  m_top->log.debug("core %d:%d stop cause %x\n", this->get_cluster_id(), this->get_core_id(), cause);
   return cause;
 }
 
 
 uint32_t Target_core::check_stopped()
 {
+
   bool stopped = this->is_stopped();
-  this->top->log->debug("Check core %d stopped %d resume %d\n", core_id, stopped, this->should_resume());
+  m_top->log.debug("Check core %d stopped %d resume %d\n", core_id, stopped, this->should_resume());
 
   if (this->should_resume() && stopped) {
     uint32_t cause;
     bool is_hit, is_sleeping;
     this->read_hit(&is_hit, &is_sleeping);
     if (is_hit) {
-      this->top->log->debug("core %d:%d tid %d single stepped\n", this->get_cluster_id(), this->get_core_id(), this->get_thread_id()+1);
+      m_top->log.debug("core %d:%d tid %d single stepped\n", this->get_cluster_id(), this->get_core_id(), this->get_thread_id()+1);
       return EXC_CAUSE_BREAKPOINT;
     }
     // Experiment for 1f issue
     // if (is_sleeping) {
-    //   this->top->log->debug("core %d:%d tid %d is stopped but may be sleeping\n", this->get_cluster_id(), this->get_core_id(), this->get_thread_id()+1);
+    //   m_top->log.debug("core %d:%d tid %d is stopped but may be sleeping\n", this->get_cluster_id(), this->get_core_id(), this->get_thread_id()+1);
     //   return EXC_CAUSE_NONE;
     // }
     cause = this->get_cause();
     if (cause == EXC_CAUSE_BREAKPOINT) {
-      this->top->log->debug("core %d:%d tid %d hit breakpoint\n", this->get_cluster_id(), this->get_core_id(), this->get_thread_id()+1);
+      m_top->log.debug("core %d:%d tid %d hit breakpoint\n", this->get_cluster_id(), this->get_core_id(), this->get_thread_id()+1);
       return cause;
     } else {
-      this->top->log->debug("core %d:%d tid %d is stopped with cause 0x%08x\n", this->get_cluster_id(), this->get_core_id(), this->get_thread_id()+1, cause);
+      m_top->log.debug("core %d:%d tid %d is stopped with cause 0x%08x\n", this->get_cluster_id(), this->get_core_id(), this->get_thread_id()+1, cause);
       return cause;
     }
   }
@@ -435,7 +447,7 @@ void Target_core::prepare_resume(bool step)
 {
   if (resume_prepared) return;
 
-  top->log->debug("Preparing core %d:%d to resume (step: %d)\n", this->get_cluster_id(), this->get_core_id(), step);
+  m_top->log.debug("Preparing core %d:%d to resume (step: %d)\n", this->get_cluster_id(), this->get_core_id(), step);
 
   resume_prepared = true;
   cluster->prepare_resume(step);
@@ -452,11 +464,13 @@ void Target_core::commit_resume()
 
   if (!this->is_on) return;
 
-  if (top->bkp->have_changed()) {
+
+
+  if (m_top->bkp->have_changed()) {
     this->flush();
   }
 
-  this->top->log->debug("Commit resume (cluster: %d, core: %d, step: %d)\n",  this->get_cluster_id(), core_id, step);
+  m_top->log.debug("Commit resume (cluster: %d, core: %d, step: %d)\n",  this->get_cluster_id(), core_id, step);
 
   this->commit_step_mode();
   // clear hit register, has to be done before CTRL
@@ -469,7 +483,7 @@ void Target_core::resume()
 {
   if (!is_on) return;
 
-  this->top->log->debug("Resuming (cluster: %d, core: %d, step: %d)\n",  this->get_cluster_id(), core_id, step);
+  m_top->log.debug("Resuming (cluster: %d, core: %d, step: %d)\n",  this->get_cluster_id(), core_id, step);
 
   this->write(DBG_CTRL_REG, step);
 
@@ -477,40 +491,31 @@ void Target_core::resume()
   this->read(DBG_CTRL_REG, &test);
 
   if (test != step) {
-    top->log->debug("Core %d:%d - wrote 0x%08x got 0x%08x\n", this->get_cluster_id(), this->get_core_id(), step, test);
+    m_top->log.debug("Core %d:%d - wrote 0x%08x got 0x%08x\n", this->get_cluster_id(), this->get_core_id(), step, test);
   } else {
-    top->log->debug("Core %d:%d - started ok\n", this->get_cluster_id(), this->get_core_id(), step, test);
+    m_top->log.debug("Core %d:%d - started ok\n", this->get_cluster_id(), this->get_core_id(), step, test);
   }
 }
 
 
 
-Target_cluster_common::Target_cluster_common(js::config *, Gdb_server *top, uint32_t cluster_addr, uint32_t xtrigger_addr, int cluster_id)
-: top(top), cluster_id(cluster_id), cluster_addr(cluster_addr), xtrigger_addr(xtrigger_addr)
+Target_cluster_common::Target_cluster_common(js::config *, Gdb_server * top, uint32_t cluster_addr, uint32_t xtrigger_addr, int cluster_id)
+: m_top(top), cluster_id(cluster_id), cluster_addr(cluster_addr), xtrigger_addr(xtrigger_addr)
 {
-    this->top->log->debug("Instantiating cluster %d\n",  cluster_id);
+  m_top->log.debug("Instantiating cluster %d\n",  cluster_id);
 }
 
 
 
 Target_cluster_common::~Target_cluster_common()
 {
-  for (auto &core: cores)
-  {
-    delete(core);
-  }
-  for (auto &wall: mem_walls)
-  {
-    delete(wall);
-  }
 }
 
 
 void Target_cluster_common::add_memory_wall(uint32_t addr, uint32_t len)
 {
-  top->log->debug("Add memory wall to cluster %d start: 0x%08x end: 0x%08x\n", cluster_id, addr, addr + len - 1);
-  Memory_wall * wall = new Memory_wall(addr, len);
-  mem_walls.push_back(wall);
+  m_top->log.debug("Add memory wall to cluster %d start: 0x%08x end: 0x%08x\n", cluster_id, addr, addr + len - 1);
+  mem_walls.push_back(std::make_shared<Memory_wall>(addr, len));
 }
 
 bool Target_cluster_common::memory_wall_overlaps(uint32_t addr, uint32_t len)
@@ -524,7 +529,7 @@ bool Target_cluster_common::memory_wall_overlaps(uint32_t addr, uint32_t len)
 
 void Target_cluster_common::init()
 {
-  top->log->debug("Init cluster %d\n", cluster_id);
+  m_top->log.debug("Init cluster %d\n", cluster_id);
   is_on = false;
   nb_on_cores = 0;
   for (auto &core: cores)
@@ -535,15 +540,20 @@ void Target_cluster_common::init()
 
 
 
-Target_core * Target_cluster_common::check_stopped(uint32_t *stopped_cause)
+std::shared_ptr<Target_core> Target_cluster_common::check_stopped(uint32_t *stopped_cause)
 {
   *stopped_cause = EXC_CAUSE_NONE;
-  Target_core * stopped_core = nullptr;
+  std::shared_ptr<Target_core> stopped_core = nullptr;
 
   this->update_power();
   if (!is_on) return stopped_core;
 
-  top->log->debug("Check if cluster %d stopped\n", get_id());
+  m_top->log.debug("Check if cluster %d stopped\n", get_id());
+
+  if (this->ctrl->has_xtrigger()) {
+    if (!std::dynamic_pointer_cast<Target_cluster_ctrl_xtrigger>(this->ctrl)->get_halt_status())
+      return stopped_core;
+  }
 
   for (auto &core: cores)
   {
@@ -581,7 +591,7 @@ void Target_cluster_common::prepare_resume(bool step)
 {
   if (resume_prepared) return;
 
-  top->log->debug("Preparing cluster %d to resume (step: %d)\n", cluster_id, step);
+  m_top->log.debug("Preparing cluster %d to resume (step: %d)\n", cluster_id, step);
 
   resume_prepared = true;
 }
@@ -598,7 +608,7 @@ void Target_cluster_common::flush()
 {
   if (!is_on) return;
 
-  this->top->log->debug("Flushing cluster instruction cache (cluster: %d, is_on: %d)\n", cluster_id, is_on);
+  m_top->log.debug("Flushing cluster instruction cache (cluster: %d, is_on: %d)\n", cluster_id, is_on);
 
   if (this->cache) this->cache->flush();
 }
@@ -606,19 +616,21 @@ void Target_cluster_common::flush()
 
 void Target_cluster_common::commit_resume()
 {
+
+
   if (!is_on) {
-    this->top->log->debug("Cluster %d is off - not committing resume\n", cluster_id);
+    m_top->log.debug("Cluster %d is off - not committing resume\n", cluster_id);
     return;
   }
 
   if (!resume_prepared) {
-    this->top->log->debug("Cluster %d is not resuming - not committing resume\n", cluster_id);
+    m_top->log.debug("Cluster %d is not resuming - not committing resume\n", cluster_id);
     return;
   }
 
-  this->top->log->debug("Committing resume (cluster: %d)\n", cluster_id);
+  m_top->log.debug("Committing resume (cluster: %d)\n", cluster_id);
 
-  if (top->bkp->have_changed()) {
+  if (m_top->bkp->have_changed()) {
     this->flush();
   }
 
@@ -631,17 +643,18 @@ void Target_cluster_common::commit_resume()
 
 void Target_cluster_common::resume()
 {
+
   if (!is_on) {
-    this->top->log->debug("Cluster %d is off - not resuming\n", cluster_id);
+    m_top->log.debug("Cluster %d is off - not resuming\n", cluster_id);
     return;
   }
 
   if (!resume_prepared) {
-    this->top->log->debug("Cluster %d is not resuming\n", cluster_id);
+    m_top->log.debug("Cluster %d is not resuming\n", cluster_id);
     return;
   }
 
-  this->top->log->debug("Resuming (cluster: %d)\n", cluster_id);
+  m_top->log.debug("Resuming (cluster: %d)\n", cluster_id);
 
   if (this->ctrl->has_xtrigger()) {
 
@@ -657,9 +670,9 @@ void Target_cluster_common::resume()
       }
     }
 
-    ((Target_cluster_ctrl_xtrigger *)this->ctrl)->set_halt_mask(xtrigger_mask);
-    this->top->log->debug("Resuming cluster through global register (cluster: %d, mask: %x)\n", cluster_id, xtrigger_mask);
-    this->top->cable->access(true, xtrigger_addr + 0x00200000 + 0x28, 4, (char*)&xtrigger_mask);
+    std::dynamic_pointer_cast<Target_cluster_ctrl_xtrigger>(this->ctrl)->set_halt_mask(xtrigger_mask);
+    m_top->log.debug("Resuming cluster through global register (cluster: %d, mask: %x)\n", cluster_id, xtrigger_mask);
+    m_top->cable->access(true, xtrigger_addr + 0x00200000 + 0x28, 4, (char*)&xtrigger_mask);
   } else {
     // Otherwise, just resume them individually
     for (auto &core: cores) {
@@ -684,12 +697,13 @@ bool Target_cluster_common::get_power()
 
 void Target_cluster_common::set_power(bool is_on)
 {
-  top->log->detail("Cluster %d check power %d -> %d\n", this->cluster_id, this->is_on, is_on);
+
+  m_top->log.detail("Cluster %d check power %d -> %d\n", this->cluster_id, this->is_on, is_on);
   if (is_on != this->is_on) {
-    top->log->debug("Cluster %d power state changed\n", this->cluster_id, this->is_on, is_on);
+    m_top->log.debug("Cluster %d power state changed\n", this->cluster_id, this->is_on, is_on);
     this->is_on = is_on;
     if (this-is_on) {
-      this->top->log->debug("Do controller init\n");
+      m_top->log.debug("Do controller init\n");
       ctrl->init();
     }
   }
@@ -698,7 +712,7 @@ void Target_cluster_common::set_power(bool is_on)
     if (nb_on_cores != nb_core)
     {
       nb_on_cores=0;
-      this->top->log->debug("Set all on (is_on: %d, nb_on_cores: %d, nb_core: %d)\n", is_on, nb_on_cores, nb_core);
+      m_top->log.debug("Set all on (is_on: %d, nb_on_cores: %d, nb_core: %d)\n", is_on, nb_on_cores, nb_core);
       for(auto const& core: cores)
       {
         core->set_power(is_on);
@@ -719,11 +733,12 @@ void Target_cluster_common::halt()
   // Either the core is alone (FC) or the cluster is using a cross-trigger matrix to stop all cores
   // thus only stop the first one
   this->update_power();
+
   if (!is_on) {
-    this->top->log->debug("Cluster %d is off\n", cluster_id);
+    m_top->log.debug("Cluster %d is off\n", cluster_id);
     return;
   }
-  this->top->log->debug("Halting cluster (cluster: %d)\n", cluster_id);
+  m_top->log.debug("Halting cluster (cluster: %d)\n", cluster_id);
   cores.front()->halt();
   // Cache all the PCs and halt status and move PCs back over breakpoints before doing anything else
   uint32_t pc;
@@ -735,8 +750,8 @@ void Target_cluster_common::halt()
     // If there is a breakpoint at the address of the actual program counter
     // it must have executed at the same time as a breakpoint on another
     // core so reexecute it
-    if (top->bkp->at_addr(pc) && core->is_stopped_on_trap()) {
-      top->log->debug("Core %d:%d was on breakpoint. Re-executing\n", core->get_cluster_id(), core->get_core_id());
+    if (m_top->bkp->at_addr(pc) && core->is_stopped_on_trap()) {
+      m_top->log.debug("Core %d:%d was on breakpoint. Re-executing\n", core->get_cluster_id(), core->get_core_id());
       core->write(DBG_NPC_REG, pc); // re-execute this instruction
     }
   }
@@ -744,21 +759,21 @@ void Target_cluster_common::halt()
 
 
 
-Target_cluster::Target_cluster(js::config *system_config, js::config *config, Gdb_server *top, uint32_t cluster_base, uint32_t xtrigger_addr, int cluster_id)
+Target_cluster::Target_cluster(js::config *system_config, js::config *config, Gdb_server * top, uint32_t cluster_base, uint32_t xtrigger_addr, int cluster_id)
 : Target_cluster_common(config, top, cluster_base, xtrigger_addr, cluster_id)
 {
+  auto _top = m_top;
   int nb_pe = config->get("nb_pe")->get_int();
-  top->log->debug("creating cluster %d with %d cores\n", cluster_id, nb_pe);
+  _top->log.debug("creating cluster %d with %d cores\n", cluster_id, nb_pe);
   for (int i=0; i<nb_pe; i++)
   {
-    Target_core *core = new Target_core(top, cluster_base + 0x300000 + i * 0x8000, this, i);
-    cores.push_back(core);
+    cores.push_back(std::make_shared<Target_core>(top, cluster_base + 0x300000 + i * 0x8000, this, i));
     nb_core++;
   }
 
   // Figure out if the cluster can be powered down
   js::config *bypass_config = system_config->get("**/apb_soc_ctrl/regmap/power/bypass");
-  top->log->debug("cluster %d power bypass %d\n", cluster_id, bypass_config != NULL);
+  _top->log.debug("cluster %d power bypass %d\n", cluster_id, bypass_config != NULL);
   if (bypass_config)
   {
     uint32_t addr = system_config->get("**/apb_soc_ctrl/base")->get_int() +
@@ -766,39 +781,78 @@ Target_cluster::Target_cluster(js::config *system_config, js::config *config, Gd
     int bit = bypass_config->get("content/dbg1/bit")->get_int();
 
     // Case where there is an apb soc ctrl register which tells if the cluster is on
-    power = new Target_cluster_power_bypass(top, addr, bit);
+    power = std::make_shared<Target_cluster_power_bypass>(top, addr, bit);
   }
   else
   {
     // Otherwise, the cluster will always be on
-    power = new Target_cluster_power();
+    power = std::make_shared<Target_cluster_power>();
   }
 
-  ctrl = new Target_cluster_ctrl_xtrigger(top, cluster_base + 0x00200000);
+  ctrl = std::make_shared<Target_cluster_ctrl_xtrigger>(top, cluster_base + 0x00200000);
 
-  cache = new Target_cluster_cache(top, cluster_base + 0x00201400);
+  cache = std::make_shared<Target_cluster_cache>(top, cluster_base + 0x00201400);
 
   this->update_power();
 }
 
 
 
-Target_fc::Target_fc(js::config *config, Gdb_server *top, uint32_t fc_dbg_base, uint32_t fc_cache_base, int cluster_id)
+Target_fc::Target_fc(js::config *system_config, js::config *config, Gdb_server * top, uint32_t fc_dbg_base, uint32_t fc_cache_base, int cluster_id)
 : Target_cluster_common(config, top, fc_dbg_base, -1, cluster_id)
 {
-  Target_core *core = new Target_core(top, fc_dbg_base, this, 0);
-  cores.push_back(core);
+  js::config *eu_status = system_config->get("**/fc_eu/regmap/registers/status");
+  js::config *eu_base = system_config->get("**/fc_eu/base");
+
+  if (eu_status && eu_base) {
+    m_fc_eu_status = eu_base->get_int() + eu_status->get("offset")->get_int();
+    m_top->log.debug("FC EU clock status register at 0x%x\n", m_fc_eu_status);
+  }
+
+  cores.push_back(std::make_shared<Target_core>(top, fc_dbg_base, this, 0));
   nb_core++;
 
   // the FC will always be on
-  power = new Target_cluster_power();
+  power = std::make_shared<Target_cluster_power>();
 
-  ctrl = new Target_cluster_ctrl();
+  ctrl = std::make_shared<Target_cluster_ctrl>();
 
   if (fc_cache_base != 0xffffffff)
-    cache = new Target_fc_cache(top, fc_cache_base);
+    cache = std::make_shared<Target_fc_cache>(top, fc_cache_base);
 
   this->update_power();
+}
+
+std::shared_ptr<Target_core> Target_fc::check_stopped(uint32_t *stopped_cause)
+{
+  *stopped_cause = EXC_CAUSE_NONE;
+
+  this->update_power();
+
+  if (!is_on) return nullptr;
+
+  if (!cores[0]->should_resume()) return nullptr;
+
+  if (m_fc_eu_status && event_unit_core_gated()) return nullptr;
+
+  m_top->log.debug("Check if cluster %d stopped\n", get_id());
+
+  uint32_t cause = cores[0]->check_stopped();
+  if (cause != EXC_CAUSE_NONE) {
+    *stopped_cause = cause;
+    return cores[0];
+  }
+
+  return nullptr;
+}
+
+bool Target_fc::event_unit_core_gated()
+{
+  uint32_t clk_status = 0;
+  if (!m_top->cable->access(true, m_fc_eu_status, 4, (char*)&clk_status))
+     throw CableException("Error reading clock gate status");
+  m_top->log.detail("FC EU clock gate status %d\n", clk_status);
+  return clk_status&0x1;
 }
 
 #if 0
@@ -834,11 +888,12 @@ void Target_cluster::set_power(bool is_on)
 
 
 
-Target::Target(Gdb_server *top)
-: top(top)
+Target::Target(Gdb_server * top)
+:m_top(top)
 {
-  top->log->debug("Init target\n");
-  js::config *config = top->config;
+  auto _top = m_top;
+  _top->log.debug("Init target\n");
+  js::config *config = m_top->config;
 
   js::config *fc_config = config->get("**/soc/fc");
   if (fc_config != NULL)
@@ -848,12 +903,10 @@ Target::Target(Gdb_server *top)
     unsigned int fc_icache_addr = -1;
     if (cache_config)
       fc_icache_addr = cache_config->get_int();
-
-    Target_fc *cluster = new Target_fc(fc_config, top, fc_dbg_addr, fc_icache_addr, fc_config->get("cluster_id")->get_int());
-
+    auto cluster = std::make_shared<Target_fc>(config, fc_config, top, fc_dbg_addr, fc_icache_addr, fc_config->get("cluster_id")->get_int());
     clusters.push_back(cluster);
-    Target_core *core = cluster->get_core(0);
-    top->log->debug("Init FC Core %d:%d Thread Id %d\n", core->get_cluster_id(), core->get_core_id(), core->get_thread_id());
+    std::shared_ptr<Target_core> core = cluster->get_core(0);
+    _top->log.debug("Init FC Core %d:%d Thread Id %d\n", core->get_cluster_id(), core->get_core_id(), core->get_thread_id());
     cores.push_back(core);
     cores_from_threadid[core->get_thread_id()] = core;
     js::config *fc_base_config = config->get("**/soc/base");
@@ -874,27 +927,23 @@ Target::Target(Gdb_server *top)
         cluster_base = base_config->get_int();
 
       uint32_t this_cluster_base = cluster_base + 0x400000 * i;
-      Target_cluster *cluster = new Target_cluster(config, cluster_config, top, this_cluster_base, this_cluster_base, i);
+      auto cluster = std::make_shared<Target_cluster>(config, cluster_config, top, this_cluster_base, this_cluster_base, i);
       cluster->add_memory_wall(this_cluster_base, 0x400000);
       clusters.push_back(cluster);
       for (int j=0; j<cluster->get_nb_core(); j++)
       {
-        Target_core *core = cluster->get_core(j);
-        top->log->debug("Init Cluster Core %d:%d Thread Id %d\n", core->get_cluster_id(), core->get_core_id(), core->get_thread_id());
+        auto core = cluster->get_core(j);
+        _top->log.debug("Init Cluster Core %d:%d Thread Id %d\n", core->get_cluster_id(), core->get_core_id(), core->get_thread_id());
         cores.push_back(core);
         cores_from_threadid[core->get_thread_id()] = core;
       }
     }
   }
-  top->log->debug("Finish target init\n");
+  _top->log.debug("Finish target init\n");
 }
 
 Target::~Target()
 {
-  for (auto &cluster : this->clusters)
-  {
-    delete(cluster);
-  }
 }
 
 void Target::flush()
@@ -934,18 +983,18 @@ void Target::resume_all()
     cluster->resume();
   }
   // all the cores have resumed so clear the enable / disable history
-  top->bkp->clear_history();
+  m_top->bkp->clear_history();
 }
 
-Target_core * Target::check_stopped()
+std::shared_ptr<Target_core> Target::check_stopped()
 {
-  this->top->log->debug("Check if target stopped\n");
-  Target_core * stopped_core = NULL;
+  m_top->log.debug("Check if target stopped\n");
+  std::shared_ptr<Target_core> stopped_core = NULL;
   for (auto &cluster : this->clusters)
   {
     uint32_t cause;
 
-    Target_core * core = cluster->check_stopped(&cause);
+    auto core = cluster->check_stopped(&cause);
     if (cause == EXC_CAUSE_BREAKPOINT) {
       stopped_core = core;
       break;
@@ -958,7 +1007,7 @@ Target_core * Target::check_stopped()
 
 void Target::reinitialize()
 {
-  this->top->log->debug("Reinitialize target\n");
+  m_top->log.debug("Reinitialize target\n");
   for (auto &cluster: clusters) {
     cluster->init();
   }
@@ -973,16 +1022,18 @@ void Target::update_power()
 
 void Target::mem_read(uint32_t addr, uint32_t length, char * buffer)
 {
-  if (!top->cable->access(false, addr, length, buffer))
+
+  if (!m_top->cable->access(false, addr, length, buffer))
     throw CableException("Error reading memory (addr: 0x%08x, len: %d)", addr, length);
-  top->log->detail("read memory (addr: 0x%08x, len: %d)\n", addr, length);
+  m_top->log.detail("read memory (addr: 0x%08x, len: %d)\n", addr, length);
 }
 
 void Target::mem_write(uint32_t addr, uint32_t length, char * buffer)
 {
-  if(!top->cable->access(true, addr, length, buffer))
+
+  if(!m_top->cable->access(true, addr, length, buffer))
     throw CableException("Error writing memory (addr: 0x%08x, len: %d)", addr, length);
-  top->log->detail("write memory (addr: 0x%08x, len: %d)\n", addr, length);
+  m_top->log.detail("write memory (addr: 0x%08x, len: %d)\n", addr, length);
 }
 
 bool Target::check_mem_access(uint32_t addr, uint32_t length)

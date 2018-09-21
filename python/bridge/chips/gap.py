@@ -116,7 +116,7 @@ class gap_debug_bridge(debug_bridge):
         self.write_32(0x1a100004, 0x840005f5)
         self.write_32(0x1a100008, 0x8100410b)
 
-        return 0
+        return True
 
     def qxfer_read(self, object, annex):
         if object != "features":
@@ -129,35 +129,33 @@ class gap_debug_bridge(debug_bridge):
 
         self.log(1, 'Loading binary through jtag')
 
-        if self.stop() != 0:
-            return -1
+        if not self.stop():
+            return False
 
         # Load the binary through jtag
 
         for binary in self.binaries:
             self.log(1, "Loading binary from " + binary)
-            if self.load_elf(binary=binary):
-                return 1
+            if not self.load_elf(binary=binary):
+                return False
 
         # Be careful to set the new PC only after the code is loaded as the prefetch
         # buffer is immediately fetching instructions and would get wrong instructions
         self.write(0x1B302000, 4, [0x80, 0x00, 0x00, 0x1c])
 
         self.start_cores = True
-
-        return 0
+        return True
 
 
     def start(self):
-
         if self.start_cores and not self.is_started:
             self.log(1, 'Starting execution')
 
             self.is_started = True
             # Unstall the FC so that it starts fetching instructions from the loaded binary
-            self.write(0x1B300000, 4, [0, 0, 0, 0])
+            return self.write(0x1B300000, 4, [0, 0, 0, 0])
 
-        return 0
+        return False
 
 
     def load_jtag_hyper(self):
@@ -168,11 +166,11 @@ class gap_debug_bridge(debug_bridge):
         # We keep the reset active until the end so that it sees
         # the boot mode as soon as it boots from rom
         self.log(1, "Notifying to boot code that we are doing a JTAG boot from hyperflash")
-        self.get_cable().chip_reset(True)
-        self.get_cable().jtag_set_reg(JTAG_SOC_CONFREG, JTAG_SOC_CONFREG_WIDTH, BOOT_MODE_JTAG_HYPER)
-        self.get_cable().chip_reset(False)
+        res = self.get_cable().chip_reset(True)
+        res = res and self.get_cable().jtag_set_reg(JTAG_SOC_CONFREG, JTAG_SOC_CONFREG_WIDTH, BOOT_MODE_JTAG_HYPER)
+        res = res and self.get_cable().chip_reset(False)
 
-        return 0
+        return res
 
 
     def flash(self, f_path):
@@ -195,7 +193,7 @@ class gap_debug_bridge(debug_bridge):
         flasher_ready = self.read_32(addrFlasherRdy)
         while(flasher_ready == 0):
             flasher_ready = self.read_32(addrFlasherRdy)
-        flasher_ready = 0;
+        flasher_ready = 0
         addrBuffer = self.read_32((addrHeader+20))
         self.log(1, "Flash address buffer 0x{:x}".format(addrBuffer))
         self.write_32(addrFlashAddr, 0)
@@ -216,7 +214,7 @@ class gap_debug_bridge(debug_bridge):
                 while(flasher_ready == 0):
                     flasher_ready = self.read_32(addrFlasherRdy)
         f_img.close()
-        return 0
+        return True
 
 
     def load_jtag_old(self):
@@ -244,9 +242,9 @@ class gap_debug_bridge(debug_bridge):
         self.log(1, "Loading binaries")
         for binary in self.binaries:
             if self.load_elf(binary=binary):
-                return 1
+                return False
 
-        return 0
+        return True
 
 
     def start_old(self):
@@ -255,6 +253,6 @@ class gap_debug_bridge(debug_bridge):
         self.log(1, "Notifying to boot code that the binary is loaded")
         self.get_cable().jtag_set_reg(JTAG_SOC_CONFREG, JTAG_SOC_CONFREG_WIDTH, CONFREG_PGM_LOADED)
 
-        return 0
+        return True
 
 

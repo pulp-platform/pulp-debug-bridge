@@ -20,7 +20,7 @@
  */
 
 
-#include "gdb-server.hpp"
+#include "gdb-server/gdb-server.hpp"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -32,8 +32,8 @@
 #define INSN_BP_COMPRESSED   0x9002
 #define INSN_BP              0x00100073
 
-Breakpoints::Breakpoints(Gdb_server *top)
-: top(top) {
+Breakpoints::Breakpoints(Gdb_server * top)
+: m_top(top) {
 }
 
 #define FIND(m, addr) (m).find((addr)) != (m).end()
@@ -44,11 +44,11 @@ void Breakpoints::insert(unsigned int addr) {
 
   if (FIND(breakpoints, addr))
   {
-    top->log->error("breakpoint already inserted at 0x%08x\n", addr);
+    m_top->log.error("breakpoint already inserted at 0x%08x\n", addr);
     return;
   }
 
-  top->log->debug("Insert breakpoint at addr: 0x%08x\n", addr);
+  m_top->log.debug("Insert breakpoint at addr: 0x%08x\n", addr);
 
   breakpoint_ptr_t sp_bp;
   breakpoints_map_t::iterator it_disabled;
@@ -57,7 +57,7 @@ void Breakpoints::insert(unsigned int addr) {
     sp_bp = it_disabled->second;
     disabled_bps.erase(it_disabled);
   } else {
-    sp_bp = std::make_shared<Breakpoint>(top, addr);
+    sp_bp = std::make_shared<Breakpoint>(m_top, addr);
     enabled_bps[addr] = sp_bp;
   }
 
@@ -84,7 +84,7 @@ void Breakpoints::remove(unsigned int addr) {
 
   if (!(FIND_IT(breakpoints, addr, it)))
   {
-    top->log->debug("No breakpoint to remove at 0x%08x\n", addr);
+    m_top->log.debug("No breakpoint to remove at 0x%08x\n", addr);
     return;
   }
   this->remove_it(it);
@@ -117,7 +117,7 @@ Breakpoints::at_addr(unsigned int addr) {
 }
 
 void Breakpoints::enable_all() {
-  top->log->debug("Enable all breakpoints (size: %d)\n", breakpoints.size());
+  m_top->log.debug("Enable all breakpoints (size: %d)\n", breakpoints.size());
   
   for (breakpoints_map_t::iterator it = breakpoints.begin(); it != breakpoints.end(); it++) {
     breakpoints_map_t::iterator it_disabled;
@@ -135,7 +135,7 @@ void Breakpoints::enable_all() {
 
 void Breakpoints::disable_all() {
 
-  top->log->debug("Disable all breakpoints\n");
+  m_top->log.debug("Disable all breakpoints\n");
 
   for (breakpoints_map_t::iterator it = breakpoints.begin(); it != breakpoints.end(); it++) {
     breakpoints_map_t::iterator it_enabled;
@@ -151,34 +151,33 @@ void Breakpoints::disable_all() {
   }
 }
 
-Breakpoints::Breakpoint::Breakpoint(Gdb_server *top, uint32_t addr) : top(top), addr(addr)
+Breakpoints::Breakpoint::Breakpoint(Gdb_server * top, uint32_t addr) : m_top(top), addr(addr)
 {
 }
 
 void Breakpoints::Breakpoint::enable()
 {
-
   if (this->enabled)
-    top->log->error("breakpoint at addr: 0x%08x was already enabled\n", addr);
+    m_top->log.error("breakpoint at addr: 0x%08x was already enabled\n", addr);
 
   uint32_t insn_orig;
-  top->target->mem_read(addr, 4, (char*)&insn_orig);
+  m_top->target->mem_read(addr, 4, (char*)&insn_orig);
   is_compressed = INSN_IS_COMPRESSED(insn_orig);
 
-  top->log->debug("Enable %sbreakpoint at addr: 0x%08x old_insn: 0x%08x\n", is_compressed?"compressed ":"", addr, insn_orig);
+  m_top->log.debug("Enable %sbreakpoint at addr: 0x%08x old_insn: 0x%08x\n", is_compressed?"compressed ":"", addr, insn_orig);
 
   if (is_compressed) {
     insn_orig16 = insn_orig & 0xffff;
     uint16_t data_bp = INSN_BP_COMPRESSED;
-    top->target->mem_write(addr, 2, (char*)&data_bp);
+    m_top->target->mem_write(addr, 2, (char*)&data_bp);
   } else {
     insn_orig32 = insn_orig;
     uint32_t data_bp = INSN_BP;
-    top->target->mem_write(addr, 4, (char*)&data_bp);
+    m_top->target->mem_write(addr, 4, (char*)&data_bp);
   }
 
-  top->target->mem_read(addr, 4, (char*)&insn_orig);
-  top->log->debug("Written INSN 0x%08x\n", insn_orig);
+  m_top->target->mem_read(addr, 4, (char*)&insn_orig);
+  m_top->log.debug("Written INSN 0x%08x\n", insn_orig);
  
   this->enabled = true;
 }
@@ -186,35 +185,34 @@ void Breakpoints::Breakpoint::enable()
 void Breakpoints::Breakpoint::disable()
 {
   uint32_t data_bp;
-
   if (!this->enabled)
-    top->log->error("breakpoint at addr: 0x%08x was already disabled\n", addr);
+    m_top->log.error("breakpoint at addr: 0x%08x was already disabled\n", addr);
 
-  top->target->mem_read(addr, 4, (char*)&data_bp);
+  m_top->target->mem_read(addr, 4, (char*)&data_bp);
 
-  top->log->debug("Disable %sbreakpoint at addr: 0x%08x contents: 0x%08x\n", is_compressed?"compressed ":"", addr, data_bp);
+  m_top->log.debug("Disable %sbreakpoint at addr: 0x%08x contents: 0x%08x\n", is_compressed?"compressed ":"", addr, data_bp);
 
   if (is_compressed != INSN_IS_COMPRESSED(data_bp))
-    top->log->error("breakpoint at addr: 0x%08x compressed does not match actual instruction\n", addr);
+    m_top->log.error("breakpoint at addr: 0x%08x compressed does not match actual instruction\n", addr);
 
 
   if (is_compressed)
   {
     if ((data_bp&0xffff) != INSN_BP_COMPRESSED)
-      top->log->error("breakpoint at addr: 0x%08x contents 0x%08x is not a compressed ebrk\n", addr, data_bp);
+      m_top->log.error("breakpoint at addr: 0x%08x contents 0x%08x is not a compressed ebrk\n", addr, data_bp);
   } else {
     if (data_bp != INSN_BP)
-      top->log->error("breakpoint at addr: 0x%08x contents 0x%08x is not an ebrk\n", addr, data_bp);
+      m_top->log.error("breakpoint at addr: 0x%08x contents 0x%08x is not an ebrk\n", addr, data_bp);
   }
 
   if (is_compressed) {
-    top->target->mem_write(addr, 2, (char*)&insn_orig16);
+    m_top->target->mem_write(addr, 2, (char*)&insn_orig16);
   } else {
-    top->target->mem_write(addr, 4, (char*)&insn_orig32);
+    m_top->target->mem_write(addr, 4, (char*)&insn_orig32);
   }
 
-  top->target->mem_read(addr, 4, (char*)&data_bp);
-  top->log->debug("Written INSN 0x%08x\n", data_bp);
+  m_top->target->mem_read(addr, 4, (char*)&data_bp);
+  m_top->log.debug("Written INSN 0x%08x\n", data_bp);
 
   this->enabled = false;
 }

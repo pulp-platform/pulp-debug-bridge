@@ -25,6 +25,7 @@
 #include <stdio.h>
 #include <stdbool.h>
 #include <stdlib.h>
+#include <stdint.h>
 #include <errno.h>
 
 #include <fcntl.h>
@@ -41,7 +42,8 @@
 #include "cable.hpp"
 #include "json.hpp"
 
-#include "Tcp_listener.hpp"
+#include "events/tcp-events.hpp"
+#include "rsp-packet-codec.hpp"
 
 #define DBG_CTRL_REG  0x0
 #define DBG_HIT_REG   0x4
@@ -115,9 +117,10 @@ public:
 class Gdb_server
 {
 public:
-  Gdb_server(Log *log, Cable *cable, js::config *config, int socket_port,
+  Gdb_server(const EventLoop::SpEventLoop &event_loop, const std::shared_ptr<Cable> &cable, js::config *config, int socket_port,
     cmd_cb_t cmd_cb, const char * capabilities);
-  int stop(bool kill);
+  void start();
+  int stop();
   void abort();
   void print(const char *format, ...);
   int target_is_started();
@@ -126,20 +129,23 @@ public:
   void refresh_target();
   void target_update_power();
 
-  Rsp *rsp;
-  Log *log;
-  Cable *cable;
+  Log log;
+  EventLoop::SpEventLoop m_event_loop;
+  std::shared_ptr<Cable> cable;
   js::config *config;
-  Target *target;
-  Breakpoints *bkp;
+  int m_socket_port;
   cmd_cb_t cmd_cb;
   const char * capabilities;
+
+  std::shared_ptr<Target> target;
+  std::shared_ptr<Breakpoints> bkp;
+  std::shared_ptr<Rsp> rsp;
 };
 
 class Target_core
 {
 public:
-  Target_core(Gdb_server *top, uint32_t dbg_unit_addr, Target_cluster_common * cluster, int core_id);
+  Target_core(Gdb_server * top, uint32_t dbg_unit_addr, Target_cluster_common * cluster, int core_id);
   void set_power(bool is_on);
   bool get_power();
   bool has_power_state_change();
@@ -177,7 +183,7 @@ public:
   void gpr_write(unsigned int i, uint32_t data);
 
 private:
-  Gdb_server *top;
+  Gdb_server * m_top;
   uint32_t dbg_unit_addr;
   Target_cluster_common * cluster;
   int core_id;
@@ -198,7 +204,8 @@ private:
 
 class Target {
 public:
-  Target(Gdb_server *top);
+  using SpTarget_core = std::shared_ptr<Target_core>;
+  Target(Gdb_server * top);
   ~Target();
   inline int get_nb_threads() { return cores.size(); }
 
@@ -217,18 +224,18 @@ public:
   void mem_write(uint32_t addr, uint32_t length, char * buffer);
   bool check_mem_access(uint32_t addr, uint32_t length);
 
-  Target_core * check_stopped();
+  SpTarget_core check_stopped();
 
-  std::vector<Target_core *> get_threads() { return cores; }
-  Target_core *get_thread(int thread_id) { return cores_from_threadid[thread_id]; }
-  Target_core *get_thread_from_id(int id) { return cores[id]; }
+  std::vector<SpTarget_core> get_threads() { return cores; }
+  SpTarget_core get_thread(int thread_id) { return cores_from_threadid[thread_id]; }
+  SpTarget_core get_thread_from_id(int id) { return cores[id]; }
 
 
 private:
-  Gdb_server *top;
-  std::vector<Target_cluster_common *> clusters;
-  std::vector<Target_core *> cores;
-  std::map<int, Target_core *> cores_from_threadid;
+  Gdb_server * m_top;
+  std::vector<std::shared_ptr<Target_cluster_common>> clusters;
+  std::vector<SpTarget_core> cores;
+  std::map<int, SpTarget_core> cores_from_threadid;
   bool started = true;
 };
 
@@ -237,12 +244,12 @@ class Breakpoints {
   public:
     class Breakpoint {
       public:
-        Breakpoint(Gdb_server *top, uint32_t addr);
+        Breakpoint(Gdb_server * top, uint32_t addr);
       private:
         friend class Breakpoints;
         void enable();
         void disable();
-        Gdb_server *top;
+        Gdb_server * m_top;
         uint32_t addr;
         union {
           uint32_t insn_orig32;
@@ -252,7 +259,7 @@ class Breakpoints {
         bool enabled = false;
     };
 
-    Breakpoints(Gdb_server *top);
+    Breakpoints(Gdb_server * top);
 
     void insert(unsigned int addr);
     void remove(unsigned int addr);
@@ -273,7 +280,7 @@ class Breakpoints {
 
     breakpoints_map_t enabled_bps;
     breakpoints_map_t disabled_bps;
-    Gdb_server *top;
+    Gdb_server * m_top;
 
     void remove_it(breakpoints_map_t::iterator it);
 
@@ -306,40 +313,43 @@ private:
 
 
 
-class Rsp {
+class Rsp : public std::enable_shared_from_this<Rsp> {
   public:
-    Rsp(Gdb_server *top, int port);
-
-    bool start();
-    void stop(bool wait_finished);
+    Rsp(Gdb_server * top, int port, const EventLoop::SpEventLoop &event_loop, int64_t wait_time_usecs = 500000);
+    ~Rsp() { printf("RSP disposing\n"); }
+    void start();
+    void stop();
     void abort();
     void init();
-    void wait_finished();
 
     class Client
     {
       friend Rsp;
       public:
-        Client(Rsp *rsp, Tcp_socket::tcp_socket_ptr_t client);
+        Client(std::shared_ptr<Rsp> rsp, Tcp_socket::tcp_socket_ptr_t client);
         void stop();
-        bool is_running() { return running; };
+        bool is_running() { return m_state == RSP_TARGET_RUNNING; };
         bool send_str(const char* data);
       private:
-        void await_worker_finished();
-        bool is_worker_thread( std::thread::id id) { return thread==nullptr?false:id==thread->get_id(); }
+        enum RspClientState {
+          RSP_TARGET_RUNNING,
+          RSP_TARGET_STOPPED
+        };
+        void halt_target();
+        bool try_decode(char * pkt, size_t pkt_len);
         bool remote_capability(const char * name) {
-          Rsp_capabilities::const_iterator it = remote_caps.find (name);
-          return it != remote_caps.end() && it->second.get()->is_supported();
+          Rsp_capabilities::const_iterator it = m_remote_caps.find (name);
+          return it != m_remote_caps.end() && it->second.get()->is_supported();
         }
         int cause_to_signal(uint32_t cause, int * int_num = nullptr);
-        int get_signal(Target_core *core);
+        int get_signal(std::shared_ptr<Target_core> core);
         bool decode(char* data, size_t len);
         size_t get_packet(char* data, size_t len);
 
         void client_routine();
 
         bool regs_send();
-        bool signal(Target_core *core);
+        bool signal(const std::shared_ptr<Target_core> &core);
 
         bool signal() { return this->signal(nullptr); };
 
@@ -353,6 +363,7 @@ class Rsp {
 
         bool cont(char* data, size_t len); // continue, reserved keyword, thus not used as function name
         bool wait();
+        int64_t wait_routine();
         bool step(char* data, size_t len);
 
         // internal helper functions
@@ -367,53 +378,48 @@ class Rsp {
         bool bp_insert(char* data, size_t len);
         bool bp_remove(char* data, size_t len);
 
-        std::atomic<bool> running{false};
-        std::mutex m_rsp_worker;
-        bool aborted = false;
+        RspClientState m_state = RSP_TARGET_STOPPED;
+        std::shared_ptr<RspPacketCodec> m_codec;
+        EventLoop::SpTimerEvent m_wait_te;
 
-        Rsp_capabilities remote_caps;
-        Gdb_server *top;
+        int m_thread_sel;
 
-        Rsp *rsp = nullptr;
-        Tcp_socket::tcp_socket_ptr_t client = nullptr;
-        std::thread *thread = nullptr;
+        Rsp_capabilities m_remote_caps;
+        Gdb_server * m_top;
 
-        int thread_sel;
-        
-        int packet_timeout = 2000;
+        std::shared_ptr<Rsp>  m_rsp = nullptr;
+        Tcp_socket::tcp_socket_ptr_t m_client = nullptr;
+
+        int m_packet_timeout = 2000;
+        Log log;
     };
 
     typedef std::shared_ptr<Rsp::Client> rsp_client_ptr_t;
-    rsp_client_ptr_t get_client() { return client; }
-
+    rsp_client_ptr_t get_client() { return m_client; }
 
   private:
-    void stop_locked(std::unique_lock<std::mutex> lk, bool wait_finished);
-    void cleanup_client();
-    void lock_and_clientup_client();
-    void client_connected(Tcp_socket::tcp_socket_ptr_t client);
-    void client_disconnected(Tcp_socket::tcp_socket_ptr_t client);
+    void client_connected(const Tcp_socket::tcp_socket_ptr_t &client);
+    void client_disconnected(const Tcp_socket::tcp_socket_ptr_t &client);
     void rsp_client_finished();
     void notify_finished();
     void resume_target(bool step=false, int tid=-1);
     void halt_target();
     void indicate_halt();
     void indicate_resume();
+    void stop_listener();
 
-    Target_core *main_core = nullptr;
-    Tcp_listener *listener = nullptr;
-    rsp_client_ptr_t client;
-    Gdb_server *top = nullptr;
+    std::shared_ptr<Target_core> main_core = nullptr;
+    rsp_client_ptr_t m_client = nullptr;
+    Gdb_server * m_top = nullptr;
+    std::shared_ptr<Tcp_listener> m_listener;
 
     int m_thread_init;
-    int port;
-    std::mutex m_rsp_listener;
-    std::condition_variable cv_rsp_listener, cv_rsp_client;
-    bool listener_stopping = false;
-    int conn_cnt = 0;
-    bool aborted = false;
-    bool running = false;
-    bool stopped_by_worker = true;
+    int m_port;
+    EventLoop::SpEventLoop m_event_loop;
+    int64_t m_wait_time_usecs;
+    int m_conn_cnt = 0;
+    bool m_running = false, m_aborted = false, m_stopping = false;
+    Log log;
 };
 
 #endif

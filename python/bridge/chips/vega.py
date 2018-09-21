@@ -33,32 +33,29 @@ class vega_debug_bridge(debug_bridge):
         if self.verbose:
             print ('Loading binary through jtag')
 
-        if self.stop():
-            return -1
+        if not self.stop():
+            return False
 
         # Load the binary through jtag
         if self.verbose:
             print ("Loading binaries")
         for binary in self.binaries:
-            if self.load_elf(binary=binary):
-                return 1
-
-        # Be careful to set the new PC only after the code is loaded as the prefetch
-        # buffer is immediately fetching instructions and would get wrong instructions
-        self.write(0x1A112000, 4, [0x80, 0x80, 0x00, 0x1c])
+            if not self.load_elf(binary=binary):
+                return False
 
         self.start_cores = True
 
-        return 0
-
+        # Be careful to set the new PC only after the code is loaded as the prefetch
+        # buffer is immediately fetching instructions and would get wrong instructions
+        return self.write(0x1A112000, 4, [0x80, 0x80, 0x00, 0x1c])
 
     def start(self):
 
         if self.start_cores:
             # Unstall the FC so that it starts fetching instructions from the loaded binary
-            self.write(0x1A110000, 4, [0, 0, 0, 0])
+            return self.write(0x1A110000, 4, [0, 0, 0, 0])
 
-        return 0
+        return False
 
     def stop(self):
 
@@ -68,8 +65,10 @@ class vega_debug_bridge(debug_bridge):
         if self.verbose:
             print ("Stalling the FC")
 
-        self.get_cable().chip_reset(True)
-        self.get_cable().chip_reset(False)
+        if not self.get_cable().chip_reset(True):
+            return False
+        if not self.get_cable().chip_reset(False):
+            return False
 
         # Stall the FC as when the reset is released it just tries to load from flash
         while True:

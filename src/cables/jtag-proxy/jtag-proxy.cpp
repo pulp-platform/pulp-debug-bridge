@@ -18,26 +18,31 @@
  * Authors: Germain Haugou, ETH (germain.haugou@iis.ee.ethz.ch)
  */
 
-#include "jtag-proxy.hpp"
+#include "jtag-proxy/jtag-proxy.hpp"
 
-Jtag_proxy::Jtag_proxy(Log* log, cable_cb_t cable_state_cb) : log(log), cable_state_cb(cable_state_cb)
+Jtag_proxy::Jtag_proxy(EventLoop::SpEventLoop event_loop, cable_cb_t cable_state_cb) : log("JTAG"), cable_state_cb(cable_state_cb)
 {
-  m_client = new Tcp_client(
-    log,
-    [this](Tcp_socket::tcp_socket_ptr_t client) { return this->client_connected(client); }, 
-    [this](Tcp_socket::tcp_socket_ptr_t client) { return this->client_disconnected(client); }
-  );
+  using namespace std::placeholders;
+  m_tcp_client = std::make_shared<Tcp_client>(&log, event_loop);
+  m_tcp_client->set_connected_cb(std::bind(&Jtag_proxy::client_connected, this, _1));
+  m_tcp_client->set_disconnected_cb(std::bind(&Jtag_proxy::client_disconnected, this, _1));
 }   
 
-void Jtag_proxy::client_connected(Tcp_socket::tcp_socket_ptr_t)
+void Jtag_proxy::client_connected(Tcp_socket::tcp_socket_ptr_t socket)
 {
-  log->user("JTAG Proxy: Connected to (%s:%d)\n", m_server, m_port);
-  cable_state_cb(CABLE_CONNECTED);
+  if (socket == nullptr) {
+    log.user("JTAG Proxy: Connection to (%s:%d) timed out - retrying\n", m_server, m_port);
+    m_client->connect(m_server, m_port);
+  } else {
+    log.user("JTAG Proxy: Connected to (%s:%d)\n", m_server, m_port);
+    cable_state_cb(CABLE_CONNECTED);
+  }
 }
 
 void Jtag_proxy::client_disconnected(Tcp_socket::tcp_socket_ptr_t)
 {
-  log->user("JTAG Proxy: Disconnected from (%s:%d)\n", m_server, m_port);
+  log.user("JTAG Proxy: Disconnected from (%s:%d)\n", m_server, m_port);
+  m_socket = nullptr;
   cable_state_cb(CABLE_DISCONNECTED);
 }
 
@@ -47,7 +52,7 @@ bool Jtag_proxy::connect(js::config *config)
 
   if (proxy_config == NULL || proxy_config->get("port") == NULL)
   {
-    log->error("Didn't find any information for JTAG proxy\n");
+    log.error("Didn't find any information for JTAG proxy\n");
     return false;
   }
 
@@ -58,13 +63,11 @@ bool Jtag_proxy::connect(js::config *config)
   else
     m_server = proxy_config->get("host")->get_str().c_str();
 
-  log->user("JTAG Proxy: Connecting to (%s:%d)\n", m_server, m_port);
+  log.user("JTAG Proxy: Connecting to (%s:%d)\n", m_server, m_port);
 
-  if ((m_socket = m_client->connect(m_server, m_port)) == nullptr) {
-    log->error("Unable to connect to %s port %d\n", m_server, m_port);
-    return false;
-  }
-  return true;
+  m_socket = m_client->connect_blocking(m_server, m_port, 10000000L);
+
+  return m_socket != nullptr;
 }
 
 bool Jtag_proxy::bit_inout(char* inbit, char outbit, bool last)
@@ -74,6 +77,7 @@ bool Jtag_proxy::bit_inout(char* inbit, char outbit, bool last)
 
 bool Jtag_proxy::proxy_stream(char* instream, char* outstream, unsigned int n_bits, bool last, int bit)
 {
+  if (m_socket == nullptr) return false;
   proxy_req_t req;
   req.type=DEBUG_BRIDGE_JTAG_REQ;
   req.jtag.bits = n_bits;
@@ -106,13 +110,12 @@ bool Jtag_proxy::proxy_stream(char* instream, char* outstream, unsigned int n_bi
     buffer[n_bits-1] |= 1 << DEBUG_BRIDGE_JTAG_TMS;
   }
 
-  m_socket->send((void *)&req, sizeof(req));
-  m_socket->send((void *)(&(buffer[0])), n_bits);
+  if (m_socket->write_immediate((void *) &req, sizeof(req), true) != sizeof(req)) return false;
+  if (m_socket->write_immediate((void *)(&(buffer[0])), n_bits, true) != n_bits) return false;
   if (instream != NULL)
   {
-
     ::memset((void *)instream, 0, (n_bits + 7) / 8);
-    if (m_socket->receive_blocking((void *)instream, (n_bits + 7) / 8) != (func_ret_t)((n_bits + 7) / 8))
+    if (m_socket->read_immediate((void *)instream, (n_bits + 7) / 8, true) != (func_ret_t)((n_bits + 7) / 8))
       return false;
   }
   return true;
@@ -136,9 +139,10 @@ int Jtag_proxy::flush()
 
 bool Jtag_proxy::chip_reset(bool active)
 {
+  if (m_socket == nullptr) return false;
   proxy_req_t req;
   req.type=DEBUG_BRIDGE_RESET_REQ;
   req.reset.active = active;
-  m_socket->send((void *)&req, sizeof(req));
+  if (m_socket->write_immediate((void *)&req, sizeof(req), true) != sizeof(req)) return false;
   return true;
 }

@@ -22,19 +22,23 @@
 #include "gdb-server/gdb-server.hpp"
 #include <stdarg.h>
 
-Gdb_server::Gdb_server(Log *log, Cable *cable, js::config *config, int socket_port,
-  cmd_cb_t cmd_cb, const char * capabilities)
-: log(log), cable(cable), config(config), cmd_cb(cmd_cb), capabilities(capabilities)
+Gdb_server::Gdb_server(const EventLoop::SpEventLoop &event_loop, const std::shared_ptr<Cable> &cable, js::config *config, int socket_port,
+    cmd_cb_t cmd_cb, const char * capabilities)
+: log("GDBS"), m_event_loop(std::move(event_loop)), cable(std::move(cable)), config(config),
+  m_socket_port(socket_port), cmd_cb(cmd_cb), capabilities(capabilities)
 {
-  target = new Target(this);
-
-  bkp = new Breakpoints(this);
-
-  rsp = new Rsp(this, socket_port);
-
-  if (!rsp->start()) throw std::logic_error("Unable to start RSP server");
 }
 
+void Gdb_server::start() {
+  target = std::make_shared<Target>(this);
+
+  bkp = std::make_shared<Breakpoints>(this);
+
+  rsp = std::make_shared<Rsp>(this, m_socket_port, m_event_loop);
+
+  rsp->start();
+}
+ 
 int Gdb_server::target_is_started() {
   return cmd_cb("__is_started", NULL, 0);
 }
@@ -58,11 +62,11 @@ void Gdb_server::refresh_target()
   bkp->enable_all();
 }
 
-int Gdb_server::stop(bool kill)
+int Gdb_server::stop()
 {
   if (rsp != NULL)
   {
-    rsp->stop(!kill);
+    rsp->stop();
     rsp = NULL;
   }
   return 1;

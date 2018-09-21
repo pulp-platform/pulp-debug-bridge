@@ -46,10 +46,10 @@ public:
 class Target_cluster_cache : public Target_cache
 {
 public:
-  Target_cluster_cache(Gdb_server *top, uint32_t addr);
+  Target_cluster_cache(Gdb_server * top, uint32_t addr);
   void flush();
 private:
-  Gdb_server *top;
+  Gdb_server * m_top;
   uint32_t addr;
 };
 
@@ -58,10 +58,10 @@ private:
 class Target_fc_cache : public Target_cache
 {
 public:
-  Target_fc_cache(Gdb_server *top, uint32_t addr);
+  Target_fc_cache(Gdb_server * top, uint32_t addr);
   void flush();
 private:
-  Gdb_server *top;
+  Gdb_server * m_top;
   uint32_t addr;
 };
 
@@ -77,11 +77,11 @@ public:
 class Target_cluster_power_bypass : public Target_cluster_power
 {
 public:
-  Target_cluster_power_bypass(Gdb_server *top, uint32_t reg_addr, int bit);
+  Target_cluster_power_bypass(Gdb_server * top, uint32_t reg_addr, int bit);
   bool is_on();
 
 private:
-  Gdb_server *top;
+  Gdb_server * m_top;
   uint32_t reg_addr;
   int bit;
 };
@@ -100,7 +100,7 @@ public:
 class Target_cluster_ctrl_xtrigger : public Target_cluster_ctrl
 {
 public:
-  Target_cluster_ctrl_xtrigger(Gdb_server *top, uint32_t cluster_ctrl_addr);
+  Target_cluster_ctrl_xtrigger(Gdb_server * top, uint32_t cluster_ctrl_addr);
   void init();
   bool has_xtrigger() { return true; }
   void set_halt_mask(uint32_t mask);
@@ -108,7 +108,7 @@ public:
   uint32_t get_halt_status();
 
 private:
-  Gdb_server *top;
+  Gdb_server * m_top;
   uint32_t cluster_ctrl_addr;
   uint32_t current_mask = 0;
 };
@@ -121,10 +121,10 @@ class Target_cluster_common
   friend class Target_fc;
 
 public:
-  Target_cluster_common(js::config *config, Gdb_server *top, uint32_t cluster_addr, uint32_t xtrigger_addr, int cluster_id);
+  Target_cluster_common(js::config *config, Gdb_server * top, uint32_t cluster_addr, uint32_t xtrigger_addr, int cluster_id);
   virtual ~Target_cluster_common();
   int get_nb_core() { return nb_core; }
-  Target_core *get_core(int i) { return cores[i]; }
+  std::shared_ptr<Target_core> get_core(int i) { return cores[i]; }
   void update_power();
   void set_power(bool is_on);
   bool get_power();
@@ -136,23 +136,23 @@ public:
   void commit_resume();
   void prepare_resume(bool step);
   int get_id() { return cluster_id; }
-  virtual Target_core * check_stopped(uint32_t *stopped_cause);
+  virtual std::shared_ptr<Target_core> check_stopped(uint32_t *stopped_cause);
   void add_memory_wall(uint32_t addr, uint32_t len);
   bool memory_wall_overlaps(uint32_t addr, uint32_t len);
 protected:
-  Gdb_server *top;
-  std::vector<Target_core *> cores;
+  Gdb_server * m_top;
+  std::vector<std::shared_ptr<Target_core>> cores;
   bool is_on = false;
-  Target_cluster_power *power;
-  Target_cluster_ctrl *ctrl;
+  std::shared_ptr<Target_cluster_power> power;
+  std::shared_ptr<Target_cluster_ctrl> ctrl;
   int nb_on_cores = 0;
   int nb_core = 0;
   int cluster_id;
   uint32_t cluster_addr;
   uint32_t xtrigger_addr;
-  Target_cache *cache = NULL;
+  std::shared_ptr<Target_cache> cache = NULL;
   bool resume_prepared = false;
-  std::vector<Memory_wall *> mem_walls;
+  std::vector<std::shared_ptr<Memory_wall>> mem_walls;
 };
 
 
@@ -160,7 +160,7 @@ protected:
 class Target_cluster : public Target_cluster_common
 {
 public:
-  Target_cluster(js::config *system_config, js::config *config, Gdb_server *top, uint32_t cluster_base, uint32_t xtrigger_base, int cluster_id);
+  Target_cluster(js::config *system_config, js::config *config, Gdb_server * top, uint32_t cluster_base, uint32_t xtrigger_base, int cluster_id);
 };
 
 
@@ -168,5 +168,9 @@ public:
 class Target_fc : public Target_cluster_common
 {
 public:
-  Target_fc(js::config *config, Gdb_server *top, uint32_t fc_dbg_base, uint32_t fc_cache_base, int cluster_id);
+  Target_fc(js::config *system_config, js::config *config, Gdb_server * top, uint32_t fc_dbg_base, uint32_t fc_cache_base, int cluster_id);
+  std::shared_ptr<Target_core> check_stopped(uint32_t *stopped_cause);
+private:
+  bool event_unit_core_gated();
+  uint32_t m_fc_eu_status = 0;
 };

@@ -18,7 +18,7 @@
  * Authors: Martin Croome, GreenWaves Technologies (martin.croome@greenwaves-technologies.com)
  */
 
-#include "Tcp_listener.hpp"
+#include "tcp.hpp"
 
 Tcp_socket_owner::Tcp_socket_owner(Log *log, Tcp_socket::socket_cb_t connected_cb, Tcp_socket::socket_cb_t disconnected_cb) 
   : log(log), c_cb(connected_cb), d_cb(disconnected_cb) 

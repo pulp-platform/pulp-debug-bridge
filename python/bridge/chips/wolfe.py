@@ -32,14 +32,14 @@ class wolfe_debug_bridge(debug_bridge):
 
         self.log(1, 'Loading binary through jtag')
 
-        if self.stop():
-            return -1
+        if not self.stop():
+            return False
 
         # Load the binary through jtag
         self.log(1, "Loading binaries")
         for binary in self.binaries:
-            if self.load_elf(binary=binary):
-                return 1
+            if not self.load_elf(binary=binary):
+                return False
 
         # Be careful to set the new PC only after the code is loaded as the prefetch
         # buffer is immediately fetching instructions and would get wrong instructions
@@ -47,16 +47,16 @@ class wolfe_debug_bridge(debug_bridge):
 
         self.start_cores = True
 
-        return 0
+        return True
 
 
     def start(self):
 
         if self.start_cores:
             # Unstall the FC so that it starts fetching instructions from the loaded binary
-            self.write(0x1A110000, 4, [0, 0, 0, 0])
+            return self.write(0x1A110000, 4, [0, 0, 0, 0])
 
-        return 0
+        return False
 
     def stop(self):
 
@@ -85,4 +85,4 @@ class wolfe_debug_bridge(debug_bridge):
             if (value >> 16) & 1 == 1:
                 break
 
-        return 0
+        return True

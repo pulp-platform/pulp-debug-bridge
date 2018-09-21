@@ -24,124 +24,22 @@
 #include <stdexcept>
 
 #include "json.hpp"
-#include "cables/log.h"
+#include "log/log.hpp"
 #include "cables/adv_dbg_itf/adv_dbg_itf.hpp"
 #include "cables/jtag-proxy/jtag-proxy.hpp"
+#include "loops.hpp"
 #ifdef __USE_FTDI__
 #include "cables/ftdi/ftdi.hpp"
 #endif
 #include "gdb-server/gdb-server.hpp"
+#include "bridge-state.hpp"
 
 using namespace std;
 
+static Log s_log("wrapper");
+static BridgeState *bridge = NULL;
 
-static js::config *system_config = NULL;
-
-char Log::last_error[MAX_LOG_LINE] = "unknown error";
-int Log::log_level = LOG_ERROR;
-std::mutex Log::m_last_error;
-
-static Log *s_log;
-
-void Log::print(log_level_e level, const char *str, va_list va)
-{
-  if (this->log_level <= level) return;
-  vprintf(str, va);
-  fflush(stdout);
-}
-
-void Log::print(log_level_e level, const char *str, ...)
-{
-  va_list va;
-  va_start(va, str);
-  this->print(level, str, va);
-  va_end(va);
-}
-
-// void Log::DumpHex(const void* data, size_t size) {
-// 	char ascii[17];
-// 	size_t i, j;
-// 	ascii[16] = '\0';
-// 	for (i = 0; i < size; ++i) {
-// 		printf("%02X ", ((unsigned char*)data)[i]);
-// 		if (((unsigned char*)data)[i] >= ' ' && ((unsigned char*)data)[i] <= '~') {
-// 			ascii[i % 16] = ((unsigned char*)data)[i];
-// 		} else {
-// 			ascii[i % 16] = '.';
-// 		}
-// 		if ((i+1) % 8 == 0 || i+1 == size) {
-// 			printf(" ");
-// 			if ((i+1) % 16 == 0) {
-// 				printf("|  %s \n", ascii);
-// 			} else if (i+1 == size) {
-// 				ascii[(i+1) % 16] = '\0';
-// 				if ((i+1) % 16 <= 8) {
-// 					printf(" ");
-// 				}
-// 				for (j = (i+1) % 16; j < 16; ++j) {
-// 					printf("   ");
-// 				}
-// 				printf("|  %s \n", ascii);
-// 			}
-// 		}
-// 	}
-// }
-
-void Log::user(const char *str, ...)
-{
-  va_list args;
-  va_start(args, str);
-  this->print(LOG_INFO, str, args);
-  va_end(args);
-}
-
-void Log::detail(const char *str, ...)
-{
-  va_list args;
-  va_start(args, str);
-  this->print(LOG_DETAIL, str, args);
-  va_end(args);
-}
-
-void Log::debug(const char *str, ...)
-{
-  va_list args;
-  va_start(args, str);
-  this->print(LOG_DEBUG, str, args);
-  va_end(args);
-}
-
-void Log::warning(const char *str, ...)
-{
-  va_list args;
-  va_start(args, str);
-  this->print(LOG_WARNING, str, args);
-  va_end(args);
-}
-
-void Log::error(const char *str, ...)
-{
-  char buf[MAX_LOG_LINE];
-  va_list va;
-  va_start(va, str);
-  vsnprintf(buf, MAX_LOG_LINE, str, va);
-  va_end(va);
-  {
-    std::unique_lock<std::mutex> lck(m_last_error);
-    strncpy(last_error, buf, MAX_LOG_LINE);
-  }
-  if (this->log_level <= LOG_ERROR) return;
-  va_start(va, str);
-  vfprintf(stderr, str, va);
-  va_end(va);
-}
-
-extern "C" int get_max_log_level()
-{
-  return LOG_LEVEL_MAX;
-}
-
-extern "C" void *cable_new(const char *config_string, const char *system_config_string, cable_cb_t state_cb)
+extern "C" bool cable_new(const char *config_string, const char *system_config_string, cable_cb_t state_cb)
 {
   const char *cable_name = NULL;
   js::config *config = NULL;
@@ -158,8 +56,8 @@ extern "C" void *cable_new(const char *config_string, const char *system_config_
   }
 
   if (cable_name == NULL) {
-    s_log->error("No cable name specified\n");
-    return NULL;
+    s_log.error("No cable name specified\n");
+    return false;
   }
 
   if (strncmp(cable_name, "ftdi", 4) == 0)
@@ -167,88 +65,78 @@ extern "C" void *cable_new(const char *config_string, const char *system_config_
 #ifdef __USE_FTDI__
     Ftdi::FTDIDeviceID id = Ftdi::Olimex;
     if (strcmp(cable_name, "ftdi@digilent") == 0) id = Ftdi::Digilent;
-    Adv_dbg_itf *adu = new Adv_dbg_itf(system_config, new Log("FTDI"), new Ftdi(system_config, s_log, id, state_cb));
-    if (!adu->connect(config)) return NULL;
+    auto adu = std::make_shared<Adv_dbg_itf>(system_config, std::make_shared<Ftdi>(system_config, id, state_cb));
+    if (!adu->connect(config)) return false;
     int tap = 0;
     if (config->get("tap")) tap = config->get("tap")->get_int();
     adu->device_select(tap);
-    return (void *)static_cast<Cable *>(adu);
+    bridge->m_adu = adu;
+    return true;
 #else
-    s_log->error("Debug bridge has not been compiled with FTDI support\n");
-    return NULL;
+    s_log.error("Debug bridge has not been compiled with FTDI support\n");
+    return false;
 #endif
   }
   else if (strcmp(cable_name, "jtag-proxy") == 0)
   {
-    Adv_dbg_itf *adu = new Adv_dbg_itf(system_config, new Log("JPROX"), new Jtag_proxy(s_log, state_cb));
-    if (!adu->connect(config)) return NULL;
+    auto adu = std::make_shared<Adv_dbg_itf>(system_config, std::make_shared<Jtag_proxy>(bridge->m_event_loop, state_cb));
+    if (!adu->connect(config)) return false;
     int tap = 0;
     if (config->get("tap")) tap = config->get("tap")->get_int();
     adu->device_select(tap);
-    return (void *)static_cast<Cable *>(adu);
+    bridge->m_adu = adu;
+    return true;
   }
   else
   {
-    s_log->error("Unknown cable: %s\n", cable_name);
-    return NULL;
+    s_log.error("Unknown cable: %s\n", cable_name);
+    return false;
   }
   
-  return NULL;
+  return false;
 }
 
-extern "C" void cable_write(void *cable, unsigned int addr, int size, const char *data)
+extern "C" bool cable_write(unsigned int addr, int size, const char *data)
 {
-  Adv_dbg_itf *adu = (Adv_dbg_itf *)cable;
-  adu->access(true, addr, size, (char *)data);
+  if (!bridge->m_adu) return false;
+  return bridge->m_adu->access(true, addr, size, (char *)data);
 }
 
-extern "C" void cable_read(void *cable, unsigned int addr, int size, const char *data)
+extern "C" bool cable_read(unsigned int addr, int size, const char *data)
 {
-  Adv_dbg_itf *adu = (Adv_dbg_itf *)cable;
-  adu->access(false, addr, size, (char *)data);
+  if (!bridge->m_adu) return false;
+  return bridge->m_adu->access(false, addr, size, (char *)data);
 }
 
-extern "C" int chip_reset(void *handler, bool active)
+extern "C" bool chip_reset(bool active)
 {
-  Adv_dbg_itf *cable = (Adv_dbg_itf *)handler;
-  return cable->chip_reset(active);
+  if (!bridge->m_adu) return false;
+  return bridge->m_adu->chip_reset(active);
 }
 
-extern "C" void jtag_reset(void *handler, bool active)
+extern "C" bool jtag_reset(bool active)
 {
-  Adv_dbg_itf *cable = (Adv_dbg_itf *)handler;
-  cable->jtag_reset(active);
+  if (!bridge->m_adu) return false;
+  return bridge->m_adu->jtag_reset(active);
 }
 
-extern "C" void jtag_soft_reset(void *handler)
+extern "C" bool jtag_soft_reset()
 {
-  Adv_dbg_itf *cable = (Adv_dbg_itf *)handler;
-  cable->jtag_soft_reset();
+  if (!bridge->m_adu) return false;
+  return bridge->m_adu->jtag_soft_reset();
 }
 
 
-extern "C" bool cable_jtag_set_reg(void *handler, unsigned int reg, int width, unsigned int value)
+extern "C" bool cable_jtag_set_reg(unsigned int reg, int width, unsigned int value)
 {
-  Cable *cable = (Cable *)handler;
-  return cable->jtag_set_reg(reg, width, value);
+  if (!bridge->m_adu) return false;
+  return bridge->m_adu->jtag_set_reg(reg, width, value);
 }
 
-extern "C" bool cable_jtag_get_reg(void *handler, unsigned int reg, int width, unsigned int *out_value, unsigned int value)
+extern "C" bool cable_jtag_get_reg(unsigned int reg, int width, unsigned int *out_value, unsigned int value)
 {
-  Cable *cable = (Cable *)handler;
-  return cable->jtag_get_reg(reg, width, out_value, value);
-}
-
-extern "C" void cable_lock(void *handler)
-{
-  Cable *cable = (Cable *)handler;
-  cable->lock();
-}
-
-extern "C" void cable_unlock(void *handler)
-{
-  Cable *cable = (Cable *)handler;
-  cable->unlock();
+  if (!bridge->m_adu) return false;
+  return bridge->m_adu->jtag_get_reg(reg, width, out_value, value);
 }
 
 static void init_sigint_handler(int) {
@@ -268,57 +156,151 @@ extern "C" void bridge_set_log_level(int level)
 
 extern "C" void bridge_init(const char *config_string, int log_level)
 {
-  printf("Bridge init - log level %d\n", log_level);
-
-  Log::log_level = log_level;
-  s_log = new Log();
-  system_config = js::import_config_from_string(std::string(config_string));
-
   // This should be the first C method called by python.
   // As python is not catching SIGINT where we are in C world, we have to
   // setup a  sigint handler to exit in case control+C is hit.
   signal (SIGINT, init_sigint_handler);
+
+  printf("Bridge init - log level %d\n", log_level);
+
+  bridge = new BridgeState(config_string);
+  Log::log_level = log_level;
 }
 
-
-extern "C" void *gdb_server_open(void *cable, int socket_port, cmd_cb_t cmd_cb, const char * capabilities)
+extern "C" void bridge_add_execute(int(*bridge_proc)(void * state))
 {
-  try {
-    return (void *)new Gdb_server(new Log("GDB_SRV"), (Cable *)cable, system_config, socket_port, cmd_cb, capabilities);
-  } catch (CableException e) {
-    s_log->error("error initializing GDB server %s\n", e.what());
-    return NULL;
+  bridge->m_bridge_commands->add_execute(bridge_proc);
+}
+
+extern "C" void bridge_add_repeat_start(int64_t delay, int count)
+{
+  bridge->m_bridge_commands->add_repeat_start(std::chrono::microseconds(delay), count);
+}
+
+extern "C" void bridge_add_repeat_end()
+{
+  bridge->m_bridge_commands->add_repeat_end();
+}
+
+extern "C" void bridge_add_delay(int64_t delay)
+{
+  bridge->m_bridge_commands->add_delay(std::chrono::microseconds(delay));
+}
+
+extern "C" void bridge_add_wait_exit()
+{
+  bridge->m_bridge_commands->add_wait_exit(bridge->m_ioloop);
+}
+
+extern "C" int bridge_start()
+{
+  int ret = bridge->m_bridge_commands->start_bridge();
+  if (bridge->m_system_config) delete bridge->m_system_config;
+  delete bridge;
+  return ret;
+}
+
+extern "C" void bridge_stop()
+{
+  bridge->m_bridge_commands->stop_bridge();
+}
+
+extern "C" void bridge_loopmanager_set_poll_delay(int high_rate)
+{
+  if (bridge->m_loop_manager)
+    bridge->m_loop_manager->set_loop_speed(high_rate);
+}
+
+extern "C" void bridge_loopmanager_init(unsigned int debug_struct_addr)
+{
+  if (!bridge->m_loop_manager)
+    bridge->m_loop_manager = std::make_shared<LoopManager>(bridge->m_event_loop, std::static_pointer_cast<Cable>(bridge->m_adu), debug_struct_addr);
+  else
+    bridge->m_loop_manager->set_debug_struct_addr(debug_struct_addr);
+}
+
+extern "C" void bridge_loopmanager_add_reqloop()
+{
+  if (!bridge->m_reqloop) {
+    bridge->m_reqloop = std::make_shared<Reqloop>(bridge->m_loop_manager.get(), bridge->m_event_loop);
+    bridge->m_loop_manager->add_looper(bridge->m_reqloop);
   }
 }
 
-extern "C" void gdb_server_close(void *arg, int kill)
+extern "C" void bridge_loopmanager_add_ioloop()
 {
-  Gdb_server *server = (Gdb_server *)arg;
-  server->stop(kill);
+  if (!bridge->m_ioloop) {
+    bridge->m_ioloop = std::make_shared<Ioloop>(bridge->m_loop_manager.get(), bridge->m_event_loop);
+    bridge->m_loop_manager->add_looper(bridge->m_ioloop);
+  }
 }
 
-extern "C" void gdb_server_abort(void *arg)
+extern "C" void bridge_loopmanager_start()
 {
-  Gdb_server *server = (Gdb_server *)arg;
-  server->abort();
+  if (bridge->m_loop_manager)
+    bridge->m_loop_manager->start(true);
 }
 
-extern "C" int gdb_send_str(void *arg, const char * str)
+extern "C" void bridge_loopmanager_stop()
 {
-  Gdb_server *server = (Gdb_server *)arg;
-  if (server->rsp) {
-    std::shared_ptr<Rsp::Client> client = server->rsp->get_client();
+  if (bridge->m_loop_manager)
+    bridge->m_loop_manager->stop();
+}
+
+extern "C" void bridge_loopmanager_clear()
+{
+  if (bridge->m_loop_manager) {
+    bridge->m_loop_manager->clear_loopers();
+    bridge->m_loop_manager = nullptr;
+  }
+}
+
+extern "C" void bridge_deinit()
+{
+  delete bridge;
+}
+
+extern "C" bool gdb_server_open(int socket_port, cmd_cb_t cmd_cb, const char * capabilities)
+{
+  try {
+    bridge->m_gdb_server = std::make_shared<Gdb_server>(bridge->m_event_loop, bridge->m_adu, bridge->m_system_config, socket_port, cmd_cb, capabilities);
+    bridge->m_gdb_server->start();
+  } catch (CableException e) {
+    s_log.error("error initializing GDB server %s\n", e.what());
+    bridge->m_gdb_server = nullptr;
+    return false;
+  }
+  return true;
+}
+
+extern "C" void gdb_server_close()
+{
+  if (bridge->m_gdb_server) bridge->m_gdb_server->stop();
+}
+
+extern "C" void gdb_server_abort()
+{
+  if (bridge->m_gdb_server) bridge->m_gdb_server->abort();
+}
+
+extern "C" bool gdb_send_str(const char * str)
+{
+  if (bridge->m_gdb_server && bridge->m_gdb_server->rsp) {
+    auto client = bridge->m_gdb_server->rsp->get_client();
     if (client) {
       return client->send_str(str);
     }
   }
-  return 0;
+  return false;
 }
 
-extern "C" void gdb_server_refresh_target(void *arg)
+extern "C" bool gdb_server_refresh_target()
 {
-  Gdb_server *server = (Gdb_server *)arg;
-  server->refresh_target();
+  if (bridge->m_gdb_server) {
+    bridge->m_gdb_server->refresh_target();
+    return true;
+  }
+  return false;
 }
 
 #if 0
