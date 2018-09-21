@@ -533,7 +533,7 @@ bool Tcp_socket::socket_readable()
     char * buf;
     size_t len;
     in_buffer->write_block((void**)&buf, &len);
-    func_ret_t ret = ::recv(socket, (void *)buf, len, 0);
+    func_ret_t ret = ::recv(socket, &buf[0], len, 0);
     if (ret == 0) {
       state = SocketShutDown;
       this->close();

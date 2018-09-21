@@ -52,6 +52,7 @@ class Log {
     void protocol(const char *str, ...) ;
     static int log_level;
     static char last_error[MAX_LOG_LINE];
+    const char * get_module() { return module; }
   private:
     static std::mutex m_last_error;
     const char * module;
