@@ -47,6 +47,8 @@ target_include_directories(ae PRIVATE
     ../../include
 )
 
+set_property(TARGET ae PROPERTY C_STANDARD 99)
+
 target_link_libraries(ae ${CMAKE_THREAD_LIBS_INIT})
 
 target_compile_options(ae PRIVATE -Wall -Wextra -Werror)
