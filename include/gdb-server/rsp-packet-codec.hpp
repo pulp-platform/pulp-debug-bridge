@@ -45,7 +45,7 @@ public:
     RspPacketCodecException(const std::string& msg) : msg(msg) {}
     ~RspPacketCodecException() {}
 
-    const char* what() {
+    const char* what() const throw() {
         return(msg.c_str());
     }
 private:
