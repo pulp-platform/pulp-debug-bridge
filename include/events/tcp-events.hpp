@@ -41,6 +41,7 @@
 #include <atomic>
 #include <condition_variable>
 #include <exception>
+#include <string>
 
 
 class TcpException: public std::exception {

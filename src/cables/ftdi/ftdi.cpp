@@ -52,6 +52,7 @@
 #include <stdarg.h>
 #include <string.h>
 #include <unistd.h>
+#include <string>
 
 #include "ftdi/ftdi.hpp"
 #include "log.hpp"

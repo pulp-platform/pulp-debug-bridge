@@ -22,6 +22,7 @@
 #include <string.h>
 #include <sys/time.h>
 #include <unistd.h>
+#include <string>
 
 #include "adv_dbg_itf/adv_dbg_itf.hpp"
 #ifdef __USE_FTDI__

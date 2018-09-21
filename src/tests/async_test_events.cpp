@@ -1,6 +1,7 @@
 #include "events/events.hpp"
 
 #include <iostream>
+#include <string>
 #include <memory>
 #include <thread>
 

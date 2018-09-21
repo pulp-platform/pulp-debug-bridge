@@ -22,6 +22,7 @@
 #include <stdarg.h>
 #include <signal.h>
 #include <stdexcept>
+#include <string>
 
 #include "json.hpp"
 #include "log/log.hpp"

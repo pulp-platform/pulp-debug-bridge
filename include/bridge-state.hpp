@@ -5,6 +5,8 @@
 #include "cables/adv_dbg_itf/adv_dbg_itf.hpp"
 #include "bridge-commands.hpp"
 
+#include <string>
+
 class BridgeState {
     public:
         BridgeState(const char * config_string) {
