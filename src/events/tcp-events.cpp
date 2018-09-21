@@ -32,14 +32,13 @@ int get_socket_error(socket_t fd)
 
 bool set_blocking(socket_t fd, bool blocking)
 {
-  if (fd < 0) {
-    return false;
-  }
-
 #ifdef _WIN32
   unsigned long mode = blocking ? 0 : 1;
   return (ioctlsocket(fd, FIONBIO, &mode) == 0) ? true : false;
 #else
+  if (fd < 0) {
+    return false;
+  }
   int flags = fcntl(fd, F_GETFL, 0);
   if (flags == -1) {
     return false;
@@ -98,7 +97,7 @@ void Tcp_socket_owner::socket_deinit()
 {
   if (Tcp_socket_owner::cnt.fetch_sub(1) == 0) {
   #ifdef _WIN32
-    :WSACleanup();
+    ::WSACleanup();
   #endif
   }
 }
