@@ -62,10 +62,6 @@ Tcp_socket_owner::~Tcp_socket_owner() {
   socket_deinit();
 }
 
-#ifdef _WIN32
-WSADATA Tcp_socket_owner::wsa_data;
-#endif
-
 bool Tcp_socket_owner::socket_init()
 {
   bool res;
