@@ -7,7 +7,7 @@
 
 long long print(struct aeEventLoop *loop, void *clientData)
 {
-    printf("%lld - Hello, World\n", (long long int)(intptr_t)clientData);
+    printf("%p - Hello, World\n", clientData);
     return -1;
 }
 
