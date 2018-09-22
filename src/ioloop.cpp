@@ -25,7 +25,7 @@
 LooperFinishedStatus Ioloop::register_proc(hal_debug_struct_t *debug_struct) {
   try {
     unsigned int value = 0;
-    m_top->access(true, (unsigned int)(long)&debug_struct->use_internal_printf, 4, (char*)&value);
+    m_top->access(true, PTR_2_INT(&debug_struct->use_internal_printf), 4, (char*)&value);
     // First check if the application has exited
     m_top->access(false, PTR_2_INT(&debug_struct->exit_status), 4, (char*)&value);
 
