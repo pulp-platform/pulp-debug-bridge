@@ -144,10 +144,8 @@ class Tcp_socket_owner : public std::enable_shared_from_this<Tcp_socket_owner> {
     std::map<socket_t, Tcp_socket::tcp_socket_ptr_t> owned_sockets;
     bool is_running = false;
   private:
-    static std::atomic_int cnt;
-
   #ifdef _WIN32
-    static WSADATA wsa_data;
+    WSADATA m_wsa_data;
   #endif
 };
 

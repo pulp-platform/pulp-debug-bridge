@@ -66,20 +66,14 @@ Tcp_socket_owner::~Tcp_socket_owner() {
 WSADATA Tcp_socket_owner::wsa_data;
 #endif
 
-std::atomic_int Tcp_socket_owner::cnt(0);
-
 bool Tcp_socket_owner::socket_init()
 {
   bool res;
-  if (Tcp_socket_owner::cnt.fetch_add(1) == 0) {
   #ifdef _WIN32
-    res = ::WSAStartup(MAKEWORD(1,1), &Tcp_socket_owner::wsa_data) == 0;
+    res = ::WSAStartup(MAKEWORD(1,1), &m_wsa_data) == 0;
   #else
     res = true;
   #endif
-  } else {
-    res = true;
-  }
   return res;
 }
 
@@ -95,11 +89,9 @@ bool Tcp_socket_owner::print_error(const char * err_str)
 
 void Tcp_socket_owner::socket_deinit()
 {
-  if (Tcp_socket_owner::cnt.fetch_sub(1) == 0) {
   #ifdef _WIN32
-    ::WSACleanup();
+  ::WSACleanup();
   #endif
-  }
 }
 
 void Tcp_socket_owner::client_disconnected(socket_t socket) {

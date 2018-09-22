@@ -175,6 +175,9 @@ typedef struct aeEventLoop {
     struct sockaddr_in asyncSocketAddr;
     aeFileEvent asyncSocketEv;
     aeLoopStopProc *loopStopProc;
+#ifdef _WIN32
+    WSADATA wsa_data;
+#endif
 } aeEventLoop;
 
 /* Prototypes */

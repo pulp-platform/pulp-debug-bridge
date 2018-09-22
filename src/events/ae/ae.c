@@ -143,6 +143,9 @@ int aeCreateAsyncSocket(aeEventLoop *eventLoop) {
     struct sockaddr_in si;
     socket_t sockfd;
 
+#ifdef _WIN32
+    WSAStartup(MAKEWORD(1,1), &eventLoop->wsa_data);
+#endif
     if ((sockfd=socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP)) == INVALID_SOCKET) return 1;
 
 #ifndef _WIN32 // see http://itamarst.org/writings/win32sockets.html
@@ -182,6 +185,7 @@ void aeDeleteEventLoop(aeEventLoop *eventLoop) {
     aeAsyncSocketReadable(eventLoop, eventLoop->asyncSocket, NULL, AE_READABLE);
 #ifdef _WIN32
     closesocket(eventLoop->asyncSocket);
+    WSACleanup();
 #else
     close(eventLoop->asyncSocket);
 #endif
