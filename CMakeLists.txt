@@ -114,10 +114,10 @@ target_include_directories(libplpbridge PRIVATE
 # link with json-tools
 target_link_libraries(libplpbridge PRIVATE ${CMAKE_INSTALL_PREFIX}/lib/libjson.a events)
 
-# # link windows sockets
-# if (WIN32)
-#   target_link_libraries(libplpbridge PRIVATE wsock32 ws2_32)
-# endif()
+# link windows sockets
+if (WIN32)
+  target_link_libraries(libplpbridge PRIVATE wsock32 ws2_32)
+endif()
 
 # Optionally add in FTDI support
 if (WithFTDI)

@@ -114,7 +114,7 @@ void aeAsyncSocketReadable(aeEventLoop * eventLoop, socket_t fd, void * UNUSED(s
     if (!(events & AE_READABLE)) return;
 
     aeAsyncEvent * ae;
-    while (recv(fd, ((char*)&ae), sizeof(void *), 0) > 0) {
+    while (recv(fd, ((char*)&ae), sizeof(void *), 0) == sizeof(void *)) {
         DL_APPEND(eventLoop->asyncEvents, ae);
     }
 }
@@ -173,8 +173,18 @@ int aeCreateAsyncSocket(aeEventLoop *eventLoop) {
 }
 
 int aeFireAsyncSocket(aeEventLoop *eventLoop, aeAsyncEvent * ae) {
-    return (sendto(eventLoop->asyncSocket, (void *)&ae, sizeof(void *), 0,
-        (struct sockaddr*) &eventLoop->asyncSocketAddr, sizeof(eventLoop->asyncSocketAddr)) == sizeof(void *));
+    int len = sizeof(void *), idx = 0, retval;
+    do {
+        retval = sendto(eventLoop->asyncSocket, (void *)&ae, sizeof(void *), 0,
+            (struct sockaddr*) &eventLoop->asyncSocketAddr, sizeof(eventLoop->asyncSocketAddr));
+        if (retval == SOCKET_ERROR) {
+            int plat_err = SOCKERRNO;
+            if (plat_err == SOCKERR_WOULDBLOCK || plat_err == SOCKERR_INPROGRESS) continue;
+            return 0;
+        }
+        idx += retval;
+    } while (idx < len);
+    return 1;
 }
 
 void aeSignalCallCanceled(aeAsyncCallState *state);
@@ -408,7 +418,7 @@ int aeSetTimeoutTimeEvent(aeEventLoop *eventLoop, aeTimeEvent *te, long long use
     // printf("aeSetTimeoutTimeEvent %p\n", te);
     aeDeleteTimeEvent(eventLoop, te);
     aeAddMicroSecondsToNow(usecs,&te->when);
-    DL_INSERT_INORDER(eventLoop->timeEvents, te, aeTimeEventIsEarlier);
+    DL_APPEND(eventLoop->timeEvents, te);
 
     return AE_OK;
 }
@@ -479,7 +489,7 @@ static int prepareTimeEvents(aeEventLoop *eventLoop) {
             te->firedIdx = eventLoop->numFired++;
             eventLoop->fired[te->firedIdx] = (aeEvent *) te;
             processed++;
-        } else break;
+        }
     }
     return processed;
 }
@@ -498,8 +508,9 @@ static void fireTimeEvent(aeEventLoop *eventLoop, aeTimeEvent *te)
             struct timeval now;
             gettimeofday(&now, NULL);
             aeAddMicroSeconds(retval,&now,&te->when);
-            // printf("fire %p again\n", te);
-            DL_INSERT_INORDER(eventLoop->timeEvents, te, aeTimeEventIsEarlier);
+            // Append to end of list to give events at start a chance
+            // This still preserves order which may not be a good idea
+            DL_APPEND(eventLoop->timeEvents, te);
         } else {
             te->next = te->prev = NULL;
             if (te->deleteProc) te->deleteProc(eventLoop, te->deleteClientData);

@@ -44,6 +44,7 @@
   #include <netdb.h>
   #include <unistd.h>
   #include <fcntl.h>
+  #include <errno.h>
   typedef int port_t;
   typedef int socket_t;
   #define INVALID_SOCKET -1
