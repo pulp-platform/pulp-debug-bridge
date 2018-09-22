@@ -178,7 +178,7 @@ int aeFireAsyncSocket(aeEventLoop *eventLoop, aeAsyncEvent * ae) {
         retval = sendto(eventLoop->asyncSocket, (void *)&ae, sizeof(void *), 0,
             (struct sockaddr*) &eventLoop->asyncSocketAddr, sizeof(eventLoop->asyncSocketAddr));
         if (retval == SOCKET_ERROR) {
-            int plat_err = SOCKERRNO;
+            int plat_err = CSOCKERRNO;
             if (plat_err == SOCKERR_WOULDBLOCK || plat_err == SOCKERR_INPROGRESS) continue;
             return 0;
         }

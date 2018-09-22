@@ -35,6 +35,7 @@
   #define LST_SHUT_WR SD_SEND
   #define SOCKERR_WOULDBLOCK WSAEWOULDBLOCK
   #define SOCKERR_INPROGRESS WSAEINPROGRESS
+  #define CSOCKERRNO (WSAGetLastError())
   #define SOCKERRNO (::WSAGetLastError())
 #else
   #include <sys/socket.h>
@@ -53,6 +54,7 @@
   #define LST_SHUT_WR SHUT_WR
   #define SOCKERR_WOULDBLOCK EWOULDBLOCK
   #define SOCKERR_INPROGRESS EINPROGRESS
+  #define CSOCKERRNO errno
   #define SOCKERRNO errno
 #endif
 #endif
