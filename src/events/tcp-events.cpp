@@ -24,7 +24,7 @@ int get_socket_error(socket_t fd)
 {
   int err;
   socklen_t len = sizeof(err);
-  if (getsockopt(fd, SOL_SOCKET, SO_ERROR, &err, &len) == SOCKET_ERROR) {
+  if (getsockopt(fd, SOL_SOCKET, SO_ERROR, &((char *)&err)[0], &len) == SOCKET_ERROR) {
     return SOCKERRNO;
   }
   return err;
@@ -73,7 +73,7 @@ bool Tcp_socket_owner::socket_init()
   bool res;
   if (Tcp_socket_owner::cnt.fetch_add(1) == 0) {
   #ifdef _WIN32
-    res = :WSAStartup(MAKEWORD(1,1), &Tcp_socket_owner::wsa_data) == 0;
+    res = ::WSAStartup(MAKEWORD(1,1), &Tcp_socket_owner::wsa_data) == 0;
   #else
     res = true;
   #endif
