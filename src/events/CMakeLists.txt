@@ -47,6 +47,10 @@ target_include_directories(ae PRIVATE
     ../../include
 )
 
+if (WIN32)
+  target_link_libraries(ae PUBLIC wsock32 ws2_32)
+endif()
+
 set_property(TARGET ae PROPERTY C_STANDARD 99)
 
 target_link_libraries(ae ${CMAKE_THREAD_LIBS_INIT})
