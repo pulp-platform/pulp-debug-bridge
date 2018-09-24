@@ -349,9 +349,7 @@ class Rsp : public std::enable_shared_from_this<Rsp> {
         void client_routine();
 
         bool regs_send();
-        bool signal(const std::shared_ptr<Target_core> &core);
-
-        bool signal() { return this->signal(nullptr); };
+        bool signal(const std::shared_ptr<Target_core> &core=nullptr);
 
         bool multithread(char* data, size_t len);
 

@@ -150,14 +150,12 @@ void Rsp::start() {
 
 void Rsp::indicate_resume()
 {
-  if (!m_stopping && m_running)
-    m_top->cmd_cb("__gdb_tgt_res", NULL, 0);
+  m_top->cmd_cb("__gdb_tgt_res", NULL, 0);
 }
 
 void Rsp::indicate_halt()
 {
-  if (!m_stopping && m_running)
-    m_top->cmd_cb("__gdb_tgt_hlt", NULL, 0);
+  m_top->cmd_cb("__gdb_tgt_hlt", NULL, 0);
 }
 
 void Rsp::halt_target()
@@ -413,6 +411,7 @@ bool Rsp::Client::query(char* data, size_t len)
   }
   else if (strncmp ("qOffsets", data, strlen ("qOffsets")) == 0)
   {
+    auto current_core = m_top->target->get_thread(m_thread_sel);
     return send_str("Text=0;Data=0;Bss=0");
   }
   else if (strncmp ("qT", data, strlen ("qT")) == 0)
@@ -676,8 +675,6 @@ bool Rsp::Client::regs_send()
   char regs_str[512];
   int i;
 
-  memset(gpr, 0, sizeof(gpr));
-
   auto core = m_top->target->get_thread(m_thread_sel);
 
   if (core->get_power()) {
@@ -704,7 +701,8 @@ bool Rsp::Client::signal(const std::shared_ptr<Target_core> &core)
   char str[128];
   int len;
   if (core == NULL) {
-    len = snprintf(str, 128, "S%02x", get_signal(m_top->target->get_thread(m_thread_sel)));
+    auto current_core = m_top->target->get_thread(m_thread_sel);
+    len = snprintf(str, 128, "S%02x", get_signal(current_core));
   } else {
     int sig = get_signal(core);
     len = snprintf(str, 128, "T%02xthread:%1x;", sig, core->get_thread_id()+1);
@@ -976,16 +974,15 @@ bool time_has_expired(const timeval* start, const timeval* max_delay)
 
 bool Rsp::Client::send(const char* data, size_t len)
 {
-  log.print(LOG_DEBUG, "Sending %s (%d)\n", data, len);
+  log.debug("Sending \"%s\" (%d)\n", data, len);
   m_client->write_buffer([&](const Tcp_socket::tcp_socket_ptr_t & UNUSED(sock), const Tcp_socket::circular_buffer_ptr_t &c_buf){
-    RspPacketCodec::encode(data, len, c_buf);
+    m_codec->encode(data, len, c_buf);
   });
   return true;
 }
 
 bool Rsp::Client::send_str(const char* data)
 {
-  log.detail("RSP: sending string %s\n", data);
   return send(data, strlen(data));
 }
 

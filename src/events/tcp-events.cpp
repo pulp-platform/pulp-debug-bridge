@@ -140,7 +140,7 @@ Tcp_client::~Tcp_client()
 {
 }
 
-socket_t Tcp_client::prepare_socket(socket_t fd, const char * address, int port, struct sockaddr_in *addr) {
+socket_t Tcp_client::prepare_socket(socket_t fd, const char * address, int port, struct sockaddr_in *addr, bool blocking) {
   struct hostent *he;
 
   if (socket_count()>0)
@@ -166,7 +166,7 @@ socket_t Tcp_client::prepare_socket(socket_t fd, const char * address, int port,
   addr->sin_addr = *((struct in_addr *)he->h_addr_list[0]);
   memset(addr->sin_zero, '\0', sizeof(addr->sin_zero));
 
-  set_blocking(fd, false);
+  set_blocking(fd, blocking);
 
   return fd;
 }
@@ -177,9 +177,24 @@ Tcp_socket::tcp_socket_ptr_t Tcp_client::connect_blocking(const char * address, 
   fd_set fdset;
   struct timeval tv;
 
-  connecting_socket = prepare_socket(connecting_socket, address, port, &addr);
+  try {
+    connecting_socket = prepare_socket(connecting_socket, address, port, &addr, true);
+  } catch (TcpException ex) {
+    log->error("unable to connect - %s", ex.what());
+    return nullptr;
+  }
 
-  ::connect(connecting_socket, (struct sockaddr *)&addr, sizeof(addr));
+  int res = ::connect(connecting_socket, (struct sockaddr *)&addr, sizeof(addr));
+  if (res == SOCKET_ERROR) {
+    print_error("unable to connect - error %d\n");
+#ifdef _WIN32
+    ::closesocket(connecting_socket);
+#else
+    ::close(connecting_socket);
+#endif
+    connecting_socket = INVALID_SOCKET;
+    return nullptr;
+  }
 
   FD_ZERO(&fdset);
   FD_SET(connecting_socket, &fdset);
@@ -197,10 +212,6 @@ Tcp_socket::tcp_socket_ptr_t Tcp_client::connect_blocking(const char * address, 
       ::close(connecting_socket);
 #endif
       connecting_socket = INVALID_SOCKET;
-      el->getTimerEvent([this] () {
-        if (conn_cb) conn_cb(nullptr);
-        return kEventLoopTimerDone;
-      }, 0);
       return nullptr;
     }
   } else {
@@ -211,20 +222,11 @@ Tcp_socket::tcp_socket_ptr_t Tcp_client::connect_blocking(const char * address, 
     ::close(connecting_socket);
 #endif
     connecting_socket = INVALID_SOCKET;
-    el->getTimerEvent([this] () {
-      if (conn_cb) conn_cb(nullptr);
-      return kEventLoopTimerDone;
-    }, 0);
     return nullptr;
   }
 
   auto ptr = std::make_shared<Tcp_socket>(this->shared_from_this(), connecting_socket);
   owned_sockets[connecting_socket] = ptr;
-
-  el->getTimerEvent([this, ptr] () {
-    if (conn_cb) conn_cb(ptr);
-    return kEventLoopTimerDone;
-  }, 0);
   return ptr;
 }
 
@@ -232,7 +234,7 @@ void Tcp_client::connect(const char * address, int port, int timeout_ms)
 {
   struct sockaddr_in addr;
 
-  connecting_socket = prepare_socket(connecting_socket, address, port, &addr);
+  connecting_socket = prepare_socket(connecting_socket, address, port, &addr, false);
 
   strncpy(connecting_address, address, 512);
   connecting_port = port;
@@ -430,6 +432,7 @@ Tcp_socket::Tcp_socket(std::shared_ptr<Tcp_socket_owner> owner, socket_t socket,
       if (state == SocketOpen && (fd_events & Readable)) {
         trigger_timer = this->socket_readable() || trigger_timer;
       }
+      this->owner->log->protocol("Trigger timer %d\n", trigger_timer);
       if (state == SocketOpen && trigger_timer) this->ev_socket_timeout->setTimeout(0);
     }
     this->owner->log->protocol("Socket event returns (fd %d, new event state %d, trigger timer %d, state %s)\n", this->socket, this->socket_events, trigger_timer, socket_state_str(this->state));

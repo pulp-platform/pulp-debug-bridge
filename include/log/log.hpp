@@ -50,6 +50,13 @@ class Log {
     void debug(const char *str, ...) ;
     void detail(const char *str, ...) ;
     void protocol(const char *str, ...) ;
+    bool is_lvl(int level);
+    bool is_error_lvl();
+    bool is_warning_lvl();
+    bool is_user_lvl();
+    bool is_debug_lvl();
+    bool is_detail_lvl();
+    bool is_protocol_lvl();
     static int log_level;
     static char last_error[MAX_LOG_LINE];
     const char * get_module() { return module; }

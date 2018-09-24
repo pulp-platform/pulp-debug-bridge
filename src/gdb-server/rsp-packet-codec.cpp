@@ -87,8 +87,7 @@ static void escape(const char *data, size_t len, char *raw, size_t *raw_idx, uin
 }
 
 RspPacketCodec::RspPacketCodec(EventLoop::SpEventLoop event_loop, std::chrono::milliseconds decode_timeout) : 
-    m_timeout(decode_timeout) {
-    using namespace std::placeholders;
+    m_timeout(decode_timeout), m_log("RSPC") {
     m_te = event_loop->getTimerEvent(std::bind(&RspPacketCodec::decode_timeout, this));
     reset_state();
 }
@@ -182,6 +181,7 @@ bool RspPacketCodec::decoder(const std::shared_ptr<CircularCharBuffer> &circ_buf
                     m_pkt_len = deescape(m_pkt, m_cur);
                     // clear the rest of the buffer
                     memset(&(m_pkt[m_pkt_len]), 0, RSP_PACKET_MAX_LEN - m_pkt_len);
+                    m_log.protocol("received packet: %s\n", m_pkt);
                     m_decode_state = STATE_INIT;
                     m_pkt_decoded(m_pkt, m_pkt_len);
                 } else {
@@ -199,28 +199,31 @@ bool RspPacketCodec::decoder(const std::shared_ptr<CircularCharBuffer> &circ_buf
 }
 
 
-char RspPacketCodec::s_out_pkt[RSP_PACKET_MAX_LEN];
-
 bool RspPacketCodec::encode(const char * buf, size_t len, const std::shared_ptr<CircularCharBuffer> &circ_buf) {
-  size_t out_len = 0;
-  uint32_t checksum = 0;
+    size_t out_len = 0;
+    uint32_t checksum = 0;
 
-  s_out_pkt[out_len++] = '$';
+    s_out_pkt[out_len++] = '$';
 
-  escape(buf, len, s_out_pkt, &out_len, &checksum);
+    escape(buf, len, s_out_pkt, &out_len, &checksum);
 
-  // add checksum
-  checksum = checksum % 256;
-  char checksum_str[3];
-  snprintf(checksum_str, 3, "%02x", checksum);
+    // add checksum
+    checksum = checksum % 256;
+    char checksum_str[3];
+    snprintf(checksum_str, 3, "%02x", checksum);
 
-  s_out_pkt[out_len++] = '#';
-  s_out_pkt[out_len++] = checksum_str[0];
-  s_out_pkt[out_len++] = checksum_str[1];
+    s_out_pkt[out_len++] = '#';
+    s_out_pkt[out_len++] = checksum_str[0];
+    s_out_pkt[out_len++] = checksum_str[1];
+    if (m_log.is_protocol_lvl()) {
+        s_out_pkt[out_len] = 0;
+        m_log.protocol("sending packet: %s\n", s_out_pkt);
+    }
 
-  return circ_buf->write_copy(s_out_pkt, out_len) == out_len;
+    return circ_buf->write_copy(s_out_pkt, out_len) == out_len;
 }
 
 bool RspPacketCodec::encode_ack(const std::shared_ptr<CircularCharBuffer> &circ_buf) {
+    m_log.protocol("sending: ack packet\n");
     return (circ_buf->write_copy(RSP_ACK_STR, strlen(RSP_ACK_STR)) == strlen(RSP_ACK_STR));
 }

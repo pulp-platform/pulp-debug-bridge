@@ -84,6 +84,7 @@ int64_t LoopManager::run_loops() {
 
 void LoopManager::set_loop_speed(bool fast) {
     if (m_stopped) return;
+    log.detail("set loop speed fast %d\n", fast);
     m_cur_usecs = fast?m_fast_usecs:m_slow_usecs;
     m_loop_te->setTimeout(m_cur_usecs);
 }

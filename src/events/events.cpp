@@ -142,7 +142,7 @@ EventLoop::TimerEvent::~TimerEvent() {
 }
 
 void EventLoop::TimerEvent::setTimeout(int64_t usecs) {
-  // printf("set timeout: id %p ms %ld\n", &ae_te, usecs);
+  // printf("set timeout: id %p usecs %ld\n", &ae_te, usecs);
   if (usecs < 0) {
     if (is_set) {
       is_set = false;

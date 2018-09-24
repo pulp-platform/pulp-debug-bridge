@@ -30,6 +30,7 @@
 #include <functional>
 #include <chrono>
 
+#include "log/log.hpp"
 #include "events/events.hpp"
 #include "events/tcp-events.hpp"
 
@@ -77,10 +78,10 @@ public:
     void on_ctrlc(const PacketCtrlCProc &cb) { m_pkt_ctrlc = cb; }
     void on_ack(const PacketAckProc &cb) { m_pkt_ack = cb; }
 
-    static bool encode(const char * buf, size_t len, const std::shared_ptr<CircularCharBuffer> &circ_buf);
-    static bool encode_ack(const std::shared_ptr<CircularCharBuffer> &circ_buf);
+    bool encode(const char * buf, size_t len, const std::shared_ptr<CircularCharBuffer> &circ_buf);
+    bool encode_ack(const std::shared_ptr<CircularCharBuffer> &circ_buf);
 private:
-    static char s_out_pkt[RSP_PACKET_MAX_LEN];
+    char s_out_pkt[RSP_PACKET_MAX_LEN];
 
     bool decoder(const std::shared_ptr<CircularCharBuffer> &circ_buf);
     int64_t decode_timeout();
@@ -96,6 +97,7 @@ private:
     PacketErrorProc m_pkt_error;
     PacketCtrlCProc m_pkt_ctrlc;
     PacketAckProc m_pkt_ack;
+    Log m_log;
 };
 
 #endif

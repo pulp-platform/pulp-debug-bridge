@@ -69,7 +69,9 @@ void BridgeCommands::add_wait_exit(const std::shared_ptr<Ioloop> &ioloop) {
 // Command execution
 
 int64_t BridgeCommands::BridgeCommandExecute::execute(SpBridgeCommands bc) {
+    printf("before execute\n");
     bc->m_return_value = m_cb(reinterpret_cast<void *>(bc.get()));
+    printf("after execute %d\n", bc->m_return_value);
     return (bc->m_return_value?0:kEventLoopTimerDone);
 }
 

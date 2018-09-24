@@ -457,7 +457,6 @@ Ftdi::ft2232_read(char* buf, int len) {
 int
 Ftdi::ft2232_write(char *buf, int len, int recv) {
   int xferred = 0;
-
   // this write function will try to buffer write data
   // buffering will be ceased and a flush triggered in two cases.
 

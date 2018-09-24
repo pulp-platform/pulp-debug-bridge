@@ -280,13 +280,8 @@ int aeDeleteFileEvent(aeEventLoop *eventLoop, aeFileEvent *fe)
 void aeAddMicroSeconds(long long usecs, struct timeval *a, struct timeval *result)
 {
     usecs += a->tv_usec;
-    result->tv_sec += (usecs / 1000000);
+    result->tv_sec = a->tv_sec + (usecs / 1000000);
     result->tv_usec = (usecs % 1000000);
-}
-
-static void aeAddMicroSecondsToNow(long long usecs, struct timeval *then) {
-    gettimeofday(then, NULL);
-    aeAddMicroSeconds(usecs, then, then);
 }
 
 aeAsyncEvent * aeCreateAsyncEventInt(aeEventLoop *eventLoop, aeAsyncProc *proc, void *clientData, int flags)
@@ -415,17 +410,31 @@ int aeCreateTimeEvent(aeEventLoop *UNUSED(eventLoop), aeTimeEvent *te, aeTimePro
 
 int aeSetTimeoutTimeEvent(aeEventLoop *eventLoop, aeTimeEvent *te, long long usecs)
 {
-    // printf("aeSetTimeoutTimeEvent %p\n", te);
-    aeDeleteTimeEvent(eventLoop, te);
-    aeAddMicroSecondsToNow(usecs,&te->when);
-    DL_APPEND(eventLoop->timeEvents, te);
+    struct timeval now;
+
+    gettimeofday(&now, NULL);
+
+    aeAddMicroSeconds(usecs, &now, &te->when);
+
+    // If the time event is already scheduled to fire check if firing needs to be cancelled
+    if (te->firedIdx != -1) {
+        if (aeCmpTimeval(&now, &te->when) < 0) {
+            // cancel it for this loop
+            printf("cancel te this loop\n");
+            eventLoop->fired[te->firedIdx] = NULL;
+            te->firedIdx = -1;
+        }
+    }
+
+    // if it is not added to the loop then add it
+    if (!te->prev)
+        DL_APPEND(eventLoop->timeEvents, te);
 
     return AE_OK;
 }
 
 int aeDeleteTimeEvent(aeEventLoop *eventLoop, aeTimeEvent *te)
 {
-    // printf("aeDelete %p %p\n", te, te->prev);
     if (!te->prev) return AE_ERR;
     DL_DELETE(eventLoop->timeEvents, te);
     te->next = te->prev = NULL;
@@ -458,6 +467,21 @@ static void fireAsyncEvent(aeEventLoop *eventLoop, aeAsyncEvent *ae) {
 }
 
 
+static int getShortestTimeEvent(aeTimeEvent *time_events, struct timeval *ptv) {
+    if (!time_events) return 0;
+    ptv->tv_sec = time_events->when.tv_sec;
+    ptv->tv_usec = time_events->when.tv_usec;
+    aeTimeEvent *te;
+    DL_FOREACH(time_events, te) {
+        if (aeCmpTimeval(ptv, &te->when) > 0) {
+            ptv->tv_sec = te->when.tv_sec;
+            ptv->tv_usec = te->when.tv_usec;
+        }
+    }
+    return 1;
+}
+
+
 /* Process time events */
 static int prepareTimeEvents(aeEventLoop *eventLoop) {
     int processed = 0;
@@ -481,10 +505,8 @@ static int prepareTimeEvents(aeEventLoop *eventLoop) {
         }
     }
     
-    gettimeofday(&now, NULL);
     memcpy(&eventLoop->lastTime, &now, sizeof(struct timeval));
     DL_FOREACH(eventLoop->timeEvents, te) {
-        // printf("prepare te %p\n", te);
         if (aeCmpTimeval(&now, &te->when) >= 0) {
             te->firedIdx = eventLoop->numFired++;
             eventLoop->fired[te->firedIdx] = (aeEvent *) te;
@@ -500,7 +522,6 @@ static void fireTimeEvent(aeEventLoop *eventLoop, aeTimeEvent *te)
     long long retval = te->timeProc(eventLoop, te->clientData);
     te->firedIdx = -1;
     if (eventLoop->fired[firedIdx]) { // If the event was deleted during its execution then nothing further to do
-        // printf("after fired %p\n", te);
         DL_DELETE(eventLoop->timeEvents, te);
 
         if (retval != AE_NOMORE) {
@@ -611,19 +632,19 @@ int aeProcessEvents(aeEventLoop *eventLoop, int flags)
         struct timeval tv, *tvp = &tv;
         memset(tvp, 0, sizeof(struct timeval));
         if (!eventLoop->asyncEvents) {
-            aeTimeEvent *shortest = eventLoop->timeEvents;
-            if (shortest) {
+            struct timeval shortest;
+            if (getShortestTimeEvent(eventLoop->timeEvents, &shortest)) {
                 struct timeval now;
                 gettimeofday(&now, NULL);
 
                 long long usecs;
                 long long secs;
-                usecs = shortest->when.tv_usec - now.tv_usec;
+                usecs = shortest.tv_usec - now.tv_usec;
                 if (usecs < 0) {
                     usecs += 1000000;
-                    secs = (shortest->when.tv_sec - 1) - now.tv_sec;
+                    secs = (shortest.tv_sec - 1) - now.tv_sec;
                 } else {
-                    secs = shortest->when.tv_sec - now.tv_sec;
+                    secs = shortest.tv_sec - now.tv_sec;
                 }
 
                 if (secs >= 0) {

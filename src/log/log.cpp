@@ -8,11 +8,24 @@ char Log::last_error[MAX_LOG_LINE] = "unknown error";
 int Log::log_level = LOG_ERROR;
 std::mutex Log::m_last_error;
 
+bool Log::is_lvl(int level)
+{
+  return (this->log_level >= level);
+}
+
+bool Log::is_error_lvl() { return is_lvl(LOG_ERROR); }
+bool Log::is_warning_lvl() { return is_lvl(LOG_WARNING); }
+bool Log::is_user_lvl() { return is_lvl(LOG_INFO); }
+bool Log::is_debug_lvl() { return is_lvl(LOG_DEBUG); }
+bool Log::is_detail_lvl() { return is_lvl(LOG_DETAIL); }
+bool Log::is_protocol_lvl() { return is_lvl(LOG_PROTOCOL); }
+
 void Log::print(log_level_e level, const char *str, va_list va)
 {
-  if (this->log_level <= level) return;
-  vprintf(str, va);
-  fflush(stdout);
+  if (is_lvl(level)) {
+    vprintf(str, va);
+    fflush(stdout);
+  }
 }
 
 void Log::print(log_level_e level, const char *str, ...)

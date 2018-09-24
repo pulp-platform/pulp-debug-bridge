@@ -178,6 +178,7 @@ typedef struct aeEventLoop {
 #ifdef _WIN32
     WSADATA wsa_data;
 #endif
+    struct timeval in_the_future;
 } aeEventLoop;
 
 /* Prototypes */

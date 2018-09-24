@@ -32,7 +32,7 @@ void Jtag_proxy::client_connected(Tcp_socket::tcp_socket_ptr_t socket)
 {
   if (socket == nullptr) {
     log.user("JTAG Proxy: Connection to (%s:%d) timed out - retrying\n", m_server, m_port);
-    m_client->connect(m_server, m_port);
+    m_tcp_client->connect(m_server, m_port);
   } else {
     log.user("JTAG Proxy: Connected to (%s:%d)\n", m_server, m_port);
     cable_state_cb(CABLE_CONNECTED);
@@ -65,8 +65,7 @@ bool Jtag_proxy::connect(js::config *config)
 
   log.user("JTAG Proxy: Connecting to (%s:%d)\n", m_server, m_port);
 
-  m_socket = m_client->connect_blocking(m_server, m_port, 10000000L);
-
+  m_socket = m_tcp_client->connect_blocking(m_server, m_port, 10000000L);
   return m_socket != nullptr;
 }
 
@@ -87,22 +86,23 @@ bool Jtag_proxy::proxy_stream(char* instream, char* outstream, unsigned int n_bi
 
   std::vector<uint8_t> buffer(n_bits, 0);
   uint8_t value = 0;
-  if (outstream)
+  for (size_t i=0; i<n_bits; i++)
   {
-    for (size_t i=0; i<n_bits; i++)
+    if ((i % 8) == 0)
     {
-
-      if ((i % 8) == 0)
+      if (outstream)
       {
         value = *(unsigned char *)outstream;
         outstream++;
       }
-
-      buffer[i] = (value & 1) << bit;
-      if (bit != DEBUG_BRIDGE_JTAG_TRST) buffer[i] |= 1 << DEBUG_BRIDGE_JTAG_TRST;
-
-      value >>= 1;
+      else
+        value = 0;
     }
+
+    buffer[i] = (value & 1) << bit;
+    if (bit != DEBUG_BRIDGE_JTAG_TRST) buffer[i] |= 1 << DEBUG_BRIDGE_JTAG_TRST;
+
+    value >>= 1;
   }
 
   if (last)

@@ -156,7 +156,7 @@ class Tcp_client : public Tcp_socket_owner {
     void connect(const char * address, int port, int timeout_ms=5000);
     Tcp_socket::tcp_socket_ptr_t connect_blocking(const char * address, int port, int timeout_ms=5000);
   private:
-    socket_t prepare_socket(socket_t fd, const char * address, int port, struct sockaddr_in *addr);
+    socket_t prepare_socket(socket_t fd, const char * address, int port, struct sockaddr_in *addr, bool blocking=false);
     socket_t connecting_socket = INVALID_SOCKET;
     EventLoop::SpFileEvent ev_connect;
     EventLoop::SpTimerEvent ev_connect_timout;

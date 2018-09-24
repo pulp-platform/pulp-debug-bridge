@@ -15,13 +15,13 @@ int main( int argc, const char* argv[] )
 {
     auto c_buf = std::make_shared<CircularCharBuffer>(1000);
 
-    RspPacketCodec::encode(TEST_STRING, strlen(TEST_STRING), c_buf);
-    RspPacketCodec::encode(TEST_STRING, strlen(TEST_STRING), c_buf);
-    RspPacketCodec::encode_ack(c_buf);
-
     EventLoop::SpEventLoop _loop = EventLoop::getLoop();
 
     RspPacketCodec *c = new RspPacketCodec(_loop, std::chrono::milliseconds(100));
+
+    c->encode(TEST_STRING, strlen(TEST_STRING), c_buf);
+    c->encode(TEST_STRING, strlen(TEST_STRING), c_buf);
+    c->encode_ack(c_buf);
 
     c->on_ack([](){ std::cout << "# ACK\n"; });
     c->on_error([](const char * err){ std::cout << "# ERROR " << err << "\n"; });
@@ -30,7 +30,7 @@ int main( int argc, const char* argv[] )
 
     c->decode(c_buf);
     c_buf->write_copy("+", 1);
-    RspPacketCodec::encode_ack(c_buf);
+    c->encode_ack(c_buf);
     c_buf->write_copy("\003", 1);
     c->decode(c_buf);
     c_buf->write_copy(INVALID_PACKET1, sizeof(INVALID_PACKET1));

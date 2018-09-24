@@ -56,14 +56,16 @@ uint32_t Ioloop::print_len(hal_debug_struct_t *debug_struct) {
 void Ioloop::print_one(hal_debug_struct_t *debug_struct, uint32_t len) {
   char buff[len+1];
   m_top->access(false, PTR_2_INT(&debug_struct->putc_buffer), len, &(buff[0]));
+  buff[len] = 0;
   unsigned int zero = 0;
   m_top->access(true, PTR_2_INT(&debug_struct->pending_putchar), 4, (char*)&zero);
-  for (unsigned int i=0; i<len; i++) putchar(buff[i]);
+  fputs(buff, stdout);
   fflush(NULL);
 }
 
 void Ioloop::print_loop(hal_debug_struct_t *debug_struct) {
   m_event_loop->getTimerEvent([this, debug_struct](){
+    // printf("ioloop fast loop proc\n");
     try {
       uint32_t len = print_len(debug_struct);
       if (len == 0) {
@@ -81,6 +83,7 @@ void Ioloop::print_loop(hal_debug_struct_t *debug_struct) {
 
 LooperFinishedStatus Ioloop::loop_proc(hal_debug_struct_t *debug_struct)
 {
+  // printf("ioloop proc\n");
   try {
     uint32_t len = print_len(debug_struct);
     if (len == 0) return LooperFinishedContinue;

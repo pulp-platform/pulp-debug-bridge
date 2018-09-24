@@ -36,7 +36,9 @@ public:
 
 class BridgeCommands : public std::enable_shared_from_this<BridgeCommands> {
   public:
-    using bridge_func_t = std::function<int(void * state)>;
+    using bridge_func_t = std::function<int(void *)>;
+    using bridge_cont_complete_func_t = std::function<void(int)>;
+    using bridge_cont_func_t = std::function<void(void *, bridge_cont_complete_func_t)>;
     using SpBridgeCommands = std::shared_ptr<BridgeCommands>;
 
     class BridgeCommand {
@@ -52,6 +54,17 @@ class BridgeCommands : public std::enable_shared_from_this<BridgeCommands> {
         int64_t execute(SpBridgeCommands bc);
     private:
         bridge_func_t m_cb;
+    };
+
+    class BridgeCommandExecuteAsync : public BridgeCommand {
+    public:
+        ~BridgeCommandExecuteAsync() {}
+        BridgeCommandExecuteAsync(const bridge_cont_func_t& cb, const bridge_cont_complete_func_t& cb_complete) : 
+            m_cb(std::move(cb)), m_cb_complete(std::move(cb_complete)) {}
+        int64_t execute(SpBridgeCommands bc);
+    private:
+        bridge_cont_func_t m_cb;
+        bridge_cont_complete_func_t m_cb_complete;
     };
 
     class BridgeCommandDelay : public BridgeCommand {

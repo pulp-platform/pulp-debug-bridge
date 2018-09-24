@@ -46,7 +46,7 @@ Adv_dbg_itf::Adv_dbg_itf(js::config *system_config, const std::shared_ptr<Cable>
   log.debug("Using retry count: %d\n", this->retry_count);
 
 
-  conf = system_config->get("**/adv_dbg_unit/check_errors");
+  conf = NULL; // conf = system_config->get("**/adv_dbg_unit/check_errors");
 
   this->check_errors = conf != NULL ? conf->get_bool() : false;
   log.debug("Checking errors: %d\n", this->check_errors);
@@ -153,7 +153,13 @@ bool Adv_dbg_itf::access(bool wr, unsigned int addr, int size, char* buffer)
 
 bool Adv_dbg_itf::write(unsigned int _addr, int _size, char* _buffer)
 {
-  // log.detail("write 0x%x size %d\n", _addr, _size);
+  log.detail("write 0x%x size %d ", _addr, _size);
+  if (_size>= 4) {
+    log.detail("0x%x\n", *((uint32_t *)(&_buffer[0])));
+  } else {
+    log.detail("\n");
+  }
+
   int count = 0;
   while (count++ <= this->retry_count)
   {
