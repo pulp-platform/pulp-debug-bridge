@@ -13,27 +13,27 @@ int main( int argc, const char* argv[] )
     auto el = EventLoop::getLoop();
     // always use shared pointer for socket owners!
     auto l = std::make_shared<Tcp_listener>(&log_, el, 10000);
-    l->set_connected_cb(
-        [](const Tcp_socket::tcp_socket_ptr_t& sock){
-            sock->set_read_cb([](const Tcp_socket::tcp_socket_ptr_t& UNUSED(sock), Tcp_socket::circular_buffer_ptr_t buf){
+    l->on_connected(
+        [](const tcp_socket_ptr_t& sock){
+            sock->on_read([](const tcp_socket_ptr_t& UNUSED(sock), circular_buffer_ptr_t buf){
                 char cbuf[1024];
                 size_t clen = buf->read_copy(cbuf, 1024);
                 cbuf[clen] = 0;
                 printf("# %s\n", cbuf);
             });
-            sock->set_closed_cb([](){
+            sock->on_closed([](){
                 std::cout << "# Reading socket signals closing\n";
             });
             sock->set_events(Readable);
         }
     );
-    l->set_disconnected_cb(
-        [&](Tcp_socket::tcp_socket_ptr_t sock){
+    l->on_disconnected(
+        [&](tcp_socket_ptr_t sock){
             std::cout << "# Listener signals socket closed\n";
             l->stop();
         }
     );
-    l->set_state_cb(
+    l->on_state_change(
         [](listener_state_t state) {
             std::cout << "# Listener state: " << (state == ListenerStarted?"started":"stopped") << "\n";  
         }
@@ -46,9 +46,9 @@ int main( int argc, const char* argv[] )
     // always use shared pointer for socket owners!
     auto c = std::make_shared<Tcp_client>(&log_, el);
 
-    c->set_connected_cb(
-        [ppkt_cnt](Tcp_socket::tcp_socket_ptr_t sock){
-            sock->set_write_cb([ppkt_cnt](const Tcp_socket::tcp_socket_ptr_t& sock, Tcp_socket::circular_buffer_ptr_t buf){
+    c->on_connected(
+        [ppkt_cnt](tcp_socket_ptr_t sock){
+            sock->on_write([ppkt_cnt](const tcp_socket_ptr_t& sock, circular_buffer_ptr_t buf){
                 std::cout << "# Write packet\n";
 
                 const char *cbuf = "testing";
@@ -63,7 +63,7 @@ int main( int argc, const char* argv[] )
                 }
             });
 
-            sock->set_closed_cb([](){
+            sock->once_closed([](){
                 std::cout << "# Writing socket signals closing\n";
             });
 
@@ -72,8 +72,8 @@ int main( int argc, const char* argv[] )
         }
     );
 
-    c->set_disconnected_cb(
-        [](Tcp_socket::tcp_socket_ptr_t sock){
+    c->on_disconnected(
+        [](tcp_socket_ptr_t sock){
             std::cout << "# Client signals socket closed\n";
         }
     );

@@ -433,11 +433,6 @@ uint32_t Target_core::check_stopped()
       m_top->log.debug("core %d:%d tid %d single stepped\n", this->get_cluster_id(), this->get_core_id(), this->get_thread_id()+1);
       return EXC_CAUSE_BREAKPOINT;
     }
-    // Experiment for 1f issue
-    // if (is_sleeping) {
-    //   m_top->log.debug("core %d:%d tid %d is stopped but may be sleeping\n", this->get_cluster_id(), this->get_core_id(), this->get_thread_id()+1);
-    //   return EXC_CAUSE_NONE;
-    // }
     cause = this->get_cause();
     if (cause == EXC_CAUSE_BREAKPOINT) {
       m_top->log.debug("core %d:%d tid %d hit breakpoint\n", this->get_cluster_id(), this->get_core_id(), this->get_thread_id()+1);
@@ -480,8 +475,6 @@ void Target_core::commit_resume()
   this->pc_is_cached = false;
 
   if (!this->is_on) return;
-
-
 
   if (m_top->bkp->have_changed()) {
     this->flush();

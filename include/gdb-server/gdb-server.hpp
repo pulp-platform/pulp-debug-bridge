@@ -326,7 +326,7 @@ class Rsp : public std::enable_shared_from_this<Rsp> {
     {
       friend Rsp;
       public:
-        Client(std::shared_ptr<Rsp> rsp, Tcp_socket::tcp_socket_ptr_t client);
+        Client(std::shared_ptr<Rsp> rsp, tcp_socket_ptr_t client);
         void stop();
         bool is_running() { return m_state == RSP_TARGET_RUNNING; };
         bool send_str(const char* data);
@@ -386,7 +386,7 @@ class Rsp : public std::enable_shared_from_this<Rsp> {
         Gdb_server * m_top;
 
         std::shared_ptr<Rsp>  m_rsp = nullptr;
-        Tcp_socket::tcp_socket_ptr_t m_client = nullptr;
+        tcp_socket_ptr_t m_client = nullptr;
 
         int m_packet_timeout = 2000;
         Log log;
@@ -396,8 +396,8 @@ class Rsp : public std::enable_shared_from_this<Rsp> {
     rsp_client_ptr_t get_client() { return m_client; }
 
   private:
-    void client_connected(const Tcp_socket::tcp_socket_ptr_t &client);
-    void client_disconnected(const Tcp_socket::tcp_socket_ptr_t &client);
+    void client_connected(const tcp_socket_ptr_t &client);
+    void client_disconnected(const tcp_socket_ptr_t &client);
     void rsp_client_finished();
     void notify_finished();
     void resume_target(bool step=false, int tid=-1);

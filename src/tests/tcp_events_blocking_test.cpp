@@ -15,10 +15,10 @@ void server()
     auto el = EventLoop::getLoop();
     // always use shared pointer for socket owners!
     auto l = std::make_shared<Tcp_listener>(&log_, el, 10000);
-    l->set_connected_cb(
-        [&](const Tcp_socket::tcp_socket_ptr_t& sock){
+    l->on_connected(
+        [&](const tcp_socket_ptr_t& sock){
             printf("# server thread connected\n");
-            sock->set_read_cb([&](const Tcp_socket::tcp_socket_ptr_t& sock, Tcp_socket::circular_buffer_ptr_t buf){
+            sock->on_read([&](const tcp_socket_ptr_t& sock, circular_buffer_ptr_t buf){
                 char * cbuf;
                 size_t len;
                 buf->read_block((void**)&cbuf, &len);
@@ -27,7 +27,7 @@ void server()
                 
                 sock->set_events(None);
 
-                sock->write_buffer([](const Tcp_socket::tcp_socket_ptr_t& sock, Tcp_socket::circular_buffer_ptr_t buf){
+                sock->write_buffer([](const tcp_socket_ptr_t& sock, circular_buffer_ptr_t buf){
                     buf->write_copy(TEST_STR, sizeof(TEST_STR));
                 });
                 
@@ -36,19 +36,19 @@ void server()
                     return kEventLoopTimerDone;
                 }, 100);
             });
-            sock->set_closed_cb([](){
+            sock->once_closed([](){
                 std::cout << "# server socket signals closing\n";
             });
             sock->set_events(Readable);
         }
     );
-    l->set_disconnected_cb(
-        [&](Tcp_socket::tcp_socket_ptr_t sock){
+    l->on_disconnected(
+        [&](tcp_socket_ptr_t sock){
             std::cout << "# listener signals socket closed\n";
             l->stop();
         }
     );
-    l->set_state_cb(
+    l->on_state_change(
         [](listener_state_t state) {
             std::cout << "# listener state: " << (state == ListenerStarted?"started":"stopped") << "\n";  
         }
@@ -71,7 +71,7 @@ int main( int argc, const char* argv[] )
     auto c = std::make_shared<Tcp_client>(&log_, el);
 
     el->getTimerEvent([&](){
-        Tcp_socket::tcp_socket_ptr_t s = c->connect_blocking("127.0.0.1", 10000);
+        tcp_socket_ptr_t s = c->connect_blocking("127.0.0.1", 10000);
         assert(s != nullptr);
         
         printf("# main thread connected\n");

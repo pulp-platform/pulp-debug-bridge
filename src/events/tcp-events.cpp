@@ -53,7 +53,6 @@ bool set_blocking(socket_t fd, bool blocking)
 Tcp_socket_owner::Tcp_socket_owner(Log *log, EventLoop::SpEventLoop el) 
   : log(log), el(el)
 {
-  log->debug("Tcp_socket_owner constructor - conn_cb: %s disconn_cb: %s\n", (conn_cb==NULL?"no":"yes"), (disco_cb==NULL?"no":"yes"));
   socket_init();
 }
 
@@ -100,8 +99,8 @@ void Tcp_socket_owner::client_disconnected(socket_t socket) {
       // at this point we loose the reference
       auto iter = owned_sockets.find(socket);
       if (iter != owned_sockets.end()) {
-        Tcp_socket::tcp_socket_ptr_t p_socket = iter->second;
-        if (disco_cb) disco_cb(p_socket);
+        tcp_socket_ptr_t p_socket = iter->second;
+        emit_disconnected(p_socket);
         owned_sockets.erase(iter);
       }
       return kEventLoopTimerDone;
@@ -110,13 +109,13 @@ void Tcp_socket_owner::client_disconnected(socket_t socket) {
   }
 };
 
-Tcp_socket::tcp_socket_ptr_t Tcp_socket_owner::client_connected(socket_t socket) {
+tcp_socket_ptr_t Tcp_socket_owner::client_connected(socket_t socket) {
   log->protocol("Socket owner socket connected (fd %d)\n", socket);
   // the socket gets a copy of a shared pointer to this so we don't get collected
   // before it has finished
   auto ptr = std::make_shared<Tcp_socket>(this->shared_from_this(), socket);
   owned_sockets[socket] = ptr;
-  if (conn_cb) conn_cb(ptr);
+  emit_connected(ptr);
   return ptr;
 };
 
@@ -171,7 +170,7 @@ socket_t Tcp_client::prepare_socket(socket_t fd, const char * address, int port,
   return fd;
 }
 
-Tcp_socket::tcp_socket_ptr_t Tcp_client::connect_blocking(const char * address, int port, int timeout_ms)
+tcp_socket_ptr_t Tcp_client::connect_blocking(const char * address, int port, int timeout_ms)
 {
   struct sockaddr_in addr;
   fd_set fdset;
@@ -247,7 +246,7 @@ void Tcp_client::connect(const char * address, int port, int timeout_ms)
     log->error("unable to connect: connection timed out\n");
     if (connecting_socket != INVALID_SOCKET) close(connecting_socket);
     connecting_socket = INVALID_SOCKET;
-    if (conn_cb) conn_cb(nullptr);
+    emit_connected(nullptr);
     fe->setEvents(None);
     return kEventLoopTimerDone;
   }, timeout_ms * 1000);
@@ -273,7 +272,6 @@ void Tcp_client::connect(const char * address, int port, int timeout_ms)
 Tcp_listener::Tcp_listener(Log *log, EventLoop::SpEventLoop el, port_t port)
   : Tcp_socket_owner(log, el), port(port)
 {
-  log->debug("create listener conn_cb: %s disconn_cb: %s\n", (conn_cb?"no":"yes"), (disco_cb==NULL?"no":"yes"));
 }
 
 void Tcp_listener::start() {
@@ -328,7 +326,7 @@ void Tcp_listener::start() {
   this->is_stopping = false;
 
   log->user("RSP server setup on port %d\n", port);
-  listener_state_change(ListenerStarted);
+  emit_state_change(ListenerStarted);
 }
 
 void Tcp_listener::accept_socket()
@@ -352,7 +350,7 @@ void Tcp_listener::accept_socket()
     return;
   }
 
-  if (conn_cb) {
+  if (connected_listener_count()> 0) {
     log->debug("Tcp_listener: call connected callback\n");
     client_connected(socket_client);
     log->debug("Tcp_listener: connected callback returns (is_running: %d)\n", is_running);
@@ -364,11 +362,6 @@ void Tcp_listener::accept_socket()
     ::close(socket_client);
 #endif
   }
-}
-
-void Tcp_listener::listener_state_change(listener_state_t state)
-{
-  if (state_cb) state_cb(state);
 }
 
 void Tcp_listener::stop()
@@ -387,7 +380,7 @@ void Tcp_listener::stop()
 #endif
   }
   this->is_stopping = false;
-  listener_state_change(ListenerStopped);
+  emit_state_change(ListenerStopped);
 }
 
 const char * Tcp_socket::socket_state_str(TcpSocketState state) {
@@ -490,7 +483,7 @@ bool Tcp_socket::socket_writable()
     if (ret == SOCKET_ERROR) {
       int plat_err_no;
       if (this->check_error(&plat_err_no)) {
-        if (error_cb) error_cb(plat_err_no);
+        emit_error(plat_err_no);
         this->close_immediate();
         return false;
       } else {
@@ -531,7 +524,7 @@ bool Tcp_socket::socket_readable()
     } else if (ret == SOCKET_ERROR) {
       int plat_err_no;
       if (this->check_error(&plat_err_no)) {
-        if (error_cb) error_cb(plat_err_no);
+        emit_error(plat_err_no);
         this->close_immediate();
         return false;
       } else {
@@ -613,7 +606,7 @@ ssize_t Tcp_socket::read_immediate(void * buf, size_t len, bool read_all) {
     } else if (ret == SOCKET_ERROR) {
       int plat_err_no;
       if (this->check_error(&plat_err_no)) {
-        if (error_cb) error_cb(plat_err_no);
+        emit_error(plat_err_no);
         this->ev_socket_timeout->setTimeout(0);
         return -1;
       } else {
@@ -634,7 +627,7 @@ ssize_t Tcp_socket::write_immediate(const void * buf, size_t len, bool write_all
     if (ret == SOCKET_ERROR) {
       int plat_err_no;
       if (this->check_error(&plat_err_no)) {
-        if (error_cb) error_cb(plat_err_no);
+        emit_error(plat_err_no);
         this->ev_socket_timeout->setTimeout(0);
         return -1;
       } else {
@@ -656,14 +649,14 @@ bool Tcp_socket::socket_timeout()
   FileEvents current_socket_events = socket_events;
   // if there is aset callback and writing is enabled by user and there
   // is space to write 
-  if (write_cb && (user_events&Writable) && out_buffer->is_empty()) {
-    write_cb(this->shared_from_this(), out_buffer);
+  if ((user_events&Writable) && out_buffer->is_empty()) {
+    emit_write(this->shared_from_this(), out_buffer);
     if (state != SocketOpen) return true;
     redo = this->after_write() || redo;
   }
   // If there is a read callback and reading is enabled and we have something to read
-  if (read_cb && (user_events&Readable) && !in_buffer->is_empty()) {
-    read_cb(this->shared_from_this(), in_buffer);
+  if ((user_events&Readable) && !in_buffer->is_empty()) {
+    emit_read(this->shared_from_this(), in_buffer);
     if (state != SocketOpen) return true;
     redo = this->after_read() || redo;
   }
@@ -733,7 +726,7 @@ void Tcp_socket::close_immediate()
   socket_events = None;
   ev_socket->setEvents(socket_events);
   ev_socket_timeout->setTimeout(-1);
-  if (closed_cb) closed_cb();
+  emit_closed();
   owner->client_disconnected(this->get_handle());
   socket = INVALID_SOCKET;
 }

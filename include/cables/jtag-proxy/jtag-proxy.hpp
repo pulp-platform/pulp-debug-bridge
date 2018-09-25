@@ -32,7 +32,7 @@ class Jtag_proxy : public Cable {
   public:
 
     Jtag_proxy(EventLoop::SpEventLoop event_loop, cable_cb_t cable_state_cb);
-    ~Jtag_proxy() = default;
+    ~Jtag_proxy() {};
     
     bool connect(js::config *config);
 
@@ -52,12 +52,9 @@ class Jtag_proxy : public Cable {
     int m_port = 0;
     const char *m_server;
 
-    void client_connected(Tcp_socket::tcp_socket_ptr_t);
-    void client_disconnected(Tcp_socket::tcp_socket_ptr_t);
-
     bool proxy_stream(char* instream, char* outstream, unsigned int n_bits, bool last, int bit);
     Log log;
     cable_cb_t cable_state_cb;
     std::shared_ptr<Tcp_client> m_tcp_client;
-    Tcp_socket::tcp_socket_ptr_t m_socket;
+    tcp_socket_ptr_t m_socket;
 };

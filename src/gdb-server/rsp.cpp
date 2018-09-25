@@ -60,7 +60,7 @@ void Rsp::init()
   m_thread_init = main_core->get_thread_id();
 }
 
-void Rsp::client_connected(const Tcp_socket::tcp_socket_ptr_t &client)
+void Rsp::client_connected(const tcp_socket_ptr_t &client)
 {
   log.user("RSP: client connected\n");
   if (m_client) {
@@ -81,7 +81,7 @@ void Rsp::client_connected(const Tcp_socket::tcp_socket_ptr_t &client)
   m_client = std::make_shared<Rsp::Client>(this->shared_from_this(), client);
 }
 
-void Rsp::client_disconnected(const Tcp_socket::tcp_socket_ptr_t &UNUSED(sock)) {
+void Rsp::client_disconnected(const tcp_socket_ptr_t &UNUSED(sock)) {
   log.user("RSP: client disconnected (aborted: %d)\n", m_aborted);
 
   if (!m_aborted)
@@ -137,10 +137,10 @@ void Rsp::start() {
 
   using namespace std::placeholders;
 
-  m_listener->set_connected_cb(std::bind(&Rsp::client_connected, this, _1));
-  m_listener->set_disconnected_cb(std::bind(&Rsp::client_disconnected, this, _1));
+  m_listener->on_connected(std::bind(&Rsp::client_connected, this, _1));
+  m_listener->on_disconnected(std::bind(&Rsp::client_disconnected, this, _1));
 
-  m_listener->set_state_cb([this](listener_state_t state) {
+  m_listener->on_state_change([this](listener_state_t state) {
       log.debug("RSP: Listener status %d\n", state);
       // stop();
     }
@@ -178,7 +178,7 @@ void Rsp::resume_target(bool step, int tid)
 
 // Rsp::Client
 
-Rsp::Client::Client(const std::shared_ptr<Rsp> rsp, Tcp_socket::tcp_socket_ptr_t client) : m_top(rsp->m_top), m_rsp(std::move(rsp)), m_client(std::move(client)), log("RSPC")
+Rsp::Client::Client(const std::shared_ptr<Rsp> rsp, tcp_socket_ptr_t client) : m_top(rsp->m_top), m_rsp(std::move(rsp)), m_client(std::move(client)), log("RSPC")
 {
   // Wait timer. Initially idle
   m_wait_te = rsp->m_event_loop->getTimerEvent(std::bind(&Rsp::Client::wait_routine, this));
@@ -195,7 +195,7 @@ Rsp::Client::Client(const std::shared_ptr<Rsp> rsp, Tcp_socket::tcp_socket_ptr_t
   });
   m_codec->on_packet([this](char * pkt, size_t pkt_len){
     log.protocol("RSP: >> received packet\n");
-    m_client->write_buffer([this](const Tcp_socket::tcp_socket_ptr_t & UNUSED(sock), const Tcp_socket::circular_buffer_ptr_t &c_buf){
+    m_client->write_buffer([this](const tcp_socket_ptr_t & UNUSED(sock), const circular_buffer_ptr_t &c_buf){
       log.protocol("RSP: send ack\n");
       m_codec->encode_ack(c_buf);
     });
@@ -210,7 +210,7 @@ Rsp::Client::Client(const std::shared_ptr<Rsp> rsp, Tcp_socket::tcp_socket_ptr_t
   });
 
   // socket -> packet codec
-  m_client->set_read_cb([this](const Tcp_socket::tcp_socket_ptr_t& UNUSED(sock), Tcp_socket::circular_buffer_ptr_t buf){
+  m_client->on_read([this](const tcp_socket_ptr_t& UNUSED(sock), circular_buffer_ptr_t buf){
     m_codec->decode(buf);
   });
   m_client->set_events(Readable);
@@ -975,7 +975,7 @@ bool time_has_expired(const timeval* start, const timeval* max_delay)
 bool Rsp::Client::send(const char* data, size_t len)
 {
   log.debug("Sending \"%s\" (%d)\n", data, len);
-  m_client->write_buffer([&](const Tcp_socket::tcp_socket_ptr_t & UNUSED(sock), const Tcp_socket::circular_buffer_ptr_t &c_buf){
+  m_client->write_buffer([&](const tcp_socket_ptr_t & UNUSED(sock), const circular_buffer_ptr_t &c_buf){
     m_codec->encode(data, len, c_buf);
   });
   return true;

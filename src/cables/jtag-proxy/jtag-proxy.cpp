@@ -24,27 +24,7 @@ Jtag_proxy::Jtag_proxy(EventLoop::SpEventLoop event_loop, cable_cb_t cable_state
 {
   using namespace std::placeholders;
   m_tcp_client = std::make_shared<Tcp_client>(&log, event_loop);
-  m_tcp_client->set_connected_cb(std::bind(&Jtag_proxy::client_connected, this, _1));
-  m_tcp_client->set_disconnected_cb(std::bind(&Jtag_proxy::client_disconnected, this, _1));
 }   
-
-void Jtag_proxy::client_connected(Tcp_socket::tcp_socket_ptr_t socket)
-{
-  if (socket == nullptr) {
-    log.user("JTAG Proxy: Connection to (%s:%d) timed out - retrying\n", m_server, m_port);
-    m_tcp_client->connect(m_server, m_port);
-  } else {
-    log.user("JTAG Proxy: Connected to (%s:%d)\n", m_server, m_port);
-    cable_state_cb(CABLE_CONNECTED);
-  }
-}
-
-void Jtag_proxy::client_disconnected(Tcp_socket::tcp_socket_ptr_t)
-{
-  log.user("JTAG Proxy: Disconnected from (%s:%d)\n", m_server, m_port);
-  m_socket = nullptr;
-  cable_state_cb(CABLE_DISCONNECTED);
-}
 
 bool Jtag_proxy::connect(js::config *config)
 {
@@ -66,7 +46,12 @@ bool Jtag_proxy::connect(js::config *config)
   log.user("JTAG Proxy: Connecting to (%s:%d)\n", m_server, m_port);
 
   m_socket = m_tcp_client->connect_blocking(m_server, m_port, 10000000L);
-  return m_socket != nullptr;
+  if (m_socket != nullptr) {
+    cable_state_cb(CABLE_CONNECTED);
+    return true;
+  } else {
+    return false;
+  }
 }
 
 bool Jtag_proxy::bit_inout(char* inbit, char outbit, bool last)
@@ -110,8 +95,8 @@ bool Jtag_proxy::proxy_stream(char* instream, char* outstream, unsigned int n_bi
     buffer[n_bits-1] |= 1 << DEBUG_BRIDGE_JTAG_TMS;
   }
 
-  if (m_socket->write_immediate((void *) &req, sizeof(req), true) != sizeof(req)) return false;
-  if (m_socket->write_immediate((void *)(&(buffer[0])), n_bits, true) != n_bits) return false;
+  if (m_socket->write_immediate((void *) &req, sizeof(req), true) != sizeof(req)) goto socket_error;
+  if (m_socket->write_immediate((void *)(&(buffer[0])), n_bits, true) != n_bits) goto socket_error;
   if (instream != NULL)
   {
     ::memset((void *)instream, 0, (n_bits + 7) / 8);
@@ -119,6 +104,10 @@ bool Jtag_proxy::proxy_stream(char* instream, char* outstream, unsigned int n_bi
       return false;
   }
   return true;
+socket_error:
+  m_socket = nullptr;
+  cable_state_cb(CABLE_DISCONNECTED);
+  return false;
 }
 
 bool Jtag_proxy::stream_inout(char* instream, char* outstream, unsigned int n_bits, bool last)

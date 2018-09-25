@@ -29,6 +29,7 @@
 #include <assert.h>
 
 #include "events.hpp"
+#include "emitter.hpp"
 #include "log/log.hpp"
 #include "circular-buffer.hpp"
 
@@ -55,6 +56,7 @@ private:
 };
 
 class Tcp_socket_owner;
+class Tcp_socket;
 
 enum TcpSocketState {
   SocketClosed,
@@ -63,24 +65,29 @@ enum TcpSocketState {
   SocketShutDown
 };
 
-class Tcp_socket : public std::enable_shared_from_this<Tcp_socket> {
+typedef std::shared_ptr<CircularCharBuffer> circular_buffer_ptr_t;
+typedef std::shared_ptr<Tcp_socket> tcp_socket_ptr_t;
+typedef std::function<void(const tcp_socket_ptr_t&)> sock_state_cb_t;
+typedef std::function<void()> state_cb_t;
+typedef std::function<void(int error)> error_cb_t;
+typedef std::function<void(const tcp_socket_ptr_t&, const circular_buffer_ptr_t&)> data_cb_t;
+
+SMART_EMITTER(SocketRead, read)
+SMART_EMITTER(SocketWrite, write)
+SMART_EMITTER(SocketClosed, closed)
+SMART_EMITTER(SocketError, error)
+
+class Tcp_socket : public std::enable_shared_from_this<Tcp_socket>,
+  public SocketReadEmitter<const tcp_socket_ptr_t&, const circular_buffer_ptr_t&>, 
+  public SocketWriteEmitter<const tcp_socket_ptr_t&, const circular_buffer_ptr_t&>,
+  public SocketClosedEmitter<>,
+  public SocketErrorEmitter<int> {
   public:
-    typedef std::shared_ptr<CircularCharBuffer> circular_buffer_ptr_t;
-    typedef std::shared_ptr<Tcp_socket> tcp_socket_ptr_t;
-    typedef std::function<void(const tcp_socket_ptr_t&)> sock_state_cb_t;
-    typedef std::function<void()> state_cb_t;
-    typedef std::function<void(int error)> error_cb_t;
-    typedef std::function<void(const tcp_socket_ptr_t&, const circular_buffer_ptr_t&)> data_cb_t;
 
     static const char * socket_state_str(TcpSocketState state);
 
     Tcp_socket(std::shared_ptr<Tcp_socket_owner> owner, socket_t socket, size_t read_size=DEFAULT_BUFFER_SIZE, size_t write_size=DEFAULT_BUFFER_SIZE);
     ~Tcp_socket();
-
-    void set_read_cb(data_cb_t cb) { read_cb = cb; };
-    void set_write_cb(data_cb_t cb) { write_cb = cb; };
-    void set_closed_cb(state_cb_t cb) { closed_cb = cb; };
-    void set_error_cb(error_cb_t cb) { error_cb = cb; };
 
     void read_buffer(const data_cb_t& cb);
     void write_buffer(const data_cb_t& cb);
@@ -114,24 +121,23 @@ class Tcp_socket : public std::enable_shared_from_this<Tcp_socket> {
     FileEvents user_events = None, socket_events = None;   
     bool write_flowing = true, read_flowing = true;
     size_t high, low;
-    data_cb_t read_cb;
-    data_cb_t write_cb;
-    state_cb_t closed_cb;
-    error_cb_t error_cb;
     TcpSocketState state = SocketOpen;
 };
 
+SMART_EMITTER(SocketDisconnected, disconnected)
 
-class Tcp_socket_owner : public std::enable_shared_from_this<Tcp_socket_owner> {
+SMART_EMITTER(SocketConnected, connected)
+
+class Tcp_socket_owner : public std::enable_shared_from_this<Tcp_socket_owner>,
+  public SocketDisconnectedEmitter<const tcp_socket_ptr_t&>,
+  public SocketConnectedEmitter<const tcp_socket_ptr_t&> {
   public:
     Tcp_socket_owner(Log *log, EventLoop::SpEventLoop el);
     virtual ~Tcp_socket_owner();
     friend class Tcp_socket;
-    void set_connected_cb(Tcp_socket::sock_state_cb_t conn_cb) { this->conn_cb = conn_cb; }
-    void set_disconnected_cb(Tcp_socket::sock_state_cb_t disco_cb) { this->disco_cb = disco_cb; }
   protected:
     virtual void client_disconnected(socket_t socket);
-    virtual Tcp_socket::tcp_socket_ptr_t client_connected(socket_t socket);
+    virtual tcp_socket_ptr_t client_connected(socket_t socket);
     void close_all();
     size_t socket_count() { return owned_sockets.size(); }
     bool print_error(const char * err_str);
@@ -139,9 +145,8 @@ class Tcp_socket_owner : public std::enable_shared_from_this<Tcp_socket_owner> {
     void socket_deinit();
     Log *log;
     EventLoop::SpEventLoop el;
-    Tcp_socket::sock_state_cb_t conn_cb, disco_cb;
     EventLoop::SpTimerEvent ev_timer;
-    std::map<socket_t, Tcp_socket::tcp_socket_ptr_t> owned_sockets;
+    std::map<socket_t, tcp_socket_ptr_t> owned_sockets;
     bool is_running = false;
   private:
   #ifdef _WIN32
@@ -154,7 +159,7 @@ class Tcp_client : public Tcp_socket_owner {
     Tcp_client(Log * log, EventLoop::SpEventLoop el);
     virtual ~Tcp_client();
     void connect(const char * address, int port, int timeout_ms=5000);
-    Tcp_socket::tcp_socket_ptr_t connect_blocking(const char * address, int port, int timeout_ms=5000);
+    tcp_socket_ptr_t connect_blocking(const char * address, int port, int timeout_ms=5000);
   private:
     socket_t prepare_socket(socket_t fd, const char * address, int port, struct sockaddr_in *addr, bool blocking=false);
     socket_t connecting_socket = INVALID_SOCKET;
@@ -169,18 +174,17 @@ typedef enum {
   ListenerStarted = 1
 } listener_state_t;
 
-class Tcp_listener : public Tcp_socket_owner {
+SMART_EMITTER(ListenerState, state_change)
+
+class Tcp_listener : public Tcp_socket_owner, public ListenerStateEmitter<listener_state_t> {
 public:
-  typedef std::function<void(listener_state_t)> listener_state_cb_t;
   Tcp_listener(Log *log, EventLoop::SpEventLoop el, port_t port);
   virtual ~Tcp_listener() {}
   void start();
   void stop();
-  void set_state_cb(listener_state_cb_t state_cb) { this->state_cb = state_cb; }
   void setAccepting(bool accepting) { this->accepting = accepting; }
 
 private:
-  void listener_state_change(listener_state_t state);
   void listener_routine();
   void accept_socket();
 
@@ -188,7 +192,6 @@ private:
   socket_t socket_in;
   bool is_stopping = false;
   std::thread *listener_thread;
-  listener_state_cb_t state_cb;
   bool accepting;
   EventLoop::SpFileEvent ev_incoming;
 };
