@@ -27,10 +27,22 @@
 #include <memory>
 #include <functional>
 #include <exception>
+#include <unordered_map>
+#include <mutex>
+#include <atomic>
 
 #include "debug_bridge/debug_bridge.h"
 #include "cables/cable.hpp"
 #include "events/events.hpp"
+#include "events/emitter.hpp"
+
+#ifndef __USE_SDL__
+#define __USE_SDL__
+#endif
+#if defined(__USE_SDL__)
+#include <SDL.h>
+#include <thread>
+#endif
 
 #define PTR_2_INT(__addr) ((unsigned int)(reinterpret_cast<std::uintptr_t>(__addr)&0xffffffff))
 #define INT_2_PTR(__addr) (reinterpret_cast<std::uintptr_t>((size_t)__addr))
@@ -64,9 +76,10 @@ public:
   virtual LooperFinishedStatus register_proc(hal_debug_struct_t * debug_struct) = 0;
   bool get_paused() { return m_paused; }
   void set_paused(bool paused) { m_paused = paused; }
+  virtual void destroy() { m_destroyed = true; }
 protected:
   LoopManager * m_top;
-  bool m_paused = false;
+  bool m_paused = false, m_destroyed = false;
 };
 
 class LoopManager {
@@ -82,14 +95,15 @@ public:
   void remove_looper(Looper * looper);
   void clear_loopers() {
     stop();
+    for (auto l: m_loopers) l->destroy();
     m_loopers.clear();
   }
   void access(bool write, unsigned int addr, int len, char * buf);
   int64_t run_loops();
+  Log log;
 private:
   hal_debug_struct_t * activate();
 
-  Log log;
   EventLoop::SpTimerEvent m_loop_te;
   std::list<std::shared_ptr<Looper>> m_loopers;
 
@@ -99,13 +113,106 @@ private:
   bool m_stopped = true;
 };
 
-class Reqloop : public Looper
+#if defined(__USE_SDL__)
+class Reqloop;
+
+SMART_EMITTER(FramebufferStart, start)
+
+SMART_EMITTER(FramebufferWindowOpen, window_open)
+
+class Framebuffer : 
+  public FramebufferStartEmitter<>,
+  public FramebufferWindowOpenEmitter<uint32_t>
 {
 public:
-  Reqloop(LoopManager * top, const EventLoop::SpEventLoop &event_loop, int64_t req_pause = 0);
+  class UpdateMessage;
+  class Window {
+  public:
+    Window(const std::string &name, int width, int height, int format) :
+      m_name(name), m_width(width), m_height(height), m_format(format) {}
+    ~Window() { destroy(); }
+    void handle_display();
+    void handle_update(UpdateMessage * update_message);
+    void destroy();
+    int get_width() { return m_width; }
+    int get_height() { return m_height; }
+    int get_pixel_size() { return m_pixel_size; }
+  private:
+    std::string m_name;
+    int m_width;
+    int m_height;
+    int m_format;
+    int m_pixel_size = 1;
+    SDL_Surface *m_screen;
+    SDL_Texture * m_texture;
+    SDL_Renderer *m_renderer;
+    SDL_Window *m_window;
+    uint32_t *m_pixels;
+    bool m_destroyed = true;
+  };
 
+  class UpdateMessage {
+    friend Window;
+  public:
+    UpdateMessage(int posx, int posy, int width, int height, int pixel_size) : 
+      m_posx(posx), m_posy(posy), m_width(width), m_height(height), m_buffer(width*height*pixel_size) {}
+    ~UpdateMessage() {}
+    char * get_buffer() { return (char *) &m_buffer[0]; }
+    size_t get_buffer_size() { return m_buffer.capacity(); }
+  private:
+    int m_posx, m_posy, m_width, m_height;
+    std::vector<uint8_t> m_buffer;
+  };
+
+  Framebuffer(Reqloop *reqloop);
+  void destroy();
+  void handle_display(uint32_t window_id);
+  void handle_update(uint32_t window_id, void * vmsg);
+  bool update(uint32_t window_id, uint32_t addr, int posx, int posy, int width, int height);
+  void start();
+  void open(std::string name, int width, int height, int format);
+
+private:
+  std::shared_ptr<Framebuffer::Window> find_window(uint32_t window_id);
+  void fb_routine();
+
+  Reqloop *m_top;
+  std::thread * m_thread;
+  std::mutex m_mut_windows;
+  std::unordered_map<uint32_t, std::shared_ptr<Window>> m_windows;
+  uint32_t m_next_window_id = 1;
+  uint32_t m_display_window, m_update_window;
+  bool m_destroyed = false;
+  std::atomic<bool> m_running{false};
+};
+#endif
+
+class Reqloop : public Looper, public std::enable_shared_from_this<Reqloop>
+{
+  friend Framebuffer;
+public:
+  Reqloop(LoopManager * top, const EventLoop::SpEventLoop &event_loop, int64_t req_pause = 0);
+#ifdef __USE_SDL__
+  ~Reqloop() {
+    if (m_active_timer) m_active_timer->setTimeout(-1);
+    if (m_frame_buffer) m_frame_buffer->destroy();
+  }
+#endif
   LooperFinishedStatus loop_proc(hal_debug_struct_t *debug_struct);
   LooperFinishedStatus register_proc(hal_debug_struct_t *debug_struct);
+
+  class FileReqState {
+    friend Reqloop;
+  public:
+    FileReqState(uint32_t fd, uint32_t size, uint32_t ptr);
+    FileReqState() = default;
+    bool do_write(LoopManager * top);
+    bool do_read(LoopManager * top);
+  private:
+    uint32_t m_fd, m_size, m_iter_size, m_ptr;
+    int m_res;
+  };
+
 private:
   enum ReqloopFinishedStatus {
     ReqloopFinishedContinue,
@@ -117,10 +224,14 @@ private:
   void reply_req(hal_debug_struct_t *debug_struct, hal_bridge_req_t *target_req, hal_bridge_req_t *req);
   ReqloopFinishedStatus handle_req_connect(hal_debug_struct_t *debug_struct, hal_bridge_req_t *target_req, hal_bridge_req_t *req);
   ReqloopFinishedStatus handle_req_open(hal_debug_struct_t *debug_struct, hal_bridge_req_t *target_req, hal_bridge_req_t *req);
+  int64_t handle_req_read_one(hal_debug_struct_t *debug_struct, hal_bridge_req_t *target_req, hal_bridge_req_t *req);
   ReqloopFinishedStatus handle_req_read(hal_debug_struct_t *debug_struct, hal_bridge_req_t *target_req, hal_bridge_req_t *req);
+  int64_t handle_req_write_one(hal_debug_struct_t *debug_struct, hal_bridge_req_t *target_req, hal_bridge_req_t *req);
   ReqloopFinishedStatus handle_req_write(hal_debug_struct_t *debug_struct, hal_bridge_req_t *target_req, hal_bridge_req_t *req);
   ReqloopFinishedStatus handle_req_close(hal_debug_struct_t *debug_struct, hal_bridge_req_t *target_req, hal_bridge_req_t *req);
   ReqloopFinishedStatus handle_req_fb_open(hal_debug_struct_t *debug_struct, hal_bridge_req_t *req, hal_bridge_req_t *target_req);
+  void complete_req_fb_open(hal_debug_struct_t *debug_struct, hal_bridge_req_t *req, hal_bridge_req_t *target_req);
+  void complete_req_fb_window_open(hal_debug_struct_t *debug_struct, hal_bridge_req_t *req, hal_bridge_req_t *target_req, uint32_t window_id);
   ReqloopFinishedStatus handle_req_fb_update(hal_debug_struct_t *debug_struct, hal_bridge_req_t *req, hal_bridge_req_t *target_req);
   ReqloopFinishedStatus handle_req_disconnect(hal_debug_struct_t *debug_struct, hal_bridge_req_t *target_req, hal_bridge_req_t *req);
   ReqloopFinishedStatus handle_req(hal_debug_struct_t *debug_struct, hal_bridge_req_t *target_req, hal_bridge_req_t *req);
@@ -129,8 +240,14 @@ private:
 
   Log log;
   EventLoop::SpEventLoop m_event_loop;
+  EventLoop::SpTimerEvent m_active_timer = nullptr;
   bool m_has_error = false;
-  int64_t m_req_pause;
+  int64_t m_req_pause = 50;
+
+  FileReqState m_fstate;
+#ifdef __USE_SDL__
+  Framebuffer * m_frame_buffer = nullptr;
+#endif
 };
 
 class Ioloop : public Looper

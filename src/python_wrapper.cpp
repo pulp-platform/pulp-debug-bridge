@@ -259,7 +259,10 @@ extern "C" void bridge_loopmanager_clear()
 
 extern "C" void bridge_deinit()
 {
-  delete bridge;
+  if (bridge) {
+    delete bridge;
+    bridge = NULL;
+  }
 }
 
 extern "C" bool gdb_server_open(int socket_port, cmd_cb_t cmd_cb, const char * capabilities)

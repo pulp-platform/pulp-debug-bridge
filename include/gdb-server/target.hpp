@@ -106,6 +106,7 @@ public:
   void set_halt_mask(uint32_t mask);
   uint32_t get_halt_mask();
   uint32_t get_halt_status();
+  void set_resume(uint32_t mask);
 
 private:
   Gdb_server * m_top;

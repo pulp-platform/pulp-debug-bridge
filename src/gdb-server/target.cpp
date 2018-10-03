@@ -21,6 +21,12 @@
 
 #include "gdb-server/target.hpp"
 
+#define IE_TRAP_EBRK (1<<3)
+#define IE_TRAP_ILL (1<<2)
+
+#define IE_TRAPS (IE_TRAP_EBRK|IE_TRAP_ILL)
+
+
 Memory_wall::Memory_wall(uint32_t start, uint32_t len)
 : start(start), len(len)
 {
@@ -67,6 +73,10 @@ void Target_fc_cache::flush()
   uint32_t data = 0xFFFFFFFF;
   if (!m_top->cable->access(true, addr + 0x04, 4, (char*)&data))
     throw CableException("Error writing to 0x%08x", addr + 0x04);
+  data = 0;
+  if (!m_top->cable->access(false, addr + 0x0c, 4, (char*)&data))
+    throw CableException("Error reading from 0x%08x", addr + 0x0c);
+  m_top->log.detail("FC cache status 0x%x\n", data);
 }
 
 
@@ -84,7 +94,6 @@ void Target_cluster_ctrl_xtrigger::init()
 
 void Target_cluster_ctrl_xtrigger::set_halt_mask(uint32_t mask)
 {
-
   if (current_mask != mask) {
     m_top->log.detail("set xtrigger halt mask 0x%08x 0x%02x\n", cluster_ctrl_addr + 0x000038, mask&0xff);
     if (!m_top->cable->access(true, cluster_ctrl_addr + 0x000038, 4, (char*)&mask))
@@ -93,17 +102,23 @@ void Target_cluster_ctrl_xtrigger::set_halt_mask(uint32_t mask)
   }
 }
 
+void Target_cluster_ctrl_xtrigger::set_resume(uint32_t mask)
+{
+  m_top->log.detail("set xtrigger resume register 0x%08x 0x%02x\n", cluster_ctrl_addr + 0x000028, mask&0xff);
+  if (!m_top->cable->access(true, cluster_ctrl_addr + 0x000028, 4, (char*)&mask))
+    throw CableException("Target_cluster_ctrl_xtrigger::set_resume() Error writing to 0x%08x", cluster_ctrl_addr + 0x000028);
+}
+
 uint32_t Target_cluster_ctrl_xtrigger::get_halt_mask() { 
   return this->current_mask;
 }
 
 uint32_t Target_cluster_ctrl_xtrigger::get_halt_status()
 {
-
   uint32_t status = 0;
   if (!m_top->cable->access(false, cluster_ctrl_addr + 0x000028, 4, (char*)&status))
     throw CableException("Target_cluster_ctrl_xtrigger::get_halt_status() Error reading from 0x%08x\n", cluster_ctrl_addr + 0x000028);
-  m_top->log.detail("set xtrigger halt mask 0x%08x 0x%02x", cluster_ctrl_addr + 0x000028, status&0xff);
+  m_top->log.detail("get xtrigger halt mask 0x%08x 0x%02x\n", cluster_ctrl_addr + 0x000028, status&0xff);
   return status&current_mask;
 }
 
@@ -196,6 +211,10 @@ void Target_core::ie_write(uint32_t data)
   if (!is_on) return;
   m_top->log.print(LOG_DEBUG, "%d:%d -----> TRAP ENABLED\n", this->get_cluster_id(), core_id);
   this->write(DBG_IE_REG, data);
+  uint32_t verif = 0;
+  this->read(DBG_IE_REG, &verif);
+  if (data != verif)
+    m_top->log.error("TRAP ENABLE FAILED!!!!!!");
 }
 
 bool Target_core::has_power_state_change()
@@ -236,7 +255,7 @@ void Target_core::set_power(bool is_on)
       // uint32_t old_ctrl;
       // this->read(DBG_CTRL_REG, &old_ctrl);
       // this->write(DBG_CTRL_REG, old_ctrl|0x10000);
-      this->ie_write(1<<3|1<<2); // traps on illegal instructions and ebrks
+      this->ie_write(IE_TRAPS); // traps on illegal instructions and ebrks
       // if (!stopped) this->write(DBG_CTRL_REG, old_ctrl);
       // if (!stopped) resume();
     } else {
@@ -310,7 +329,7 @@ void Target_core::stop()
   if (!is_on||this->stopped) return;
 
   m_top->log.debug("Halting core (cluster: %d, core: %d, is_on: %d)\n", this->get_cluster_id(), core_id, is_on);
-  uint32_t data;
+  uint32_t data = 0;
 
   this->read(DBG_CTRL_REG, &data);
 
@@ -553,18 +572,18 @@ void Target_cluster_common::init()
 std::shared_ptr<Target_core> Target_cluster_common::check_stopped(uint32_t *stopped_cause)
 {
   *stopped_cause = EXC_CAUSE_NONE;
-  std::shared_ptr<Target_core> stopped_core = nullptr;
 
   this->update_power();
-  if (!is_on) return stopped_core;
+  if (!is_on) return nullptr;
 
   m_top->log.debug("Check if cluster %d stopped\n", get_id());
 
   if (this->ctrl->has_xtrigger()) {
     if (!std::dynamic_pointer_cast<Target_cluster_ctrl_xtrigger>(this->ctrl)->get_halt_status())
-      return stopped_core;
+      return nullptr;
   }
 
+  std::shared_ptr<Target_core> stopped_core = nullptr;
   for (auto &core: cores)
   {
     // core didn't resume
@@ -680,9 +699,13 @@ void Target_cluster_common::resume()
       }
     }
 
-    std::dynamic_pointer_cast<Target_cluster_ctrl_xtrigger>(this->ctrl)->set_halt_mask(xtrigger_mask);
+    std::shared_ptr<Target_cluster_ctrl_xtrigger> xctrl = 
+      std::dynamic_pointer_cast<Target_cluster_ctrl_xtrigger>(this->ctrl);
+
+    xctrl->set_halt_mask(xtrigger_mask);
+
     m_top->log.debug("Resuming cluster through global register (cluster: %d, mask: %x)\n", cluster_id, xtrigger_mask);
-    m_top->cable->access(true, xtrigger_addr + 0x00200000 + 0x28, 4, (char*)&xtrigger_mask);
+    xctrl->set_resume(xtrigger_mask);
   } else {
     // Otherwise, just resume them individually
     for (auto &core: cores) {
@@ -843,7 +866,7 @@ std::shared_ptr<Target_core> Target_fc::check_stopped(uint32_t *stopped_cause)
 
   if (!cores[0]->should_resume()) return nullptr;
 
-  if (m_fc_eu_status && event_unit_core_gated()) return nullptr;
+  // if (m_fc_eu_status && event_unit_core_gated()) return nullptr;
 
   m_top->log.debug("Check if cluster %d stopped\n", get_id());
 
@@ -861,7 +884,7 @@ bool Target_fc::event_unit_core_gated()
 {
   uint32_t clk_status = 0;
 
-  if (!m_top->cable->access(true, m_fc_eu_status, 4, (char*)&clk_status))
+  if (!m_top->cable->access(false, m_fc_eu_status, 4, (char*)&clk_status))
      throw CableException("Error reading clock gate status");
 
   m_top->log.detail("FC EU clock gate status %d\n", clk_status);

@@ -24,127 +24,185 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <string>
-
-#if defined(__USE_SDL__)
-#include <SDL.h>
-#endif
+#include <algorithm>
 
 #include "loops.hpp"
 
 #if defined(__USE_SDL__)
-class Framebuffer
+void Framebuffer::Window::destroy()
 {
-public:
-  Framebuffer(Cable *cable, std::string name, int width, int height, int format);
-  void update(uint32_t addr, int posx, int posy, int width, int height);
-  bool open();
+  if (m_destroyed) return;
+  SDL_DestroyTexture(m_texture);
+  SDL_DestroyRenderer(m_renderer);
+  SDL_DestroyWindow(m_window);
+}
 
-private:
-  void fb_routine();
-
-  std::string name;
-  int width;
-  int height;
-  int format;
-  int pixel_size = 1;
-  Cable *cable;
-  std::thread *thread;
-  uint32_t *pixels;
-  SDL_Surface *screen;
-  SDL_Texture * texture;
-  SDL_Renderer *renderer;
-  SDL_Window *window;
-};
-
-Framebuffer::Framebuffer(Cable *cable, std::string name, int width, int height, int format)
-: name(name), width(width), height(height), format(format), cable(cable)
+void Framebuffer::Window::handle_display()
 {
+  m_pixels = new uint32_t[m_width*m_height];
+  m_window = SDL_CreateWindow(m_name.c_str(),
+      SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, m_width, m_height, 0);
+
+  m_renderer = SDL_CreateRenderer(m_window, -1, SDL_RENDERER_ACCELERATED);
+
+  m_texture = SDL_CreateTexture(m_renderer,
+      SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STATIC, m_width, m_height);
+
+  memset(m_pixels, 255, m_width * m_height * sizeof(Uint32));
+
+  SDL_UpdateTexture(m_texture, NULL, m_pixels, m_width * sizeof(Uint32));
+  SDL_RenderClear(m_renderer);
+  SDL_RenderCopy(m_renderer, m_texture, NULL, NULL);
+  SDL_RenderPresent(m_renderer);
+  m_destroyed = false;
+}
+
+void Framebuffer::Window::handle_update(Framebuffer::UpdateMessage * msg)
+{
+  if (m_destroyed) return;
+  for (int j=0; j<msg->m_height; j++)
+  {
+    for (int i=0; i<msg->m_width; i++)
+    {
+      unsigned int value = msg->m_buffer[j*msg->m_width+i];
+      m_pixels[(j+msg->m_posy)*m_width + i + msg->m_posx] = (0xff << 24) | (value << 16) | (value << 8) | value;
+    }
+  }
+
+  SDL_UpdateTexture(m_texture, NULL, m_pixels, m_width * sizeof(Uint32));
+  SDL_RenderClear(m_renderer);
+  SDL_RenderCopy(m_renderer, m_texture, NULL, NULL);
+  SDL_RenderPresent(m_renderer);
+}
+
+Framebuffer::Framebuffer(Reqloop *reqloop)
+: m_top(reqloop)
+{
+}
+
+void Framebuffer::start()
+{
+  m_thread = new std::thread(&Framebuffer::fb_routine, this);
+}
+
+void Framebuffer::destroy()
+{
+  if (m_destroyed) return;
+  m_destroyed = true;
+  m_running = false;
+  if (m_thread->joinable())
+    m_thread->join();
+  m_thread = NULL;
 }
 
 void Framebuffer::fb_routine()
 {
-  bool quit = false;
+  SDL_Init(SDL_INIT_VIDEO);
+  m_display_window = SDL_RegisterEvents(1);
+  m_update_window = SDL_RegisterEvents(1);
+  m_running = true;
+  emit_start();
   SDL_Event event;
 
-  while (!quit)
+  while (m_running)
   {
-    SDL_WaitEvent(&event);
-    switch (event.type)
-    {
-      case SDL_QUIT:
-      quit = true;
+    SDL_WaitEventTimeout(&event, 250);
+    if (!m_running) break;
+    if (event.type == SDL_QUIT) {
+      m_running = false;
       break;
+    } else if (event.type == SDL_WINDOWEVENT) {
+      if (event.window.event == SDL_WINDOWEVENT_CLOSE) {
+        m_running = false;
+        break;
+      }
+    } else if (event.type == m_display_window) {
+      handle_display(event.user.code);
+    } else if (event.type == m_update_window) {
+      handle_update(event.user.code, event.user.data1);
     }
   }
-
-  SDL_DestroyWindow(window);
+  {
+    std::lock_guard<std::mutex> guard(m_mut_windows);
+    m_windows.clear();
+  }
   SDL_Quit();
-}
+ }
 
-
-bool Framebuffer::open()
+void Framebuffer::open(std::string name, int width, int height, int format)
 {
-
+  uint32_t window_id;
   if (format == HAL_BRIDGE_REQ_FB_FORMAT_GRAY)
   {
 
   }
   else
   {
-    printf("Unsupported format: %d\n", format);
+    m_top->m_top->log.error("reqloop framebuffer - unsupported format: %d\n", format);
   }
-
-  pixels = new uint32_t[width*height];
-  SDL_Init(SDL_INIT_VIDEO);
-
-  window = SDL_CreateWindow(name.c_str(),
-      SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, width, height, 0);
-
-  renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
-
-  texture = SDL_CreateTexture(renderer,
-      SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STATIC, width, height);
-
-  memset(pixels, 255, width * height * sizeof(Uint32));
-
-  SDL_UpdateTexture(texture, NULL, pixels, width * sizeof(Uint32));
-
-  SDL_RenderClear(renderer);
-  SDL_RenderCopy(renderer, texture, NULL, NULL);
-  SDL_RenderPresent(renderer);
-
-  thread = new std::thread(&Framebuffer::fb_routine, this);
-  return true;
+  {
+    std::lock_guard<std::mutex> guard(m_mut_windows);
+    window_id = m_next_window_id++;
+    m_windows[window_id] = std::make_shared<Framebuffer::Window>(name, width, height, format);
+  }
+  SDL_Event ev;
+  SDL_memset(&ev, 0, sizeof(ev));
+  ev.type = m_display_window;
+  ev.user.code = window_id;
+  SDL_PushEvent(&ev);
 }
 
-void Framebuffer::update(uint32_t addr, int posx, int posy, int width, int height)
+std::shared_ptr<Framebuffer::Window> Framebuffer::find_window(uint32_t window_id)
 {
+  std::lock_guard<std::mutex> guard(m_mut_windows);
+  auto iwindow = m_windows.find(window_id);
+  if (iwindow == m_windows.end()) {
+    m_top->m_top->log.error("window id %x not found.\n", window_id);
+    return nullptr;
+  }
+  return iwindow->second;
+}
+
+void Framebuffer::handle_display(uint32_t window_id)
+{
+  auto window = find_window(window_id);
+  if (window) {
+    window->handle_display();
+    emit_window_open(window_id);
+  }
+}
+
+void Framebuffer::handle_update(uint32_t window_id, void * vmsg)
+{
+  auto window = find_window(window_id);
+  auto msg = reinterpret_cast<Framebuffer::UpdateMessage *>(vmsg);
+  if (window) {
+    window->handle_update(msg);
+  }
+  delete msg;
+}
+
+bool Framebuffer::update(uint32_t window_id, uint32_t addr, int posx, int posy, int width, int height)
+{
+  auto window = find_window(window_id);
+  if (!window) return false;
 
   if (posx == -1)
   {
     posx = posy = 0;
-    width = width;
-    height = height;
+    width = window->get_width();
+    height = window->get_height();
   }
+  auto msg = new Framebuffer::UpdateMessage(posx, posy, width, height, window->get_pixel_size());
 
-  int size = width*height*pixel_size;
-  uint8_t buffer[size];
-  m_top->access(false, addr, size, (char*)buffer);
-
-  for (int j=0; j<height; j++)
-  {
-    for (int i=0; i<width; i++)
-    {
-      unsigned int value = buffer[j*width+i];
-      pixels[(j+posy)*width + i + posx] = (0xff << 24) | (value << 16) | (value << 8) | value;
-    }
-  }
-
-  SDL_UpdateTexture(texture, NULL, pixels, width * sizeof(Uint32));
-
-  SDL_RenderClear(renderer);
-  SDL_RenderCopy(renderer, texture, NULL, NULL);
-  SDL_RenderPresent(renderer);
+  m_top->m_top->access(false, addr, msg->get_buffer_size(), static_cast<char *>(msg->get_buffer()));
+  SDL_Event ev;
+  SDL_memset(&ev, 0, sizeof(ev));
+  ev.type = m_update_window;
+  ev.user.code = window_id;
+  ev.user.data1 = reinterpret_cast<void *>(msg);
+  SDL_PushEvent(&ev);
+  return true;
 }
 #endif
 
@@ -183,12 +241,14 @@ static int transpose_code(int code)
 
 Reqloop::ReqloopFinishedStatus Reqloop::handle_req_connect(hal_debug_struct_t *debug_struct, hal_bridge_req_t *req, hal_bridge_req_t *target_req)
 {
+  m_top->log.detail("reqloop connect\n");
   reply_req(debug_struct, target_req, req);
   return ReqloopFinishedMoreReqs;
 }
 
 Reqloop::ReqloopFinishedStatus Reqloop::handle_req_disconnect(hal_debug_struct_t *debug_struct, hal_bridge_req_t *req, hal_bridge_req_t *target_req)
 {
+  m_top->log.detail("reqloop disconnect\n");
   reply_req(debug_struct, target_req, req);
   return ReqloopFinishedStop;
 }
@@ -198,7 +258,7 @@ Reqloop::ReqloopFinishedStatus Reqloop::handle_req_open(hal_debug_struct_t *debu
   std::vector<char> name(req->open.name_len+1);
 
   m_top->access(false, (unsigned int)req->open.name, req->open.name_len+1, &(name[0]));
-
+  m_top->log.detail("reqloop open %s\n", &(name[0]));
   int res = open(&(name[0]), req->open.flags, req->open.mode);
 
   m_top->access(true, PTR_2_INT(&target_req->open.retval), 4, (char*)&res);
@@ -208,108 +268,192 @@ Reqloop::ReqloopFinishedStatus Reqloop::handle_req_open(hal_debug_struct_t *debu
   return ReqloopFinishedMoreReqs;
 }
 
-Reqloop::ReqloopFinishedStatus Reqloop::handle_req_read(hal_debug_struct_t *debug_struct, hal_bridge_req_t *req, hal_bridge_req_t *target_req)
+
+Reqloop::FileReqState::FileReqState(uint32_t fd, uint32_t size, uint32_t ptr) :
+  m_fd(fd), m_size(size), m_ptr(ptr) {
+  m_iter_size = m_size;
+  m_res = 0;
+  if (m_iter_size > 4096)
+    m_iter_size = 4096;
+}
+
+bool Reqloop::FileReqState::do_write(LoopManager * top)
 {
   char buffer[4096];
-  int size = req->read.len;
-  char *ptr = (char *)INT_2_PTR(req->read.ptr);
-  int res = 0;
+  int len = std::min(m_size, m_iter_size);
 
-  while (size)
-  {
-    int iter_size = size;
-    if (iter_size > 4096)
-      iter_size = 4096;
+  top->access(false, m_ptr, len, (char*)buffer);
 
-    iter_size = read(req->read.file, (void *)buffer, iter_size);
+  len = write(m_fd, (void *)buffer, len);
 
-    if (iter_size <= 0) {
-      if (iter_size == -1 && res == 0) res = -1;
-      break;
-    }
-
-    m_top->access(true, PTR_2_INT(ptr), iter_size, (char*)buffer);
-
-    res += iter_size;
-    ptr += iter_size;
-    size -= iter_size;
+  if (len <= 0) {
+    m_res = -1;
+    return false;
   }
 
-  m_top->access(true, PTR_2_INT(&target_req->read.retval), 4, (char*)&res);
+  m_res += len;
+  m_ptr += len;
+  m_size -= len;
+  return m_size>0;
+}
 
-  reply_req(debug_struct, target_req, req);
+bool Reqloop::FileReqState::do_read(LoopManager * top)
+{
+  char buffer[4096];
+  int len = std::min(m_size, m_iter_size);
+
+  len = read(m_fd, (void *)buffer, len);
+
+  if (len <= 0) {
+    if (len == -1 && m_res == 0) m_res = -1;
+    return false;
+  }
+
+  top->access(true, m_ptr, len, (char*)buffer);
+
+  m_res += len;
+  m_ptr += len;
+  m_size -= len;
+  return m_size>0;
+}
+
+int64_t Reqloop::handle_req_read_one(hal_debug_struct_t *debug_struct, hal_bridge_req_t *req, hal_bridge_req_t *target_req)
+{
+  if (m_destroyed) return kEventLoopTimerDone;
+  try {
+    if (m_fstate.do_read(m_top)) {
+      return m_req_pause;
+    } else {
+      this->m_top->access(true, PTR_2_INT(&target_req->read.retval), 4, (char*)&m_fstate.m_res);
+      reply_req(debug_struct, target_req, req);
+      set_paused(false);
+      return kEventLoopTimerDone;
+    }
+  } catch (LoopCableException e) {
+    log.error("Reqloop loop cable error: exiting\n");
+    return kEventLoopTimerDone;
+  }
+}
+
+Reqloop::ReqloopFinishedStatus Reqloop::handle_req_read(hal_debug_struct_t *debug_struct, hal_bridge_req_t *req, hal_bridge_req_t *target_req)
+{
+  m_fstate = FileReqState(req->read.file, req->read.len, req->read.ptr);
+  m_top->log.detail("reqloop read fd %u %u\n", m_fstate.m_fd, m_fstate.m_size);
+  if (handle_req_read_one(debug_struct, req, target_req) == m_req_pause) {
+    m_active_timer = m_event_loop->getTimerEvent(std::bind(&Reqloop::handle_req_read_one, this->shared_from_this(), debug_struct, req, target_req), m_req_pause);
+    return ReqloopFinishedCompletingReq;
+  }
   return ReqloopFinishedMoreReqs;
+}
+
+int64_t Reqloop::handle_req_write_one(hal_debug_struct_t *debug_struct, hal_bridge_req_t *req, hal_bridge_req_t *target_req)
+{
+  if (m_destroyed) return kEventLoopTimerDone;
+  try {
+    if (m_fstate.do_write(m_top)) {
+      return m_req_pause;
+    } else {
+      this->m_top->access(true, PTR_2_INT(&target_req->write.retval), 4, (char*)&m_fstate.m_res);
+      reply_req(debug_struct, target_req, req);
+      set_paused(false);
+      return kEventLoopTimerDone;
+    }
+  } catch (LoopCableException e) {
+    log.error("Reqloop loop cable error: exiting\n");
+    return kEventLoopTimerDone;
+  }
 }
 
 Reqloop::ReqloopFinishedStatus Reqloop::handle_req_write(hal_debug_struct_t *debug_struct, hal_bridge_req_t *req, hal_bridge_req_t *target_req)
 {
-  char buffer[4096];
-  int size = req->write.len;
-  char *ptr = (char *)INT_2_PTR(req->write.ptr);
-  int res = 0;
-  while (size)
-  {
-    int iter_size = size;
-    if (iter_size > 4096)
-      iter_size = 4096;
-
-    m_top->access(false, PTR_2_INT(ptr), iter_size, (char*)buffer);
-
-    iter_size = write(req->write.file, (void *)buffer, iter_size);
-
-    if (iter_size <= 0)
-      break;
-
-    res += iter_size;
-    ptr += iter_size;
-    size -= iter_size;
+  m_fstate = FileReqState(req->write.file, req->write.len, req->write.ptr);
+  m_top->log.detail("reqloop write fd %u %u\n", m_fstate.m_fd, m_fstate.m_size);
+  if (handle_req_write_one(debug_struct, req, target_req) == m_req_pause) {
+    m_active_timer = m_event_loop->getTimerEvent(std::bind(&Reqloop::handle_req_read_one, this->shared_from_this(), debug_struct, req, target_req), m_req_pause);
+    return ReqloopFinishedCompletingReq;
   }
-
-  if (res == 0)
-    res = -1;
-
-  m_top->access(true, PTR_2_INT(&target_req->write.retval), 4, (char*)&res);
-
-  reply_req(debug_struct, target_req, req);
   return ReqloopFinishedMoreReqs;
 }
 
 Reqloop::ReqloopFinishedStatus Reqloop::handle_req_close(hal_debug_struct_t *debug_struct, hal_bridge_req_t *req, hal_bridge_req_t *target_req)
 {
   int res = close(req->close.file);
+  m_top->log.detail("reqloop close fd %x\n", req->close.file);
   m_top->access(true, PTR_2_INT(&target_req->write.retval), 4, (char*)&res);
   reply_req(debug_struct, target_req, req);
   return ReqloopFinishedMoreReqs;
 }
 
 #if defined(__USE_SDL__)
+// The window open function is split into 2 stages. Firstly intialize the framebuffer thread. Then open the window.
+// All calls are marshalled onto the framebuffer thread and then marshalled back onto the main loop
 Reqloop::ReqloopFinishedStatus Reqloop::handle_req_fb_open(hal_debug_struct_t *debug_struct, hal_bridge_req_t *req, hal_bridge_req_t *target_req)
 {
-  char name[req->fb_open.name_len+1];
-  m_top->access(false, PTR_2_INT(req->fb_open.name), req->fb_open.name_len+1, (char*)name);
-
-  Framebuffer *fb = new Framebuffer(cable, name, req->fb_open.width, req->fb_open.height, req->fb_open.format);
-
-  if (!fb->open()) 
-  {
-    delete fb;
-    fb = NULL;
+  if (!m_frame_buffer) {
+    m_top->log.detail("reqloop start framebuffer\n");
+    m_frame_buffer = new Framebuffer(this);
+    // get an async event that will be triggered on the SDL thread
+    // need a copy of the request since the event will execute after this function returns
+    hal_bridge_req_t * req_copy = new hal_bridge_req_t(*req);
+    auto sp_this = this->shared_from_this();
+    auto ae = m_event_loop->getAsyncEvent<bool>([sp_this, debug_struct, req_copy, target_req](bool UNUSED(b)){
+      // Move to the next step - executed on main loop
+      if (sp_this->m_destroyed) return;
+      sp_this->complete_req_fb_open(debug_struct, req_copy, target_req);
+      delete req_copy;
+    });
+    m_frame_buffer->on_start([this, ae](){
+      // executed on SDL thread
+      m_top->log.detail("reqloop trigger start framebuffer finished\n");
+      ae->trigger(true);
+    });
+    m_frame_buffer->start();
+  } else {
+    complete_req_fb_open(debug_struct, req, target_req);
   }
+  return ReqloopFinishedCompletingReq;
+}
 
-  m_top->access(true, PTR_2_INT(&target_req->fb_open.screen), 8, (char*)&fb);
+void Reqloop::complete_req_fb_open(hal_debug_struct_t *debug_struct, hal_bridge_req_t *req, hal_bridge_req_t *target_req)
+{
+  if (m_destroyed) return;
+  char name[req->fb_open.name_len+1];
+  m_top->access(false, req->fb_open.name, req->fb_open.name_len+1, (char*)name);
 
+  m_top->log.detail("reqloop open window %s\n", &(name[0]));
+  // don't get destroyed until the event loop is or the callback is executed
+  auto sp_this = this->shared_from_this();
+  auto ae = m_event_loop->getAsyncEvent<uint32_t>([sp_this, debug_struct, req, target_req](uint32_t window_id){
+    if (sp_this->m_destroyed) return;
+    sp_this->complete_req_fb_window_open(debug_struct, req, target_req, window_id);
+  });
+  m_frame_buffer->once_window_open([ae](uint32_t window_id){
+    ae->trigger(window_id);
+  });
+  // req is valid up to this point
+  m_frame_buffer->open(&name[0], req->fb_open.width, req->fb_open.height, req->fb_open.format);
+}
+
+void Reqloop::complete_req_fb_window_open(hal_debug_struct_t *debug_struct, hal_bridge_req_t *req, hal_bridge_req_t *target_req, uint32_t window_id)
+{
+  m_top->access(true, PTR_2_INT(&target_req->fb_open.screen), 8, (char*)&window_id);
+  // BEWARE! req is actually invalid here since it was either deleted or went out of scope however reply_req doesn't use it.
   reply_req(debug_struct, target_req, req);
-  return ReqloopFinishedMoreReqs;
+  set_paused(false);
 }
 
 Reqloop::ReqloopFinishedStatus Reqloop::handle_req_fb_update(hal_debug_struct_t *debug_struct, hal_bridge_req_t *req, hal_bridge_req_t *target_req)
 {
-  Framebuffer *fb = (Framebuffer *)req->fb_update.screen;
-
-  fb->update(
-    req->fb_update.addr, req->fb_update.posx, req->fb_update.posy, req->fb_update.width, req->fb_update.height
-  );
-
+  if  (!m_frame_buffer)
+    return ReqloopFinishedStop;
+  if (!m_frame_buffer->update((uint32_t) (req->fb_update.screen&0xffffffff), req->fb_update.addr, 
+          req->fb_update.posx, req->fb_update.posy, req->fb_update.width, req->fb_update.height)
+      )
+  {
+    m_frame_buffer->destroy();
+    delete m_frame_buffer;
+    return ReqloopFinishedStopAll;
+  }
   reply_req(debug_struct, target_req, req);
   return ReqloopFinishedMoreReqs;
 }
@@ -351,7 +495,7 @@ LooperFinishedStatus Reqloop::register_proc(hal_debug_struct_t *debug_struct) {
     m_top->access(true, PTR_2_INT(&debug_struct->bridge_connected), 4, (char*)&connected);
     return LooperFinishedContinue;
   } catch (LoopCableException e) {
-    log.error("IO loop cable error: exiting\n");
+    log.error("Reqloop loop cable error: exiting\n");
     return LooperFinishedStopAll;
   }
 }
@@ -372,14 +516,16 @@ Reqloop::ReqloopFinishedStatus Reqloop::handle_one_req(hal_debug_struct_t *debug
     m_top->access(true, PTR_2_INT(&first_bridge_req->popped), sizeof(first_bridge_req->popped), (char*)&value);
     m_top->access(true, PTR_2_INT(&debug_struct->first_bridge_req), 4, (char*)&req.next);
 
-    return handle_req(debug_struct, &req, first_bridge_req);
+    auto status = handle_req(debug_struct, &req, first_bridge_req);
+    return status;
   } catch (LoopCableException e) {
     return ReqloopFinishedStopAll;
   }
 }
 
 void Reqloop::setup_request_timer(hal_debug_struct_t *debug_struct) {
-    m_event_loop->getTimerEvent([this, debug_struct](){
+    m_active_timer = m_event_loop->getTimerEvent([this, debug_struct](){
+      if (m_destroyed) return kEventLoopTimerDone;
       ReqloopFinishedStatus status = handle_one_req(debug_struct);
       switch(status) {
         case ReqloopFinishedCompletingReq:
@@ -390,9 +536,13 @@ void Reqloop::setup_request_timer(hal_debug_struct_t *debug_struct) {
         case ReqloopFinishedMoreReqs:
           return m_req_pause;
         case ReqloopFinishedStop:
+          if (m_active_timer)
+            m_active_timer->setTimeout(-1);
           m_top->remove_looper(this);
           return kEventLoopTimerDone;
         default:
+          if (m_active_timer)
+            m_active_timer->setTimeout(-1);
           m_top->clear_loopers();
           return kEventLoopTimerDone;
       }
@@ -413,8 +563,12 @@ LooperFinishedStatus Reqloop::loop_proc(hal_debug_struct_t *debug_struct)
       setup_request_timer(debug_struct);
       return LooperFinishedPause;
     case ReqloopFinishedStop:
+      if (m_active_timer)
+        m_active_timer->setTimeout(-1);
       return LooperFinishedStop;
     default:
+      if (m_active_timer)
+        m_active_timer->setTimeout(-1);
       return LooperFinishedStopAll;
   }
 }
@@ -422,5 +576,4 @@ LooperFinishedStatus Reqloop::loop_proc(hal_debug_struct_t *debug_struct)
 Reqloop::Reqloop(LoopManager * top, const EventLoop::SpEventLoop &event_loop, int64_t req_pause) : Looper(top), log("REQLOOP"), m_event_loop(event_loop), m_req_pause(req_pause)
 {
 }
-
 

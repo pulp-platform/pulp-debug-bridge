@@ -37,8 +37,8 @@ void LoopManager::set_debug_struct_addr(unsigned int debug_struct_addr) {
 
 void LoopManager::access(bool write, unsigned int addr, int len, char * buf)
 {
-  if (!m_cable->access(write, addr, len, buf))
-    throw LoopCableException();
+    if (!m_cable->access(write, addr, len, buf))
+        throw LoopCableException();
 }
 
 int64_t LoopManager::run_loops() {
@@ -60,10 +60,11 @@ int64_t LoopManager::run_loops() {
                     ilooper++;
                     break;
                 case LooperFinishedStop:
+                    looper->destroy();
                     ilooper = m_loopers.erase(ilooper);
                     break;
                 case LooperFinishedStopAll:
-                    m_loopers.clear();
+                    clear_loopers();
                     m_cur_usecs = kEventLoopTimerDone;
                     return kEventLoopTimerDone;
                 default:
@@ -110,6 +111,7 @@ void LoopManager::add_looper(const std::shared_ptr<Looper> &looper) {
 void LoopManager::remove_looper(Looper * looper) {
     for (auto li = m_loopers.begin(); li != m_loopers.end(); li++) {
         if (li->get() == looper) {
+            looper->destroy();
             m_loopers.erase(li);
             return;
         }
@@ -138,10 +140,11 @@ hal_debug_struct_t * LoopManager::activate() {
                     ilooper++;
                     break;
                 case LooperFinishedStop:
+                    looper->destroy();
                     ilooper = m_loopers.erase(ilooper);
                     break;
                 case LooperFinishedStopAll:
-                    m_loopers.clear();
+                    clear_loopers();
                     m_cur_usecs = kEventLoopTimerDone;
                     return NULL;
                 default:
