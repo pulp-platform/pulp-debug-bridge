@@ -818,8 +818,8 @@ bool Rsp::Client::step(char* data, size_t len)
 }
 
 void Rsp::Client::halt_target() {
-  m_rsp->halt_target();
   m_wait_te->setTimeout(kEventLoopTimerDone);
+  m_rsp->halt_target();
   m_state = RSP_TARGET_STOPPED;
 }
 

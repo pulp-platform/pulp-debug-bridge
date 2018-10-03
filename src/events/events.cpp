@@ -51,9 +51,6 @@ void EventLoop::stop() {
 }
 
 void EventLoop::cleanup() {
-  // for (auto ev: active_events) {
-  //   ev->cleanup();
-  // }
   active_events.clear();
 }
 

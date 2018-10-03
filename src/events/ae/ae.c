@@ -420,7 +420,7 @@ int aeSetTimeoutTimeEvent(aeEventLoop *eventLoop, aeTimeEvent *te, long long use
     if (te->firedIdx != -1) {
         if (aeCmpTimeval(&now, &te->when) < 0) {
             // cancel it for this loop
-            printf("cancel te this loop\n");
+            // printf("cancel te this loop\n");
             eventLoop->fired[te->firedIdx] = NULL;
             te->firedIdx = -1;
         }
