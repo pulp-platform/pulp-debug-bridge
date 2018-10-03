@@ -750,14 +750,13 @@ Ftdi::ft2232_write_bytes(char *buf, int len, bool postread)
   int cur_chunk_len;
   int recv;
   int xferred;
-  char *mybuf;
 
   if(len == 0)
     return 0;
 
   recv = 0;
   max_command_size = min(len, 65536)+3;
-  mybuf = (char*) malloc(max_command_size);
+  std::vector<char> mybuf(max_command_size);
 
   /// Command OPCODE: write bytes
   mybuf[0] = MPSSE_DO_WRITE | MPSSE_LSB | MPSSE_WRITE_NEG;
@@ -779,10 +778,9 @@ Ftdi::ft2232_write_bytes(char *buf, int len, bool postread)
     buf = buf + cur_chunk_len;
 
     /// Finally we can transmit the command
-    xferred = ft2232_write(mybuf, cur_command_size, (postread ? cur_chunk_len : 0) );
+    xferred = ft2232_write(&mybuf[0], cur_command_size, (postread ? cur_chunk_len : 0) );
     if(xferred != cur_command_size) {
       fatal_error("ft2232: could not transmit command\n");
-      free(mybuf);
       return -1;
     }
 
@@ -790,8 +788,6 @@ Ftdi::ft2232_write_bytes(char *buf, int len, bool postread)
     if(postread)
       recv = recv + cur_chunk_len;
   }
-
-  free(mybuf);
 
   // Returns the number of buffered incoming bytes
   return recv;
@@ -869,7 +865,6 @@ Ftdi::ft2232_write_bits(char *buf, int len, bool postread, bool with_tms)
 int
 Ftdi::ft2232_read_packed_bits(char *buf, int packet_len, int bits_per_packet, int offset)
 {
-  char *mybuf;
   unsigned char dst_mask;
   unsigned char src_mask;
   int row_offset;
@@ -891,10 +886,10 @@ Ftdi::ft2232_read_packed_bits(char *buf, int packet_len, int bits_per_packet, in
   }
   else
   {
-    mybuf = (char*) malloc(packet_len);
-    if(ft2232_read(mybuf, packet_len) < 0) {
+    std::vector<char> mybuf(packet_len);
+
+    if(ft2232_read(&mybuf[0], packet_len) < 0) {
       fatal_error("Read failed\n");
-      free(mybuf);
       return -1;
     }
 
@@ -914,13 +909,10 @@ Ftdi::ft2232_read_packed_bits(char *buf, int packet_len, int bits_per_packet, in
       }
     } else if(bits_per_packet == 8) {
       row_offset = offset / 8;
-      memcpy( &(buf[row_offset]), mybuf, packet_len);
+      memcpy( &(buf[row_offset]), &mybuf[0], packet_len);
     } else {
-      free(mybuf);
       return -1;
     }
-
-    free(mybuf);
   }
 
   return 0;
