@@ -153,12 +153,12 @@ bool Adv_dbg_itf::access(bool wr, unsigned int addr, int size, char* buffer)
 
 bool Adv_dbg_itf::write(unsigned int _addr, int _size, char* _buffer)
 {
-  log.detail("write 0x%x size %d ", _addr, _size);
-  if (_size>= 4) {
-    log.detail("0x%x\n", *((uint32_t *)(&_buffer[0])));
-  } else {
-    log.detail("\n");
-  }
+  // log.detail("write 0x%x size %d ", _addr, _size);
+  // if (_size>= 4) {
+  //   log.detail("0x%x\n", *((uint32_t *)(&_buffer[0])));
+  // } else {
+  //   log.detail("\n");
+  // }
 
   int count = 0;
   while (count++ <= this->retry_count)
@@ -207,18 +207,18 @@ bool Adv_dbg_itf::write(unsigned int _addr, int _size, char* _buffer)
     if (size >= 4) {
       int local_size = size & (~0x3);
 
-       while (local_size)
-       {
-         int iter_size = local_size;
-         if (iter_size > 1024) iter_size = 1024;
+      while (local_size)
+      {
+        int iter_size = local_size;
+        if (iter_size > 1024) iter_size = 1024;
 
-         retval = retval && write_internal(AXI_WRITE32, addr, iter_size, buffer);
-         local_size   -= iter_size;
-         size   -= iter_size;
-         buffer += iter_size;
-         addr   += iter_size;
-       }
-     }
+        retval = retval && write_internal(AXI_WRITE32, addr, iter_size, buffer);
+        local_size   -= iter_size;
+        size   -= iter_size;
+        buffer += iter_size;
+        addr   += iter_size;
+      }
+    }
   #endif
 
     if (size >= 2) {
@@ -817,6 +817,7 @@ bool Adv_dbg_itf::jtag_auto_discovery()
   int ir_len;
   int dr_len;
 
+  log.debug("JTAG chain len is %d\n", chain_len_detect());
   ir_len = ir_len_detect();
   jtag_soft_reset();
   dr_len = dr_len_detect();
@@ -871,7 +872,32 @@ bool Adv_dbg_itf::jtag_auto_discovery()
   return true;
 }
 
+int Adv_dbg_itf::chain_len_detect()
+{
+  char recv_buf[MAX_CHAIN_LEN/8];
+  char send_buf[MAX_CHAIN_LEN/8];
+  int jtag_chainlen = -1;
 
+  jtag_soft_reset();
+  m_dev->jtag_shift_ir();
+  memset(send_buf, 0xff, MAX_CHAIN_LEN/8);
+  m_dev->stream_inout(NULL, send_buf, MAX_CHAIN_LEN, false);
+  m_dev->jtag_shift(1, &send_buf[0]);
+  memset(send_buf, 0x00, MAX_CHAIN_LEN/8);
+  m_dev->jtag_shift(1, &send_buf[0]);
+  m_dev->jtag_shift_dr();
+  m_dev->stream_inout(NULL, send_buf, MAX_CHAIN_LEN, false);
+  memset(send_buf, 0x01, MAX_CHAIN_LEN/8);
+  m_dev->stream_inout(recv_buf, send_buf, MAX_CHAIN_LEN, false);
+  for(int i = 0; i < MAX_CHAIN_LEN; i++) {
+    if ((recv_buf[i/8] >> (i%8)) & 0x1) {
+      jtag_chainlen = i;
+      break;
+    }
+  }
+  jtag_soft_reset();
+  return jtag_chainlen;
+}
 
 int Adv_dbg_itf::ir_len_detect()
 {
@@ -904,7 +930,7 @@ int Adv_dbg_itf::ir_len_detect()
       break;
     }
   }
-  log.debug("adv_dbg_itf: jtag_chainlen = %d\n", jtag_chainlen);
+  log.debug("adv_dbg_itf: jtag_ir_chainlen = %d\n", jtag_chainlen);
 
   m_dev->jtag_write_tms(1); // update DR
   m_dev->jtag_write_tms(0); // run test idle

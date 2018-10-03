@@ -110,6 +110,7 @@ class Adv_dbg_itf : public Cable  {
     int  ir_len_detect();
     int  dr_len_detect();
 
+    int chain_len_detect();
     bool jtag_axi_select();
     bool jtag_auto_discovery();
     bool jtag_idle();
