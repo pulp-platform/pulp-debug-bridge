@@ -186,7 +186,9 @@ private:
 
 class Reqloop : public Looper, public std::enable_shared_from_this<Reqloop>
 {
+#if defined(__USE_SDL__)
   friend Framebuffer;
+#endif
 public:
   Reqloop(LoopManager * top, const EventLoop::SpEventLoop &event_loop, int64_t req_pause = 0);
 #ifdef __USE_SDL__
