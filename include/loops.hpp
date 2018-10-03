@@ -36,9 +36,6 @@
 #include "events/events.hpp"
 #include "events/emitter.hpp"
 
-#ifndef __USE_SDL__
-#define __USE_SDL__
-#endif
 #if defined(__USE_SDL__)
 #include <SDL.h>
 #include <thread>
