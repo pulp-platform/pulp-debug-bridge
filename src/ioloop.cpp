@@ -26,20 +26,6 @@ LooperFinishedStatus Ioloop::register_proc(hal_debug_struct_t *debug_struct) {
   try {
     unsigned int value = 0;
     m_top->access(true, PTR_2_INT(&debug_struct->use_internal_printf), 4, (char*)&value);
-    // First check if the application has exited
-    m_top->access(false, PTR_2_INT(&debug_struct->exit_status), 4, (char*)&value);
-
-    if (value >> 31) {
-      int status = ((int)value << 1) >> 1;
-      log.user("Detected end of application, exiting with status: %d\n", status);
-      while (!m_exit_queue.empty())
-      {
-          auto exit_func = m_exit_queue.front();
-          exit_func(status);
-          m_exit_queue.pop();
-      }
-      return LooperFinishedStopAll;
-    }
     return LooperFinishedContinue;
   } catch (LoopCableException e) {
     log.error("IO loop cable error: exiting\n");
@@ -48,6 +34,9 @@ LooperFinishedStatus Ioloop::register_proc(hal_debug_struct_t *debug_struct) {
 }
 
 uint32_t Ioloop::print_len(hal_debug_struct_t *debug_struct) {
+#ifdef __NEW_REQLOOP__
+  if (!m_top->get_target_available()) return 0;
+#endif
   uint32_t value;
   m_top->access(false, PTR_2_INT(&debug_struct->pending_putchar), 4, (char*)&value);
   return value;
@@ -98,10 +87,6 @@ LooperFinishedStatus Ioloop::loop_proc(hal_debug_struct_t *debug_struct)
   } catch (LoopCableException e) {
     return LooperFinishedStopAll;
   }
-}
-
-void Ioloop::on_exit(const ProgramExitFunction &exit_func) {
-  m_exit_queue.push(std::move(exit_func));
 }
 
 Ioloop::Ioloop(LoopManager * top, const EventLoop::SpEventLoop &event_loop, int64_t printing_pause) : 

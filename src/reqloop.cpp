@@ -470,6 +470,20 @@ Reqloop::ReqloopFinishedStatus Reqloop::handle_req_fb_open(hal_debug_struct_t *,
 }
 #endif
 
+#ifdef __NEW_REQLOOP__
+Reqloop::ReqloopFinishedStatus Reqloop::handle_req_target_status_sync(hal_debug_struct_t *debug_struct, hal_bridge_req_t *req, hal_bridge_req_t *target_req)
+{
+  hal_target_state_t target;
+
+  m_top->access(false, (unsigned int)(long)&debug_struct->target, sizeof(hal_target_state_t), (char *)&target);
+  m_top->target_state_sync(&target);
+
+  this->reply_req(debug_struct, target_req, req);
+  return ReqloopFinishedMoreReqs;
+}
+#endif
+
+
 Reqloop::ReqloopFinishedStatus Reqloop::handle_req(hal_debug_struct_t *debug_struct, hal_bridge_req_t *req, hal_bridge_req_t *target_req)
 {
   switch (req->type)
@@ -482,6 +496,10 @@ Reqloop::ReqloopFinishedStatus Reqloop::handle_req(hal_debug_struct_t *debug_str
     case HAL_BRIDGE_REQ_CLOSE:      return handle_req_close(debug_struct, req, target_req);
     case HAL_BRIDGE_REQ_FB_OPEN:    return handle_req_fb_open(debug_struct, req, target_req);
     case HAL_BRIDGE_REQ_FB_UPDATE:  return handle_req_fb_update(debug_struct, req, target_req);
+#ifdef __NEW_REQLOOP__
+    case HAL_BRIDGE_REQ_TARGET_STATUS_SYNC:
+                                    return handle_req_target_status_sync(debug_struct, req, target_req);
+#endif
     default:
       log.print(LOG_ERROR, "Received unknown request from target (type: %d)\n", req->type);
   }
@@ -492,7 +510,11 @@ LooperFinishedStatus Reqloop::register_proc(hal_debug_struct_t *debug_struct) {
   try {
     // notify that we are connected
     uint32_t connected = 1;
+#ifdef __NEW_REQLOOP__
+    m_top->access(true, PTR_2_INT(&debug_struct->bridge.connected), 4, (char*)&connected);
+#else
     m_top->access(true, PTR_2_INT(&debug_struct->bridge_connected), 4, (char*)&connected);
+#endif
     return LooperFinishedContinue;
   } catch (LoopCableException e) {
     log.error("Reqloop loop cable error: exiting\n");
@@ -502,6 +524,8 @@ LooperFinishedStatus Reqloop::register_proc(hal_debug_struct_t *debug_struct) {
 
 Reqloop::ReqloopFinishedStatus Reqloop::handle_one_req(hal_debug_struct_t *debug_struct) {
   try {
+    if (!m_top->get_target_available()) return ReqloopFinishedContinue;
+
     uint32_t value;
     hal_bridge_req_t *first_bridge_req = NULL;
 

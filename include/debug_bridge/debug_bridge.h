@@ -21,6 +21,8 @@
 #ifndef __DEBUG_BRIDGE_DEBUG_BRIDGE_H__
 #define __DEBUG_BRIDGE_DEBUG_BRIDGE_H__
 
+#define __NEW_REQLOOP__
+
 #define HAL_PRINTF_BUF_SIZE 128
 
 typedef enum {
@@ -32,7 +34,13 @@ typedef enum {
   HAL_BRIDGE_REQ_CLOSE = 5,
   HAL_BRIDGE_REQ_FB_OPEN = 6,
   HAL_BRIDGE_REQ_FB_UPDATE = 7,
+#ifdef __NEW_REQLOOP__
+  HAL_BRIDGE_REQ_TARGET_STATUS_SYNC = 8,
+  HAL_BRIDGE_REQ_FIRST_USER = 9
+#else
   HAL_BRIDGE_REQ_FIRST_USER = 8
+#endif
+
 } hal_bridge_req_e;
 
 typedef enum {
@@ -86,12 +94,31 @@ typedef struct hal_bridge_req_s {
       uint32_t width;
       uint32_t height;
     } fb_update;
+#ifdef __NEW_REQLOOP__
+    struct {
+    } target_status_sync;
+#endif
   };
 } hal_bridge_req_t;
+
+#ifdef __NEW_REQLOOP__
+typedef struct {
+  volatile int32_t available;
+} hal_target_state_t;
+
+typedef struct {
+  volatile int32_t connected;
+} hal_bridge_state_t;
+#endif
 
 // This structure can be used to interact with the host loader
 typedef struct {
 
+#ifdef __NEW_REQLOOP__
+  hal_target_state_t target;
+
+  hal_bridge_state_t bridge;
+#endif
   // Used by external debug bridge to get exit status when using the board
   uint32_t exit_status;
 
@@ -113,8 +140,9 @@ typedef struct {
   uint32_t notif_req_addr;
   uint32_t notif_req_value;
 
+#ifndef __NEW_REQLOOP__
   uint32_t bridge_connected;
-
+#endif
 } hal_debug_struct_t;
 
 #endif

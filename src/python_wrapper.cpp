@@ -190,7 +190,7 @@ extern "C" void bridge_add_delay(int64_t delay)
 
 extern "C" void bridge_add_wait_exit()
 {
-  bridge->m_bridge_commands->add_wait_exit(bridge->m_ioloop);
+  bridge->m_bridge_commands->add_wait_exit(bridge->m_loop_manager);
 }
 
 extern "C" int bridge_start()

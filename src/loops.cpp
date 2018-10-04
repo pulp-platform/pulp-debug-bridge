@@ -22,8 +22,9 @@
 
 LoopManager::LoopManager(
         const EventLoop::SpEventLoop &event_loop, std::shared_ptr<Cable> cable, unsigned int debug_struct_addr, 
-        int64_t slow_usecs, int64_t fast_usecs
-    ) : log("LOOPM"), m_cable(std::move(cable)), m_debug_struct_addr(debug_struct_addr), m_slow_usecs(slow_usecs), m_fast_usecs(fast_usecs) {
+        int64_t slow_usecs, int64_t fast_usecs, bool check_exit) : 
+            log("LOOPM"), m_cable(std::move(cable)), m_debug_struct_addr(debug_struct_addr),
+            m_slow_usecs(slow_usecs), m_fast_usecs(fast_usecs), m_check_exit(check_exit) {
     m_loop_te = event_loop->getTimerEvent(std::bind(&LoopManager::run_loops, this));
 }
 
@@ -43,10 +44,17 @@ void LoopManager::access(bool write, unsigned int addr, int len, char * buf)
 
 int64_t LoopManager::run_loops() {
     try {
+#ifdef __NEW_REQLOOP__
+        if (!target_is_available()) return m_cur_usecs;
+#endif
         hal_debug_struct_t * debug_struct = activate();
         if (debug_struct == NULL) return (m_cur_usecs==kEventLoopTimerDone?m_cur_usecs:0);
+        if (m_check_exit && program_has_exited(debug_struct)) {
+            clear_loopers();
+            return kEventLoopTimerDone;
+        }
         auto ilooper = m_loopers.begin();
-        while (ilooper != m_loopers.end()) {
+        while (ilooper != m_loopers.end() && m_target.available) {
             auto looper = *ilooper;
             if (looper->get_paused()) {
                 ilooper++;
@@ -116,6 +124,44 @@ void LoopManager::remove_looper(Looper * looper) {
             return;
         }
     }
+}
+
+#ifdef __NEW_REQLOOP__
+bool LoopManager::target_is_available()
+{
+    if (m_target.available) return true;
+
+    unsigned int value;
+    if (!m_cable->jtag_get_reg(7, 4, &value, 0))
+        throw LoopCableException();
+    if (value & 2) {
+        m_target.available = true;
+        emit_availability_change(m_target.available);
+        return true;
+    }
+    return false;
+}
+
+void LoopManager::target_state_sync(hal_target_state_t * target)
+{
+    bool availability_change = target->available != m_target.available;
+    memcpy(&m_target, target, sizeof(m_target));
+    if (availability_change) emit_availability_change(m_target.available);
+}
+#endif 
+
+bool LoopManager::program_has_exited(hal_debug_struct_t *debug_struct)
+{
+    unsigned int value = 0;
+    access(false, PTR_2_INT(&debug_struct->exit_status), 4, (char*)&value);
+
+    if (value >> 31) {
+      int status = ((int)value << 1) >> 1;
+      log.user("Detected end of application, exiting with status: %d\n", status);
+      emit_exit();
+      return true;
+    }
+    return false;
 }
 
 hal_debug_struct_t * LoopManager::activate() {

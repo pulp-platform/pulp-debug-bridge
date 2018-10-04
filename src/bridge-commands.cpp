@@ -62,17 +62,23 @@ void BridgeCommands::add_delay(std::chrono::microseconds usecs) {
     m_command_stack.top()->add_command(std::make_shared<BridgeCommandDelay>(usecs));
 }
 
-void BridgeCommands::add_wait_exit(const std::shared_ptr<Ioloop> &ioloop) {
-    m_command_stack.top()->add_command(std::make_shared<BridgeCommandWaitExit>(ioloop));
+void BridgeCommands::add_wait_exit(const std::shared_ptr<LoopManager> &loop_manager) {
+    m_command_stack.top()->add_command(std::make_shared<BridgeCommandWaitExit>(loop_manager));
 }
 
 // Command execution
 
 int64_t BridgeCommands::BridgeCommandExecute::execute(SpBridgeCommands bc) {
-    printf("before execute\n");
     bc->m_return_value = m_cb(reinterpret_cast<void *>(bc.get()));
-    printf("after execute %d\n", bc->m_return_value);
     return (bc->m_return_value?0:kEventLoopTimerDone);
+}
+
+int64_t BridgeCommands::BridgeCommandExecuteAsync::execute(SpBridgeCommands bc) {
+    m_cb(reinterpret_cast<void *>(bc.get()), [this, bc](int result){
+        bc->m_return_value = result;
+        bc->queue_next_command();
+    });
+    return kEventLoopTimerDone;
 }
 
 int64_t BridgeCommands::BridgeCommandCollection::execute(SpBridgeCommands bc) {
@@ -100,7 +106,7 @@ int64_t BridgeCommands::BridgeCommandRepeat::execute(SpBridgeCommands bc) {
 }
 
 int64_t BridgeCommands::BridgeCommandWaitExit::execute(SpBridgeCommands bc) {
-    m_ioloop->on_exit([bc](int UNUSED(status)){
+    m_loop_manager->once_exit([bc](){
         bc->queue_next_command();
     });
     return kEventLoopTimerDone;

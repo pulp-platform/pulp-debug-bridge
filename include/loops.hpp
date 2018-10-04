@@ -79,10 +79,13 @@ protected:
   bool m_paused = false, m_destroyed = false;
 };
 
-class LoopManager {
+SMART_EMITTER(ProgramExit, exit)
+SMART_EMITTER(AvailabilityChange, availability_change)
+
+class LoopManager : public ProgramExitEmitter<>, public AvailabilityChangeEmitter<uint32_t> {
 public:
   LoopManager(const EventLoop::SpEventLoop &event_loop, std::shared_ptr<Cable> cable, unsigned int debug_struct_addr, 
-      int64_t slow_usecs = LOOP_DEFAULT_SLOW_LOOP_USECS, int64_t fast_usecs = LOOP_DEFAULT_LOOP_USECS);
+      int64_t slow_usecs = LOOP_DEFAULT_SLOW_LOOP_USECS, int64_t fast_usecs = LOOP_DEFAULT_LOOP_USECS, bool check_exit = true);
   ~LoopManager();
   void set_debug_struct_addr(unsigned int debug_struct_addr);
   void start(bool fast);
@@ -98,16 +101,25 @@ public:
   void access(bool write, unsigned int addr, int len, char * buf);
   int64_t run_loops();
   Log log;
+#ifdef __NEW_REQLOOP__
+  void target_state_sync(hal_target_state_t * target);
+  bool get_target_available() { return m_target.available != 0; }
+#endif
 private:
   hal_debug_struct_t * activate();
-
+  bool program_has_exited(hal_debug_struct_t *debug_struct);
   EventLoop::SpTimerEvent m_loop_te;
   std::list<std::shared_ptr<Looper>> m_loopers;
 
   std::shared_ptr<Cable> m_cable;     
   unsigned int m_debug_struct_addr;
   int64_t m_slow_usecs, m_fast_usecs, m_cur_usecs;
-  bool m_stopped = true;
+  bool m_stopped = true, m_check_exit;
+
+#ifdef __NEW_REQLOOP__
+  bool target_is_available();
+  hal_target_state_t m_target;
+#endif
 };
 
 #if defined(__USE_SDL__)
@@ -236,6 +248,9 @@ private:
   ReqloopFinishedStatus handle_req(hal_debug_struct_t *debug_struct, hal_bridge_req_t *target_req, hal_bridge_req_t *req);
   ReqloopFinishedStatus handle_one_req(hal_debug_struct_t *debug_struct);
   void setup_request_timer(hal_debug_struct_t *debug_struct);
+#ifdef __NEW_REQLOOP__
+  ReqloopFinishedStatus handle_req_target_status_sync(hal_debug_struct_t *debug_struct, hal_bridge_req_t *req, hal_bridge_req_t *target_req);
+#endif
 
   Log log;
   EventLoop::SpEventLoop m_event_loop;
@@ -257,7 +272,6 @@ public:
   ~Ioloop() {}
   LooperFinishedStatus loop_proc(hal_debug_struct_t *debug_struct);
   LooperFinishedStatus register_proc(hal_debug_struct_t *debug_struct);
-  void on_exit(const ProgramExitFunction &exit_func);
 private:
   uint32_t print_len(hal_debug_struct_t *debug_struct);
   void print_one(hal_debug_struct_t *debug_struct, uint32_t len);
@@ -265,7 +279,6 @@ private:
 
   Log log;
   EventLoop::SpEventLoop m_event_loop;
-  std::queue<ProgramExitFunction> m_exit_queue;
   int64_t m_printing_pause;
 };
 #endif

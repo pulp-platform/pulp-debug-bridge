@@ -100,10 +100,10 @@ class BridgeCommands : public std::enable_shared_from_this<BridgeCommands> {
     class BridgeCommandWaitExit : public BridgeCommand {
     public:
         ~BridgeCommandWaitExit() {}
-        BridgeCommandWaitExit(const std::shared_ptr<Ioloop> &ioloop) : m_ioloop(std::move(ioloop)) {}
+        BridgeCommandWaitExit(const std::shared_ptr<LoopManager> &loop_manager) : m_loop_manager(std::move(loop_manager)) {}
         int64_t execute(SpBridgeCommands bc);
     private:
-        std::shared_ptr<Ioloop> m_ioloop;
+        std::shared_ptr<LoopManager> m_loop_manager;
     };
 
     BridgeCommands(const EventLoop::SpEventLoop &event_loop) :
@@ -117,10 +117,11 @@ class BridgeCommands : public std::enable_shared_from_this<BridgeCommands> {
     void stop_bridge();
     void queue_next_command();
     void add_execute(const bridge_func_t& cb);
+    void add_execute(const bridge_cont_func_t& cb);
     void add_repeat_start(std::chrono::microseconds delay, int count);
     void add_repeat_end();
     void add_delay(std::chrono::microseconds delay);
-    void add_wait_exit(const std::shared_ptr<Ioloop> &ioloop);
+    void add_wait_exit(const std::shared_ptr<LoopManager> &loop_manager);
 
     EventLoop::SpEventLoop get_loop() { return m_bridge_loop; }
 
