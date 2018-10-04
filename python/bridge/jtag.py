@@ -269,7 +269,7 @@ class debug_bridge(object):
 
     def exec_config(self):
 
-        mode = self.config.get('loader/boot/mode').get()
+        mode = self.config.get('runner/boot-mode').get()
 
         if mode == 'rom':
             self.rom_boot()
