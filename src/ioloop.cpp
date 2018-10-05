@@ -49,47 +49,23 @@ void Ioloop::print_one(hal_debug_struct_t *debug_struct, uint32_t len) {
   unsigned int zero = 0;
   m_top->access(true, PTR_2_INT(&debug_struct->pending_putchar), 4, (char*)&zero);
   fputs(buff, stdout);
-  fflush(NULL);
-}
-
-void Ioloop::print_loop(hal_debug_struct_t *debug_struct) {
-  m_event_loop->getTimerEvent([this, debug_struct](){
-    // printf("ioloop fast loop proc\n");
-    try {
-      uint32_t len = print_len(debug_struct);
-      if (len == 0) {
-        set_paused(false);
-        return kEventLoopTimerDone;
-      }
-      print_one(debug_struct, len);
-      return m_printing_pause;
-    } catch (LoopCableException e) {
-      return kEventLoopTimerDone;
-    }
-    return kEventLoopTimerDone;
-  }, 0);
 }
 
 LooperFinishedStatus Ioloop::loop_proc(hal_debug_struct_t *debug_struct)
 {
-  // printf("ioloop proc\n");
   try {
-    uint32_t len = print_len(debug_struct);
-    if (len == 0) return LooperFinishedContinue;
-    print_one(debug_struct, len);
-    // check again to see if we launch the timer
-    if (print_len(debug_struct) > 0) {
-      print_loop(debug_struct);
-      return LooperFinishedPause;
-    } else {
-      return LooperFinishedContinue;
+    uint32_t len;
+    while((len = print_len(debug_struct))) {
+      print_one(debug_struct, len);
     }
+    fflush(NULL);
+    return LooperFinishedContinue;
   } catch (LoopCableException e) {
     return LooperFinishedStopAll;
   }
 }
 
-Ioloop::Ioloop(LoopManager * top, const EventLoop::SpEventLoop &event_loop, int64_t printing_pause) : 
-  Looper(top), log("IOLOOP"), m_event_loop(std::move(event_loop)), m_printing_pause(printing_pause)
+Ioloop::Ioloop(LoopManager * top) : 
+  Looper(top), log("IOLOOP")
 {
 }

@@ -44,7 +44,7 @@
 #define PTR_2_INT(__addr) ((unsigned int)(reinterpret_cast<std::uintptr_t>(__addr)&0xffffffff))
 #define INT_2_PTR(__addr) (reinterpret_cast<std::uintptr_t>((size_t)__addr))
 
-#define LOOP_DEFAULT_LOOP_USECS 500
+#define LOOP_DEFAULT_LOOP_USECS 10000
 #define LOOP_DEFAULT_SLOW_LOOP_USECS 10000000
 
 class LoopCableException: public std::exception
@@ -247,7 +247,6 @@ private:
   ReqloopFinishedStatus handle_req_disconnect(hal_debug_struct_t *debug_struct, hal_bridge_req_t *target_req, hal_bridge_req_t *req);
   ReqloopFinishedStatus handle_req(hal_debug_struct_t *debug_struct, hal_bridge_req_t *target_req, hal_bridge_req_t *req);
   ReqloopFinishedStatus handle_one_req(hal_debug_struct_t *debug_struct);
-  void setup_request_timer(hal_debug_struct_t *debug_struct);
 #ifdef __NEW_REQLOOP__
   ReqloopFinishedStatus handle_req_target_status_sync(hal_debug_struct_t *debug_struct, hal_bridge_req_t *req, hal_bridge_req_t *target_req);
 #endif
@@ -267,18 +266,14 @@ private:
 class Ioloop : public Looper
 {
 public:
-  using ProgramExitFunction = std::function<void(int)>;
-  Ioloop(LoopManager * top, const EventLoop::SpEventLoop &event_loop, int64_t printing_pause = 0);
+  Ioloop(LoopManager * top);
   ~Ioloop() {}
   LooperFinishedStatus loop_proc(hal_debug_struct_t *debug_struct);
   LooperFinishedStatus register_proc(hal_debug_struct_t *debug_struct);
 private:
   uint32_t print_len(hal_debug_struct_t *debug_struct);
   void print_one(hal_debug_struct_t *debug_struct, uint32_t len);
-  void print_loop(hal_debug_struct_t *debug_struct);
 
   Log log;
-  EventLoop::SpEventLoop m_event_loop;
-  int64_t m_printing_pause;
 };
 #endif

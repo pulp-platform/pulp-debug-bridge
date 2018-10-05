@@ -232,7 +232,7 @@ extern "C" void bridge_loopmanager_add_reqloop()
 extern "C" void bridge_loopmanager_add_ioloop()
 {
   if (!bridge->m_ioloop) {
-    bridge->m_ioloop = std::make_shared<Ioloop>(bridge->m_loop_manager.get(), bridge->m_event_loop);
+    bridge->m_ioloop = std::make_shared<Ioloop>(bridge->m_loop_manager.get());
     bridge->m_loop_manager->add_looper(bridge->m_ioloop);
   }
 }

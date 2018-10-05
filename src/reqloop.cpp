@@ -475,7 +475,7 @@ Reqloop::ReqloopFinishedStatus Reqloop::handle_req_target_status_sync(hal_debug_
 {
   hal_target_state_t target;
 
-  m_top->access(false, (unsigned int)(long)&debug_struct->target, sizeof(hal_target_state_t), (char *)&target);
+  m_top->access(false, PTR_2_INT(&debug_struct->target), sizeof(hal_target_state_t), (char *)&target);
   m_top->target_state_sync(&target);
 
   this->reply_req(debug_struct, target_req, req);
@@ -547,53 +547,28 @@ Reqloop::ReqloopFinishedStatus Reqloop::handle_one_req(hal_debug_struct_t *debug
   }
 }
 
-void Reqloop::setup_request_timer(hal_debug_struct_t *debug_struct) {
-    m_active_timer = m_event_loop->getTimerEvent([this, debug_struct](){
-      if (m_destroyed) return kEventLoopTimerDone;
-      ReqloopFinishedStatus status = handle_one_req(debug_struct);
-      switch(status) {
-        case ReqloopFinishedCompletingReq:
-          return kEventLoopTimerDone;
-        case ReqloopFinishedContinue:
-          set_paused(false);
-          return kEventLoopTimerDone;
-        case ReqloopFinishedMoreReqs:
-          return m_req_pause;
-        case ReqloopFinishedStop:
-          if (m_active_timer)
-            m_active_timer->setTimeout(-1);
-          m_top->remove_looper(this);
-          return kEventLoopTimerDone;
-        default:
-          if (m_active_timer)
-            m_active_timer->setTimeout(-1);
-          m_top->clear_loopers();
-          return kEventLoopTimerDone;
-      }
-    }, 0);
-}
-
 LooperFinishedStatus Reqloop::loop_proc(hal_debug_struct_t *debug_struct)
 {
-  if (m_has_error) return LooperFinishedStop;
+  while (1) {
+    if (m_has_error) return LooperFinishedStop;
 
-  ReqloopFinishedStatus status = handle_one_req(debug_struct);
-  switch(status) {
-    case ReqloopFinishedCompletingReq:
-      return LooperFinishedPause;
-    case ReqloopFinishedContinue:
-      return LooperFinishedContinue;
-    case ReqloopFinishedMoreReqs:
-      setup_request_timer(debug_struct);
-      return LooperFinishedPause;
-    case ReqloopFinishedStop:
-      if (m_active_timer)
-        m_active_timer->setTimeout(-1);
-      return LooperFinishedStop;
-    default:
-      if (m_active_timer)
-        m_active_timer->setTimeout(-1);
-      return LooperFinishedStopAll;
+    ReqloopFinishedStatus status = handle_one_req(debug_struct);
+    switch(status) {
+      case ReqloopFinishedCompletingReq:
+        return LooperFinishedPause;
+      case ReqloopFinishedContinue:
+        return LooperFinishedContinue;
+      case ReqloopFinishedMoreReqs:
+        continue;
+      case ReqloopFinishedStop:
+        if (m_active_timer)
+          m_active_timer->setTimeout(-1);
+        return LooperFinishedStop;
+      default:
+        if (m_active_timer)
+          m_active_timer->setTimeout(-1);
+        return LooperFinishedStopAll;
+    }
   }
 }
 
