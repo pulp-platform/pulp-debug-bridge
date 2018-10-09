@@ -74,7 +74,7 @@ int64_t BridgeCommands::BridgeCommandExecute::execute(SpBridgeCommands bc) {
 }
 
 int64_t BridgeCommands::BridgeCommandExecuteAsync::execute(SpBridgeCommands bc) {
-    m_cb(reinterpret_cast<void *>(bc.get()), [this, bc](int result){
+    m_cb(reinterpret_cast<void *>(bc.get()), [bc](int result){
         bc->m_return_value = result;
         bc->queue_next_command();
     });
