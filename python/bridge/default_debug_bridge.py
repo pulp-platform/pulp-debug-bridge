@@ -216,6 +216,9 @@ class debug_bridge(object):
           self.cmd_func_typ, ctypes.c_char_p]
         self.module.gdb_server_open.restype = ctypes.c_bool
 
+        self.timer_cb_typ = ctypes.CFUNCTYPE(ctypes.c_longlong)
+        self.module.bridge_loop_timeout.argtypes = [self.timer_cb_typ, ctypes.c_longlong]
+
         self.module.gdb_send_str.argtypes = [ctypes.c_char_p]
         self.module.gdb_send_str.restype = ctypes.c_bool
 
@@ -638,7 +641,7 @@ class debug_bridge(object):
         self.log(1, "Program exited")
 
     def add_repeat_start(self, delay, count):
-        self.module.add_repeat_start(delay, count)
+        self.module.bridge_add_repeat_start(delay, count)
 
     def add_repeat_end(self):
         self.module.bridge_add_repeat_end()

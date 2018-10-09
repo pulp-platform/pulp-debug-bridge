@@ -203,9 +203,10 @@ def flash(bridge):
     bridge.add_repeat_start(0, 1)
     load(bridge, binaries=[ flasher ], mode='jtag')
     ioloop(bridge)
+    # reqloop(bridge)
     start(bridge)
     add_command(bridge, flash_cb)
-    bridge.bridge_add_wait_exit(bridge)
+    bridge.add_wait_exit()
     stop(bridge)
     bridge.add_repeat_end()
 

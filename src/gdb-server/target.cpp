@@ -777,6 +777,8 @@ void Target_cluster_common::halt()
   uint32_t pc;
   for (auto &core: cores)
   {
+    core->halt();
+    
     if (!core->actual_pc_read(&pc))
       return;
 

@@ -28,16 +28,16 @@ int BridgeCommands::start_bridge() {
 }
 
 void BridgeCommands::queue_next_command() {
-    m_bridge_loop->getTimerEvent([this](){
+    m_state->m_event_loop->getTimerEvent([this](){
         if (m_command_stack.size() == 0) return kEventLoopTimerDone;
         auto bridge_command_collection = m_command_stack.top();
         return bridge_command_collection->execute(this->shared_from_this());
     }, 0);
-    m_bridge_loop->start();
+    m_state->m_event_loop->start();
 }
 
 void BridgeCommands::stop_bridge() {
-    m_bridge_loop->stop();
+    m_state->m_event_loop->stop();
 }
 
 void BridgeCommands::add_execute(const bridge_func_t& cb) {
@@ -62,8 +62,8 @@ void BridgeCommands::add_delay(std::chrono::microseconds usecs) {
     m_command_stack.top()->add_command(std::make_shared<BridgeCommandDelay>(usecs));
 }
 
-void BridgeCommands::add_wait_exit(const std::shared_ptr<LoopManager> &loop_manager) {
-    m_command_stack.top()->add_command(std::make_shared<BridgeCommandWaitExit>(loop_manager));
+void BridgeCommands::add_wait_exit() {
+    m_command_stack.top()->add_command(std::make_shared<BridgeCommandWaitExit>(this));
 }
 
 // Command execution
@@ -105,10 +105,23 @@ int64_t BridgeCommands::BridgeCommandRepeat::execute(SpBridgeCommands bc) {
     return m_delay.count();
 }
 
-int64_t BridgeCommands::BridgeCommandWaitExit::execute(SpBridgeCommands bc) {
-    m_loop_manager->once_exit([bc](){
-        bc->queue_next_command();
+BridgeCommands::BridgeCommandWaitExit::BridgeCommandWaitExit(BridgeCommands * p_bc) {
+    // hook the exit function of this command sequence
+
+    p_bc->on_exit([this](){
+        // Check if we were waiting and restart commands if we were
+        // Todo - There is no check if 2 or more were waiting
+        if (m_waiting && !m_commands.expired()) {
+            m_waiting = false;
+            m_commands.lock()->queue_next_command();
+        }
     });
+}
+
+int64_t BridgeCommands::BridgeCommandWaitExit::execute(SpBridgeCommands bc) {
+    // done until restarted by the hooked exit
+    m_commands = bc;
+    m_waiting = true;
     return kEventLoopTimerDone;
 }
 

@@ -44,8 +44,8 @@ void LoopManager::access(bool write, unsigned int addr, int len, char * buf)
 
 int64_t LoopManager::run_loops() {
     try {
-#ifdef __NEW_REQLOOP__
-        if (!target_is_available()) return m_cur_usecs;
+#if defined(__NEW_REQLOOP__) && defined(__CHECK_AVAILABILITY__)
+        if (!target_is_available()) return 0;
 #endif
         hal_debug_struct_t * debug_struct = activate();
         if (debug_struct == NULL) return (m_cur_usecs==kEventLoopTimerDone?m_cur_usecs:0);
@@ -54,7 +54,8 @@ int64_t LoopManager::run_loops() {
             return kEventLoopTimerDone;
         }
         auto ilooper = m_loopers.begin();
-        while (ilooper != m_loopers.end() && m_target.available) {
+
+        while (ilooper != m_loopers.end() && target_is_available()) {
             auto looper = *ilooper;
             if (looper->get_paused()) {
                 ilooper++;
@@ -105,6 +106,7 @@ void LoopManager::start(bool fast) {
 }
 
 void LoopManager::stop() {
+    if (m_stopped) return;
     log.debug("LoopManager stopped\n");
     m_stopped = true;
     m_cur_usecs = kEventLoopTimerDone;
@@ -129,6 +131,7 @@ void LoopManager::remove_looper(Looper * looper) {
 #ifdef __NEW_REQLOOP__
 bool LoopManager::target_is_available()
 {
+#ifdef __CHECK_AVAILABILITY__
     if (m_target.available) return true;
 
     unsigned int value;
@@ -140,6 +143,9 @@ bool LoopManager::target_is_available()
         return true;
     }
     return false;
+#else
+    return true;
+#endif
 }
 
 void LoopManager::target_state_sync(hal_target_state_t * target)
@@ -154,7 +160,6 @@ bool LoopManager::program_has_exited(hal_debug_struct_t *debug_struct)
 {
     unsigned int value = 0;
     access(false, PTR_2_INT(&debug_struct->exit_status), 4, (char*)&value);
-
     if (value >> 31) {
       int status = ((int)value << 1) >> 1;
       log.user("Detected end of application, exiting with status: %d\n", status);

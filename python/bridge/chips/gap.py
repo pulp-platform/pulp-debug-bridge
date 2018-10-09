@@ -149,7 +149,7 @@ class gap_debug_bridge(debug_bridge):
 
     def start(self):
         if self.start_cores and not self.is_started:
-            self.log(1, 'Starting execution')
+            self.log(1, 'Start execution on GAP8')
 
             self.is_started = True
             # Unstall the FC so that it starts fetching instructions from the loaded binary
@@ -159,7 +159,6 @@ class gap_debug_bridge(debug_bridge):
 
 
     def load_jtag_hyper(self):
-
         self.log(1, 'Loading binary through jtag_hyper')
 
         # Reset the chip and tell him we want to load from hyper
@@ -172,48 +171,69 @@ class gap_debug_bridge(debug_bridge):
 
         return res
 
-
+    # the flash process needs to happen asynchronously since we want the loopers
+    # to be running
     def flash(self, f_path):
-        MAX_BUFF_SIZE = (350*1024)
+        MAX_BUFF_SIZE = 350 * 1024
         addrHeader = self._get_binary_symbol_addr('flasherHeader')
         addrImgRdy = addrHeader
         addrFlasherRdy = addrHeader + 4
         addrFlashAddr = addrHeader + 8
         addrIterTime = addrHeader + 12
         addrBufSize = addrHeader + 16
+
         # open the file in read binary mode
         f_img = open(f_path, 'rb')
         f_size = os.path.getsize(f_path)
-        lastSize = f_size % MAX_BUFF_SIZE;
-        if(lastSize):
-            n_iter = f_size // MAX_BUFF_SIZE + 1;
+
+        lastSize = f_size % MAX_BUFF_SIZE
+        if lastSize:
+            n_iter = f_size // MAX_BUFF_SIZE + 1
         else:
             n_iter = f_size // MAX_BUFF_SIZE
 
-        flasher_ready = self.read_32(addrFlasherRdy)
-        while(flasher_ready == 0):
-            flasher_ready = self.read_32(addrFlasherRdy)
-        flasher_ready = 0
-        addrBuffer = self.read_32((addrHeader+20))
-        self.log(1, "Flash address buffer 0x{:x}".format(addrBuffer))
-        self.write_32(addrFlashAddr, 0)
-        self.write_32(addrIterTime, n_iter)
-        for i in range(n_iter):
-            if (lastSize and i == (n_iter-1)):
+        # since we need to be python 2.X compatible this holds state
+        class state:
+            cnt = 0
+            initialized = False
+            addr_buffer = None
+
+        def flash_one():
+            if self.read_32(addrFlasherRdy) == 0:
+                return 0
+
+            if not state.initialized:
+                self.log(1, "Initializing bridge flasher")
+                state.initialized = True
+                state.addr_buffer = self.read_32((addrHeader+20))
+                self.log(1, "Flash address buffer 0x{:x}".format(state.addr_buffer))
+                self.write_32(addrFlashAddr, 0)
+                self.write_32(addrIterTime, n_iter)
+
+            if (lastSize and state.cnt == (n_iter-1)):
                 buff_data = f_img.read(lastSize)
-                self.write(addrBuffer, lastSize, buff_data)
+                self.write(state.addr_buffer, lastSize, buff_data)
                 self.write_32(addrBufSize, ((lastSize + 3) & ~3))
             else:
                 buff_data = f_img.read(MAX_BUFF_SIZE)
-                self.write(addrBuffer, MAX_BUFF_SIZE, buff_data)
+                self.write(state.addr_buffer, MAX_BUFF_SIZE, buff_data)
                 self.write_32(addrBufSize, MAX_BUFF_SIZE)
-            self.write_32(addrImgRdy, 1)
+
             self.write_32(addrFlasherRdy, 0)
-            if (i!=(n_iter-1)):
-                flasher_ready = self.read_32(addrFlasherRdy)
-                while(flasher_ready == 0):
-                    flasher_ready = self.read_32(addrFlasherRdy)
-        f_img.close()
+            self.write_32(addrImgRdy, 1)
+
+            state.cnt = state.cnt + 1
+            if state.cnt < n_iter:
+                return 0
+            else:
+                f_img.close()
+                self.log(1, "Bridge flasher completed")
+                return -1
+
+        # keep a reference to the callback
+        self.flash_cb = self.timer_cb_typ(flash_one)
+        self.module.bridge_loop_timeout(self.flash_cb, 100000)
+
         return True
 
 

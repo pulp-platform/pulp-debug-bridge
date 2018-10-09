@@ -2,16 +2,18 @@
 #include "events/events.hpp"
 #include "loops.hpp"
 #include "gdb-server/gdb-server.hpp"
+#include "cables/cable.hpp"
 #include "cables/adv_dbg_itf/adv_dbg_itf.hpp"
-#include "bridge-commands.hpp"
 
 #include <string>
+
+class BridgeCommands;
 
 class BridgeState {
     public:
         BridgeState(const char * config_string) {
             m_event_loop = EventLoop::getLoop();
-            m_bridge_commands = std::make_shared<BridgeCommands>(m_event_loop);
+            m_bridge_commands = std::make_shared<BridgeCommands>(this);
             m_system_config = js::import_config_from_string(std::string(config_string));
         }
         EventLoop::SpEventLoop m_event_loop = nullptr;

@@ -33,7 +33,7 @@
 #include "cables/ftdi/ftdi.hpp"
 #endif
 #include "gdb-server/gdb-server.hpp"
-#include "bridge-state.hpp"
+#include "bridge-commands.hpp"
 
 using namespace std;
 
@@ -190,7 +190,12 @@ extern "C" void bridge_add_delay(int64_t delay)
 
 extern "C" void bridge_add_wait_exit()
 {
-  bridge->m_bridge_commands->add_wait_exit(bridge->m_loop_manager);
+  bridge->m_bridge_commands->add_wait_exit();
+}
+
+extern "C" void bridge_loop_timeout(int64_t(*cb)(), int64_t timeout)
+{
+  bridge->m_event_loop->getTimerEvent(cb, timeout);
 }
 
 extern "C" int bridge_start()
@@ -215,9 +220,14 @@ extern "C" void bridge_loopmanager_set_poll_delay(int high_rate)
 
 extern "C" void bridge_loopmanager_init(unsigned int debug_struct_addr)
 {
-  if (!bridge->m_loop_manager)
+  if (!bridge->m_loop_manager) {
     bridge->m_loop_manager = std::make_shared<LoopManager>(bridge->m_event_loop, std::static_pointer_cast<Cable>(bridge->m_adu), debug_struct_addr);
-  else
+    bridge->m_loop_manager->on_exit([](){
+      // Program exited - remove loopers and trigger wait_exit command
+      bridge->m_loop_manager->clear_loopers();
+      bridge->m_bridge_commands->trigger_exit();
+    });
+  } else
     bridge->m_loop_manager->set_debug_struct_addr(debug_struct_addr);
 }
 

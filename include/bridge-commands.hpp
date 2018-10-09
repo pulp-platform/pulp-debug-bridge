@@ -23,8 +23,11 @@
 #include <stack>
 #include <chrono>
 #include <exception>
+#include <list>
+#include "events/emitter.hpp"
 #include "events/events.hpp"
 #include "loops.hpp"
+#include "bridge-state.hpp"
 
 class BridgeCommandsException : public std::exception {
 };
@@ -34,7 +37,9 @@ public:
     const char* what() const throw() { return "Unmatched startloop or endloop command"; }
 };
 
-class BridgeCommands : public std::enable_shared_from_this<BridgeCommands> {
+SMART_EMITTER(BridgeCommandsExit, exit)
+
+class BridgeCommands : public std::enable_shared_from_this<BridgeCommands>, public BridgeCommandsExitEmitter<> {
   public:
     using bridge_func_t = std::function<int(void *)>;
     using bridge_cont_complete_func_t = std::function<void(int)>;
@@ -100,14 +105,15 @@ class BridgeCommands : public std::enable_shared_from_this<BridgeCommands> {
     class BridgeCommandWaitExit : public BridgeCommand {
     public:
         ~BridgeCommandWaitExit() {}
-        BridgeCommandWaitExit(const std::shared_ptr<LoopManager> &loop_manager) : m_loop_manager(std::move(loop_manager)) {}
+        BridgeCommandWaitExit(BridgeCommands * bc);
         int64_t execute(SpBridgeCommands bc);
     private:
-        std::shared_ptr<LoopManager> m_loop_manager;
+        std::weak_ptr<BridgeCommands> m_commands;
+        bool m_waiting = false;
     };
 
-    BridgeCommands(const EventLoop::SpEventLoop &event_loop) :
-        m_bridge_loop(std::move(event_loop)) {
+    BridgeCommands(BridgeState * state) :
+        m_state(state) {
             m_command_stack.push(std::make_shared<BridgeCommandCollection>());
         }
     
@@ -121,12 +127,14 @@ class BridgeCommands : public std::enable_shared_from_this<BridgeCommands> {
     void add_repeat_start(std::chrono::microseconds delay, int count);
     void add_repeat_end();
     void add_delay(std::chrono::microseconds delay);
-    void add_wait_exit(const std::shared_ptr<LoopManager> &loop_manager);
+    void add_wait_exit();
+    void trigger_exit() { emit_exit(); }
 
-    EventLoop::SpEventLoop get_loop() { return m_bridge_loop; }
+    EventLoop::SpEventLoop get_loop() { return m_state->m_event_loop; }
+    std::shared_ptr<LoopManager> get_loop_manager() { return m_state->m_loop_manager; }
 
   private:
-    EventLoop::SpEventLoop m_bridge_loop;
+    BridgeState * m_state;
     std::stack<std::shared_ptr<BridgeCommandCollection>> m_command_stack;
     int m_return_value;
 };

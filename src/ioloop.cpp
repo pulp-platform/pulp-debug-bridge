@@ -34,7 +34,7 @@ LooperFinishedStatus Ioloop::register_proc(hal_debug_struct_t *debug_struct) {
 }
 
 uint32_t Ioloop::print_len(hal_debug_struct_t *debug_struct) {
-#ifdef __NEW_REQLOOP__
+#if defined(__NEW_REQLOOP__) && defined(__CHECK_AVAILABILITY__)
   if (!m_top->get_target_available()) return 0;
 #endif
   uint32_t value;

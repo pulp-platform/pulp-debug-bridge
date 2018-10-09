@@ -524,8 +524,9 @@ LooperFinishedStatus Reqloop::register_proc(hal_debug_struct_t *debug_struct) {
 
 Reqloop::ReqloopFinishedStatus Reqloop::handle_one_req(hal_debug_struct_t *debug_struct) {
   try {
+#if defined(__NEW_REQLOOP__) && defined(__CHECK_AVAILABILITY__)
     if (!m_top->get_target_available()) return ReqloopFinishedContinue;
-
+#endif
     uint32_t value;
     hal_bridge_req_t *first_bridge_req = NULL;
 
