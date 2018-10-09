@@ -39,6 +39,7 @@ class Target_cache
 {
 public:
   virtual void flush() { }
+  virtual ~Target_cache() {}
 };
 
 
@@ -47,6 +48,7 @@ class Target_cluster_cache : public Target_cache
 {
 public:
   Target_cluster_cache(Gdb_server * top, uint32_t addr);
+  ~Target_cluster_cache() {}
   void flush();
 private:
   Gdb_server * m_top;
@@ -59,6 +61,7 @@ class Target_fc_cache : public Target_cache
 {
 public:
   Target_fc_cache(Gdb_server * top, uint32_t addr);
+  ~Target_fc_cache() {}
   void flush();
 private:
   Gdb_server * m_top;
@@ -70,6 +73,7 @@ class Target_cluster_power
 {
 public:
   virtual bool is_on() { return true; }
+  virtual ~Target_cluster_power() {}
 };
 
 
@@ -78,6 +82,7 @@ class Target_cluster_power_bypass : public Target_cluster_power
 {
 public:
   Target_cluster_power_bypass(Gdb_server * top, uint32_t reg_addr, int bit);
+  ~Target_cluster_power_bypass() {}
   bool is_on();
 
 private:
@@ -91,6 +96,7 @@ private:
 class Target_cluster_ctrl
 {
 public:
+  virtual ~Target_cluster_ctrl() {}
   virtual void init() {}
   virtual bool has_xtrigger() { return false; }
 };
@@ -101,6 +107,7 @@ class Target_cluster_ctrl_xtrigger : public Target_cluster_ctrl
 {
 public:
   Target_cluster_ctrl_xtrigger(Gdb_server * top, uint32_t cluster_ctrl_addr);
+  ~Target_cluster_ctrl_xtrigger() {}
   void init();
   bool has_xtrigger() { return true; }
   void set_halt_mask(uint32_t mask);
