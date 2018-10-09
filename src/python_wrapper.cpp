@@ -277,6 +277,8 @@ extern "C" void bridge_deinit()
 
 extern "C" bool gdb_server_open(int socket_port, cmd_cb_t cmd_cb, const char * capabilities)
 {
+  // slow down printf if gdb is working so as not to starve it
+  if (bridge->m_ioloop) bridge->m_ioloop->set_max_loops(2);
   try {
     bridge->m_gdb_server = std::make_shared<Gdb_server>(bridge->m_event_loop, bridge->m_adu, bridge->m_system_config, socket_port, cmd_cb, capabilities);
     bridge->m_gdb_server->start();

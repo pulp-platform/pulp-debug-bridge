@@ -129,6 +129,7 @@ public:
   void update_power();
   void set_power(bool is_on);
   bool get_power();
+  bool decide_resume();
   void resume();
   void halt();
   void flush();

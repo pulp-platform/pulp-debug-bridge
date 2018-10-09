@@ -333,11 +333,16 @@ void Target_core::stop()
 
   this->read(DBG_CTRL_REG, &data);
 
-  data |= 0x10000;
-  this->write(DBG_CTRL_REG, data);
+  if (!(data&0x10000)) {
+    data |= 0x10000;
+    this->write(DBG_CTRL_REG, data);
+  }
 
+#ifdef __PARANOID__
   // verify
+  data = 0;
   this->read(DBG_CTRL_REG, &data);
+#endif
 
   if (!(data&0x10000))
     m_top->log.error("read 0x%08x from CTRL_REG after stop!\n", data);
@@ -382,7 +387,6 @@ bool Target_core::actual_pc_read(unsigned int* pc)
   uint32_t ppc;
   uint32_t cause;
   bool is_hit;
-  bool is_sleeping;
 
   if (pc_is_cached) {
     m_top->log.debug("PC was cached at 0x%08x Core %d:%d (is_BP: %d)\n", 
@@ -395,7 +399,7 @@ bool Target_core::actual_pc_read(unsigned int* pc)
 
   this->read(DBG_PPC_REG, &ppc);
   this->read(DBG_NPC_REG, &npc);
-  this->read_hit(&is_hit, &is_sleeping);
+  this->read_hit(&is_hit, &m_is_sleeping);
 
   if (is_hit) {
     *pc = npc;
@@ -486,7 +490,10 @@ void Target_core::prepare_resume(bool step)
   this->set_step_mode(step);
 }
 
-
+bool Target_core::decide_resume()
+{
+  return !(pc_is_cached && m_top->bkp->at_addr(pc_cached) && is_stopped_on_trap());
+}
 
 void Target_core::commit_resume()
 {
@@ -642,6 +649,15 @@ void Target_cluster_common::flush()
   if (this->cache) this->cache->flush();
 }
 
+bool Target_cluster_common::decide_resume()
+{
+  for (auto &core: cores) {
+    if (core->should_resume() && !core->decide_resume()) {
+      return false;
+    }
+  }
+  return true;
+}
 
 void Target_cluster_common::commit_resume()
 {
@@ -772,23 +788,32 @@ void Target_cluster_common::halt()
     return;
   }
   m_top->log.debug("Halting cluster (cluster: %d)\n", cluster_id);
-  cores.front()->halt();
+
+  if (this->ctrl->has_xtrigger()) {
+    std::dynamic_pointer_cast<Target_cluster_ctrl_xtrigger>(this->ctrl)->set_resume(0);
+  }
+
   // Cache all the PCs and halt status and move PCs back over breakpoints before doing anything else
   uint32_t pc;
   for (auto &core: cores)
   {
-    core->halt();
+    if (!this->ctrl->has_xtrigger())
+      core->halt();
+    else
+      core->is_stopped();
     
     if (!core->actual_pc_read(&pc))
       return;
 
-    // If there is a breakpoint at the address of the actual program counter
-    // it must have executed at the same time as a breakpoint on another
-    // core so reexecute it
-    if (m_top->bkp->at_addr(pc) && core->is_stopped_on_trap()) {
-      m_top->log.debug("Core %d:%d was on breakpoint. Re-executing\n", core->get_cluster_id(), core->get_core_id());
-      core->write(DBG_NPC_REG, pc); // re-execute this instruction
-    }
+    // This is no longer needed but keeping it around in case
+    // Now the resume does not occur if a core is still on a breakpoint.
+    // // If there is a breakpoint at the address of the actual program counter
+    // // it must have executed at the same time as a breakpoint on another
+    // // core so reexecute it
+    // if (m_top->bkp->at_addr(pc) && core->is_stopped_on_trap()) {
+    //   m_top->log.debug("Core %d:%d was on breakpoint. Re-executing\n", core->get_cluster_id(), core->get_core_id());
+    //   core->write(DBG_NPC_REG, pc); // re-execute this instruction
+    // }
   }
 }
 
@@ -824,8 +849,13 @@ Target_cluster::Target_cluster(js::config *system_config, js::config *config, Gd
     power = std::make_shared<Target_cluster_power>();
   }
 
+#ifdef __USE_XTRIGGER__
   ctrl = std::make_shared<Target_cluster_ctrl_xtrigger>(top, cluster_base + 0x00200000);
-
+#else
+  ctrl = std::make_shared<Target_cluster_ctrl>();
+  auto xctrl = std::make_shared<Target_cluster_ctrl_xtrigger>(top, cluster_base + 0x00200000);
+  xctrl->set_halt_mask(0);
+#endif
   cache = std::make_shared<Target_cluster_cache>(top, cluster_base + 0x00201400);
 
   this->update_power();
@@ -1013,6 +1043,15 @@ void Target::resume_all()
 {
   m_top->log.detail("resume target\n");
   started = true;
+  // first check if a core is still on a breakpoint. If it is then we don't actually resume.
+  // Just fake it and let rsp that it stopped again
+  for (auto &cluster : this->clusters)
+  {
+    if (!cluster->decide_resume()) {
+      m_top->log.detail("resume aborted - core is on breakpoint\n");
+      return;
+    }
+  }
   for (auto &cluster : this->clusters)
   {
     cluster->commit_resume();

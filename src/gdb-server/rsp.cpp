@@ -842,7 +842,8 @@ int64_t Rsp::Client::wait_routine()
 
 bool Rsp::Client::wait()
 {
-  m_wait_te->setTimeout(m_rsp->m_wait_time_usecs);
+  // run immediately the first time around
+  m_wait_te->setTimeout(0);
   m_client->set_events(Readable);
   return true;
 }

@@ -55,7 +55,8 @@ LooperFinishedStatus Ioloop::loop_proc(hal_debug_struct_t *debug_struct)
 {
   try {
     uint32_t len;
-    while((len = print_len(debug_struct))) {
+    int iter = 0;
+    while((len = print_len(debug_struct)) && (m_max_loops == -1 || iter++ < m_max_loops)) {
       print_one(debug_struct, len);
     }
     fflush(NULL);

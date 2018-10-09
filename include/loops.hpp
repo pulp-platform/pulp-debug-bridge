@@ -270,10 +270,11 @@ public:
   ~Ioloop() {}
   LooperFinishedStatus loop_proc(hal_debug_struct_t *debug_struct);
   LooperFinishedStatus register_proc(hal_debug_struct_t *debug_struct);
+  void set_max_loops(int max_loops) { m_max_loops = max_loops; }
 private:
   uint32_t print_len(hal_debug_struct_t *debug_struct);
   void print_one(hal_debug_struct_t *debug_struct, uint32_t len);
-
+  int m_max_loops = 10;
   Log log;
 };
 #endif

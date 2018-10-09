@@ -163,6 +163,7 @@ public:
   bool is_stopped();
   void read_hit(bool *ss_hit, bool *is_sleeping);
   bool is_stopped_on_trap() { return pc_is_cached && on_trap; }
+  bool decide_resume();
   uint32_t get_cause();
   uint32_t check_stopped();
 
@@ -199,6 +200,7 @@ private:
   bool commit_step = false;
   bool resume_prepared = false;
   bool on_trap = false;
+  bool m_is_sleeping = false;
   static int first_free_thread_id;
 };
 
@@ -315,7 +317,7 @@ private:
 
 class Rsp : public std::enable_shared_from_this<Rsp> {
   public:
-    Rsp(Gdb_server * top, int port, const EventLoop::SpEventLoop &event_loop, int64_t wait_time_usecs = 500000);
+    Rsp(Gdb_server * top, int port, const EventLoop::SpEventLoop &event_loop, int64_t wait_time_usecs = 50000);
     ~Rsp() { printf("RSP disposing\n"); }
     void start();
     void stop();
