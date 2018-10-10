@@ -827,7 +827,7 @@ bool Adv_dbg_itf::jtag_auto_discovery()
 
   std::string chip = this->config->get("**/chip/name")->get_str();
 
-  if (chip != "wolfe")
+  if (chip != "wolfe" && chip != "usoc_v1")
   {
     if (dr_len <= 0 || ir_len <= 0) {
       log->error("JTAG sanity check failed\n");
