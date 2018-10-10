@@ -63,7 +63,7 @@ void BridgeCommands::add_delay(std::chrono::microseconds usecs) {
 }
 
 void BridgeCommands::add_wait_exit() {
-    m_command_stack.top()->add_command(std::make_shared<BridgeCommandWaitExit>(this));
+    m_command_stack.top()->add_command(std::make_shared<BridgeCommandWaitExit>(this->shared_from_this()));
 }
 
 // Command execution
@@ -82,16 +82,21 @@ int64_t BridgeCommands::BridgeCommandExecuteAsync::execute(SpBridgeCommands bc) 
 }
 
 int64_t BridgeCommands::BridgeCommandCollection::execute(SpBridgeCommands bc) {
+    // Only pop a command once the next command is executed to keep the command
+    // alive. This is important in the case of wait exit which will fire after
+    // it has executed.
+    if (m_started)
+        m_command_queue.pop();
+    else
+        m_started = true;
+
     // If there are no commands left then pop the command collection
     if (m_command_queue.size() == 0) {
         bc->m_command_stack.pop();
         return 0;
     }
-    // get the next command
-    auto command = m_command_queue.front();
-    m_command_queue.pop();
-    // execute the command in the collection
-    return command->execute(bc);    
+    // execute the next command
+    return m_command_queue.front()->execute(bc);
 }
 
 int64_t BridgeCommands::BridgeCommandRepeat::execute(SpBridgeCommands bc) {
@@ -105,23 +110,24 @@ int64_t BridgeCommands::BridgeCommandRepeat::execute(SpBridgeCommands bc) {
     return m_delay.count();
 }
 
-BridgeCommands::BridgeCommandWaitExit::BridgeCommandWaitExit(BridgeCommands * p_bc) {
+BridgeCommands::BridgeCommandWaitExit::BridgeCommandWaitExit(SpBridgeCommands bc) {
     // hook the exit function of this command sequence
-
-    p_bc->on_exit([this](){
+    // this is valid in the lambda since the command is not popped until the
+    // queue_next_command is executed
+    bc->on_exit([this](){
         // Check if we were waiting and restart commands if we were
         // Todo - There is no check if 2 or more were waiting
-        if (m_waiting && !m_commands.expired()) {
+        if (m_waiting && !m_bc.expired()) {
             m_waiting = false;
-            m_commands.lock()->queue_next_command();
+            m_bc.lock()->queue_next_command();
         }
     });
 }
 
 int64_t BridgeCommands::BridgeCommandWaitExit::execute(SpBridgeCommands bc) {
     // done until restarted by the hooked exit
-    m_commands = bc;
     m_waiting = true;
+    m_bc = bc;
     return kEventLoopTimerDone;
 }
 

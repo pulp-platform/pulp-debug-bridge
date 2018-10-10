@@ -46,7 +46,7 @@ class BridgeCommands : public std::enable_shared_from_this<BridgeCommands>, publ
     using bridge_cont_func_t = std::function<void(void *, bridge_cont_complete_func_t)>;
     using SpBridgeCommands = std::shared_ptr<BridgeCommands>;
 
-    class BridgeCommand {
+    class BridgeCommand : public std::enable_shared_from_this<BridgeCommand> {
     public:
         virtual ~BridgeCommand() { };
         virtual int64_t execute(SpBridgeCommands bc) = 0;
@@ -90,6 +90,7 @@ class BridgeCommands : public std::enable_shared_from_this<BridgeCommands>, publ
         void add_command(const std::shared_ptr<BridgeCommand> &command) { m_command_queue.emplace(command); }
     protected:
         std::queue<std::shared_ptr<BridgeCommand>> m_command_queue;
+        bool m_started = false;
     };
 
     class BridgeCommandRepeat : public BridgeCommandCollection {
@@ -104,12 +105,13 @@ class BridgeCommands : public std::enable_shared_from_this<BridgeCommands>, publ
 
     class BridgeCommandWaitExit : public BridgeCommand {
     public:
-        ~BridgeCommandWaitExit() {}
-        BridgeCommandWaitExit(BridgeCommands * bc);
+        ~BridgeCommandWaitExit() {
+        }
+        BridgeCommandWaitExit(SpBridgeCommands bc);
         int64_t execute(SpBridgeCommands bc);
     private:
-        std::weak_ptr<BridgeCommands> m_commands;
         bool m_waiting = false;
+        std::weak_ptr<BridgeCommands> m_bc;
     };
 
     BridgeCommands(BridgeState * state) :
@@ -117,7 +119,10 @@ class BridgeCommands : public std::enable_shared_from_this<BridgeCommands>, publ
             m_command_stack.push(std::make_shared<BridgeCommandCollection>());
         }
     
-    ~BridgeCommands() { while(!m_command_stack.empty()) m_command_stack.pop(); }
+    ~BridgeCommands() { 
+        clearall_exit();
+        while(!m_command_stack.empty()) m_command_stack.pop();
+    }
 
     int start_bridge();
     void stop_bridge();
