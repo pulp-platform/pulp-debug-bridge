@@ -977,7 +977,8 @@ bool Rsp::Client::send(const char* data, size_t len)
 {
   log.debug("Sending \"%s\" (%d)\n", data, len);
   m_client->write_buffer([&](const tcp_socket_ptr_t & UNUSED(sock), const circular_buffer_ptr_t &c_buf){
-    m_codec->encode(data, len, c_buf);
+    // disabled run length encoding since GDB didn't seem to like it
+    m_codec->encode(data, len, c_buf, true);
   });
   return true;
 }

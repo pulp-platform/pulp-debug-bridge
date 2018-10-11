@@ -66,24 +66,73 @@ static bool verify_checksum(const char * buf, size_t buf_len, const char * crc_b
   return (crc_buf[0] == checksum_str[0] && crc_buf[1] == checksum_str[1]);
 }
 
-static void escape(const char *data, size_t len, char *raw, size_t *raw_idx, uint32_t *crc)
+static void flush_seq(char c, size_t seq_len, char *raw, size_t *raw_idx, uint32_t *crc)
 {
-  size_t i;
-  *crc = 0;
-  for (i = 0; i < len; i++) {
-    char c = data[i];
-
-    // check if escaping needed
-    if (c == '#' || c == '%' || c == '}' || c == '*') {
-      raw[(*raw_idx)++] = '}';
-      raw[(*raw_idx)++] = c ^ 0x20;
-      *crc += '}';
-      *crc += c ^ 0x20;
-    } else {
-      raw[(*raw_idx)++] = c;
-      *crc += c;
+    while (seq_len > 0) {
+        if (seq_len < 3) {
+            for (size_t i=0; i<seq_len; i++) {
+                raw[(*raw_idx)++] = c;
+                *crc += c;
+            }
+            return;
+        } else {
+            size_t run_len = seq_len;
+            if (run_len == 6 or run_len == 7)
+                run_len = 5;
+            else if (run_len + 29 > 126)
+                run_len = 126 - 29;
+            seq_len -= run_len;
+            run_len += 29;
+            raw[(*raw_idx)++] = c;
+            *crc += c;
+            raw[(*raw_idx)++] = '*';
+            *crc += '*';
+            raw[(*raw_idx)++] = run_len;
+            *crc += run_len;
+        }
     }
-  }
+}
+
+static void escape(const char *data, size_t len, char *raw, size_t *raw_idx, uint32_t *crc, bool dont_encode_runs)
+{
+    size_t i, seq_len = 0;
+    char seq_c;
+
+    *crc = 0;
+    for (i = 0; i < len; i++) {
+        char c = data[i];
+        // check if escaping needed
+        if (c == '#' || c == '%' || c == '}' || c == '*') {
+            if (seq_len > 0) {
+                flush_seq(seq_c, seq_len, raw, raw_idx, crc);
+                seq_len = 0;
+            }
+            raw[(*raw_idx)++] = '}';
+            raw[(*raw_idx)++] = c ^ 0x20;
+            *crc += '}';
+            *crc += c ^ 0x20;
+        } else {
+            // encode runs
+            if (dont_encode_runs) {
+                raw[(*raw_idx)++] = c;
+                *crc += c;
+            } else {
+                if (seq_len > 0) {
+                    if (c != seq_c) {
+                        flush_seq(seq_c, seq_len, raw, raw_idx, crc);
+                        seq_len = 1;
+                        seq_c = c;
+                    } else {
+                        seq_len++;
+                    }
+                } else {
+                    seq_c = c;
+                    seq_len = 1;
+                }
+            }
+        }
+    }
+    if (seq_len > 0) flush_seq(seq_c, seq_len, raw, raw_idx, crc);
 }
 
 RspPacketCodec::RspPacketCodec(EventLoop::SpEventLoop event_loop, std::chrono::milliseconds decode_timeout) : 
@@ -199,13 +248,13 @@ bool RspPacketCodec::decoder(const std::shared_ptr<CircularCharBuffer> &circ_buf
 }
 
 
-bool RspPacketCodec::encode(const char * buf, size_t len, const std::shared_ptr<CircularCharBuffer> &circ_buf) {
+bool RspPacketCodec::encode(const char * buf, size_t len, const std::shared_ptr<CircularCharBuffer> &circ_buf, bool dont_encode_runs) {
     size_t out_len = 0;
     uint32_t checksum = 0;
 
     s_out_pkt[out_len++] = '$';
 
-    escape(buf, len, s_out_pkt, &out_len, &checksum);
+    escape(buf, len, s_out_pkt, &out_len, &checksum, dont_encode_runs);
 
     // add checksum
     checksum = checksum % 256;

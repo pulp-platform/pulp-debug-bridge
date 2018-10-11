@@ -60,9 +60,7 @@ public:                                                                 \
                     l->m_deleted = true;                                \
                 }                                                       \
                 l->m_func(params...);                                   \
-                if (l->m_deleted) {                                     \
-                    l = m_listeners.erase(l);                           \
-                } else l++;                                             \
+                l++;                                                    \
             }                                                           \
         }                                                               \
     }                                                                   \

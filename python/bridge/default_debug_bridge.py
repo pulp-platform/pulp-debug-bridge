@@ -309,7 +309,6 @@ class debug_bridge(object):
         return True
 
     def load(self, mode=None):
-        mode = self.config.get_child_str('**/debug_bridge/boot-mode')
         if mode is None:
             mode = 'jtag'
 

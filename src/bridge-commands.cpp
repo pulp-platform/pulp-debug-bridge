@@ -24,6 +24,7 @@
 int BridgeCommands::start_bridge() {
     if (m_command_stack.size() != 1) throw BridgeUnmatchedLoopException();
     queue_next_command();
+    m_state->m_event_loop->start();
     return this->m_return_value;
 }
 
@@ -33,7 +34,6 @@ void BridgeCommands::queue_next_command() {
         auto bridge_command_collection = m_command_stack.top();
         return bridge_command_collection->execute(this->shared_from_this());
     }, 0);
-    m_state->m_event_loop->start();
 }
 
 void BridgeCommands::stop_bridge() {

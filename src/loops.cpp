@@ -50,7 +50,6 @@ int64_t LoopManager::run_loops() {
         hal_debug_struct_t * debug_struct = activate();
         if (debug_struct == NULL) return (m_cur_usecs==kEventLoopTimerDone?m_cur_usecs:0);
         if (m_check_exit && program_has_exited(debug_struct)) {
-            clear_loopers();
             return kEventLoopTimerDone;
         }
         auto ilooper = m_loopers.begin();
@@ -101,6 +100,7 @@ void LoopManager::set_loop_speed(bool fast) {
 
 void LoopManager::start(bool fast) {
     log.debug("LoopManager started\n");
+    for (auto &l : m_loopers) l->set_paused(false);
     m_stopped = false;
     set_loop_speed(fast);
 }

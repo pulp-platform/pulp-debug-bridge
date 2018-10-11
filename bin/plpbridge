@@ -124,6 +124,11 @@ def load(bridge, binaries=None, mode=None):
         if binaries_conf is not None:
             binaries = binaries_conf.get_dict()
 
+    if mode is None:
+        mode = bridge.config.get_child_str('**/debug_bridge/boot-mode')
+    if mode is None:
+        mode = "jtag"
+
     def load_cb(state):
         if args.verbose >= 4:
             print ('Loading ELF binaries (path: %s)' % ' '.join(binaries))

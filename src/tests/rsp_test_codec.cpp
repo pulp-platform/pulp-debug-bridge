@@ -10,6 +10,7 @@
 #define INVALID_PACKET2 "$1263123"
 
 #define TEST_STRING "testing"
+#define REPEAT_STRING "AAAABBBBBBCCCCCCCZZEE"
 
 int main( int argc, const char* argv[] )
 {
@@ -19,8 +20,8 @@ int main( int argc, const char* argv[] )
 
     RspPacketCodec *c = new RspPacketCodec(_loop, std::chrono::milliseconds(100));
 
-    c->encode(TEST_STRING, strlen(TEST_STRING), c_buf);
-    c->encode(TEST_STRING, strlen(TEST_STRING), c_buf);
+    c->encode(TEST_STRING, strlen(TEST_STRING), c_buf, true);
+    c->encode(TEST_STRING, strlen(TEST_STRING), c_buf, true);
     c->encode_ack(c_buf);
 
     c->on_ack([](){ std::cout << "# ACK\n"; });
@@ -38,6 +39,7 @@ int main( int argc, const char* argv[] )
     c_buf->write_copy(INVALID_PACKET2, sizeof(INVALID_PACKET2));
     c->decode(c_buf);
     _loop->start();
+    c->encode(REPEAT_STRING, strlen(REPEAT_STRING), c_buf, false);
     delete(c);
     std::cout << "Test Passed\n";
 }

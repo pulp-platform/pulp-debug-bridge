@@ -222,13 +222,9 @@ extern "C" void bridge_loopmanager_init(unsigned int debug_struct_addr)
 {
   if (!bridge->m_loop_manager) {
     bridge->m_loop_manager = std::make_shared<LoopManager>(bridge->m_event_loop, std::static_pointer_cast<Cable>(bridge->m_adu), debug_struct_addr);
-    bridge->m_loop_manager->once_exit([](){
+    bridge->m_loop_manager->on_exit([](){
       // Program exited - remove loopers and trigger wait_exit command
-      bridge->m_loop_manager->clear_loopers();
-      bridge->m_reqloop = nullptr;
-      bridge->m_ioloop = nullptr;
-      bridge->m_loop_manager = nullptr;
-      // Now trigger exit to move on to next command
+      bridge->m_loop_manager->stop();
       bridge->m_bridge_commands->trigger_exit();
     });
   } else

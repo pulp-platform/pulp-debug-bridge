@@ -68,7 +68,6 @@ int aeCreateAsyncSocket(aeEventLoop *eventLoop);
 
 aeEventLoop *aeCreateEventLoop(int maxFired, void * loopdata, int flags, aeLoopStopProc *loopStopProc) {
     aeEventLoop *eventLoop;
-
     if ((eventLoop = zmalloc(sizeof(*eventLoop))) == NULL) goto err;
     eventLoop->events = NULL;
     eventLoop->maxFired = maxFired;
@@ -393,9 +392,10 @@ int aeTimeEventIsEarlier(aeTimeEvent *a, aeTimeEvent *b) {
     return ((aeCmpTimeval(&a->when, &b->when) < 0)?-1:1); 
 }
 
-int aeCreateTimeEvent(aeEventLoop *UNUSED(eventLoop), aeTimeEvent *te, aeTimeProc *proc, void *clientData, aeDeleteTimeProc *deleteProc, void *deleteClientData)
+int aeCreateTimeEvent(aeEventLoop * UNUSED(eventLoop), aeTimeEvent *te, aeTimeProc *proc, void *clientData, aeDeleteTimeProc *deleteProc, void *deleteClientData)
 {
     if (te == NULL) return AE_ERR;
+
     memset(te, 0, sizeof(aeTimeEvent));
 
     te->timeProc = proc;
@@ -604,6 +604,7 @@ static void fireFileEvent(aeEventLoop *eventLoop, aeFileEvent *fe)
  * The function returns the number of events processed. */
 int aeProcessEvents(aeEventLoop *eventLoop, int flags)
 {
+// #define AE_LOOP_DEBUG
 #ifdef AE_LOOP_DEBUG
     {
         aeAsyncEvent *ae;

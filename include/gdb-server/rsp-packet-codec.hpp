@@ -78,7 +78,7 @@ public:
     void on_ctrlc(const PacketCtrlCProc &cb) { m_pkt_ctrlc = cb; }
     void on_ack(const PacketAckProc &cb) { m_pkt_ack = cb; }
 
-    bool encode(const char * buf, size_t len, const std::shared_ptr<CircularCharBuffer> &circ_buf);
+    bool encode(const char * buf, size_t len, const std::shared_ptr<CircularCharBuffer> &circ_buf, bool dont_encode_runs);
     bool encode_ack(const std::shared_ptr<CircularCharBuffer> &circ_buf);
 private:
     char s_out_pkt[RSP_PACKET_MAX_LEN];
