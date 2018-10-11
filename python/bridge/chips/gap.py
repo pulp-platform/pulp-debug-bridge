@@ -168,7 +168,9 @@ class gap_debug_bridge(debug_bridge):
         res = self.get_cable().chip_reset(True)
         res = res and self.get_cable().jtag_set_reg(JTAG_SOC_CONFREG, JTAG_SOC_CONFREG_WIDTH, BOOT_MODE_JTAG_HYPER)
         res = res and self.get_cable().chip_reset(False)
+        res = res and self.write(0x1B300000, 4, [0, 0, 1, 0])
 
+        self.start_cores = True
         return res
 
     # the flash process needs to happen asynchronously since we want the loopers
