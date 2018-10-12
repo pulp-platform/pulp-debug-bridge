@@ -73,6 +73,7 @@ class Target_cluster_power
 {
 public:
   virtual bool is_on() { return true; }
+  virtual void init() {}
   virtual ~Target_cluster_power() {}
 };
 
@@ -84,11 +85,13 @@ public:
   Target_cluster_power_bypass(Gdb_server * top, uint32_t reg_addr, int bit);
   ~Target_cluster_power_bypass() {}
   bool is_on();
+  void init() { m_stay_on_indicated = false; }
 
 private:
   Gdb_server * m_top;
   uint32_t reg_addr;
   int bit;
+  bool m_stay_on_indicated = false;
 };
 
 

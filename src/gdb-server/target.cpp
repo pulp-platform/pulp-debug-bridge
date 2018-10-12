@@ -131,11 +131,16 @@ Target_cluster_power_bypass::Target_cluster_power_bypass(Gdb_server * top, uint3
 
 bool Target_cluster_power_bypass::is_on()
 {
-
   uint32_t info = 0;
   if (!m_top->cable->access(false, reg_addr, 4, (char*)&info))
-    throw CableException("Error reading from to 0x%08x", reg_addr);
+    throw CableException("Error reading from 0x%08x", reg_addr);
   int power = (info >> bit) & 1;
+  // if (power && !m_stay_on_indicated) {
+  //   info |= (1<<(bit+1));
+  //   if (!m_top->cable->access(false, reg_addr, 4, (char*)&info))
+  //     throw CableException("Error writing to 0x%08x", reg_addr);
+  //   m_stay_on_indicated = true;
+  // }
   m_top->log.debug("Cluster power bypass 0x%08x=0x%08x bit %d=%d\n", reg_addr, info, bit, power);
   return power;
 }
@@ -581,6 +586,7 @@ void Target_cluster_common::init()
   m_top->log.debug("Init cluster %d\n", cluster_id);
   is_on = false;
   nb_on_cores = 0;
+  power->init();
   for (auto &core: cores)
   {
     core->init();
