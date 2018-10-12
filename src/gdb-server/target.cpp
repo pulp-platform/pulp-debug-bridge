@@ -135,8 +135,9 @@ bool Target_cluster_power_bypass::is_on()
   uint32_t info = 0;
   if (!m_top->cable->access(false, reg_addr, 4, (char*)&info))
     throw CableException("Error reading from to 0x%08x", reg_addr);
-  m_top->log.debug("Cluster power bypass 0x%08x\n", info);
-  return (info >> bit) & 1;
+  int power = (info >> bit) & 1;
+  m_top->log.debug("Cluster power bypass 0x%08x=0x%08x bit %d=%d\n", reg_addr, info, bit, power);
+  return power;
 }
 
 
@@ -337,15 +338,15 @@ void Target_core::stop()
     data |= 0x10000;
     this->write(DBG_CTRL_REG, data);
   }
-
+#define __PARANOID__
 #ifdef __PARANOID__
   // verify
   data = 0;
   this->read(DBG_CTRL_REG, &data);
+  if (!(data&0x10000))
+    m_top->log.error("read 0x%08x from CTRL_REG after stop!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n", data);
 #endif
 
-  if (!(data&0x10000))
-    m_top->log.error("read 0x%08x from CTRL_REG after stop!\n", data);
 
   this->stopped = true;
 }
@@ -497,14 +498,24 @@ bool Target_core::decide_resume()
 
 void Target_core::commit_resume()
 {
-  this->stopped = false;
-  this->pc_is_cached = false;
+  if (!this->is_on) {
+    this->stopped = false;
+    this->pc_is_cached = false;
+    on_trap = false;
+    return;
+  }
 
-  if (!this->is_on) return;
-
-  if (m_top->bkp->have_changed()) {
+  // we previously stopped on a breakpoint so step back to reexecute the instruction
+  if (on_trap) {
+    m_top->log.debug("Core %d:%d was on breakpoint. Re-executing\n", get_cluster_id(), get_core_id());
+    write(DBG_NPC_REG, pc_cached); // re-execute this instruction - this will also flush prefetch
+    on_trap = false;
+  } else if (m_top->bkp->have_changed()) {
     this->flush();
   }
+
+  this->stopped = false;
+  this->pc_is_cached = false;
 
   m_top->log.debug("Commit resume (cluster: %d, core: %d, step: %d)\n",  this->get_cluster_id(), core_id, step);
 
@@ -518,18 +529,20 @@ void Target_core::commit_resume()
 void Target_core::resume()
 {
   if (!is_on) return;
-
-  m_top->log.debug("Resuming (cluster: %d, core: %d, step: %d)\n",  this->get_cluster_id(), core_id, step);
+  uint32_t ppc, npc, ctrl;
+  this->read(DBG_PPC_REG, &ppc);
+  this->read(DBG_NPC_REG, &npc);
+  this->read(DBG_CTRL_REG, &ctrl);
+  m_top->log.debug("Resuming (cluster: %d, core: %d, step: %d) ppc 0x%08x npc 0x%08x ctrl 0x%08x\n",  this->get_cluster_id(), core_id, step, ppc, npc, ctrl);
 
   this->write(DBG_CTRL_REG, step);
 
-  uint32_t test;
-  this->read(DBG_CTRL_REG, &test);
+  this->read(DBG_CTRL_REG, &ctrl);
 
-  if (test != step) {
-    m_top->log.debug("Core %d:%d - wrote 0x%08x got 0x%08x\n", this->get_cluster_id(), this->get_core_id(), step, test);
+  if (ctrl != step) {
+    m_top->log.debug("Core %d:%d - wrote 0x%08x got 0x%08x\n", this->get_cluster_id(), this->get_core_id(), step, ctrl);
   } else {
-    m_top->log.debug("Core %d:%d - started ok\n", this->get_cluster_id(), this->get_core_id(), step, test);
+    m_top->log.debug("Core %d:%d - started ok\n", this->get_cluster_id(), this->get_core_id(), step, ctrl);
   }
 }
 
@@ -651,12 +664,19 @@ void Target_cluster_common::flush()
 
 bool Target_cluster_common::decide_resume()
 {
+  bool res = true;
   for (auto &core: cores) {
-    if (core->should_resume() && !core->decide_resume()) {
-      return false;
-    }
+    if (core->should_resume()) {
+      // If at least one core is stepping then we must resume
+      // since gdb will continue trying until it actually steps
+      if (core->get_step_mode()) return true;
+      // check if the core is already on a breakpoint
+      if (!core->decide_resume()) {
+        res = false;
+      }
+    } 
   }
-  return true;
+  return res;
 }
 
 void Target_cluster_common::commit_resume()
@@ -838,7 +858,8 @@ Target_cluster::Target_cluster(js::config *system_config, js::config *config, Gd
   {
     uint32_t addr = system_config->get("**/apb_soc_ctrl/base")->get_int() +
       bypass_config->get("offset")->get_int();
-    int bit = bypass_config->get("content/dbg1/bit")->get_int();
+    // int bit = bypass_config->get("content/dbg1/bit")->get_int();
+    int bit = 16; // patched manually for GAP ... needs updating in JSON
 
     // Case where there is an apb soc ctrl register which tells if the cluster is on
     power = std::make_shared<Target_cluster_power_bypass>(top, addr, bit);

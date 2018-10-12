@@ -158,12 +158,12 @@ void LoopManager::target_state_sync(hal_target_state_t * target)
 
 bool LoopManager::program_has_exited(hal_debug_struct_t *debug_struct)
 {
-    unsigned int value = 0;
+    uint32_t value = 0;
     access(false, PTR_2_INT(&debug_struct->exit_status), 4, (char*)&value);
     if (value >> 31) {
-      int status = ((int)value << 1) >> 1;
+      int32_t status = ((int32_t)value << 1) >> 1;
       log.user("Detected end of application, exiting with status: %d\n", status);
-      emit_exit();
+      emit_exit(status);
       return true;
     }
     return false;

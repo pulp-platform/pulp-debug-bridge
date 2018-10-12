@@ -82,7 +82,7 @@ protected:
 SMART_EMITTER(ProgramExit, exit)
 SMART_EMITTER(AvailabilityChange, availability_change)
 
-class LoopManager : public ProgramExitEmitter<>, public AvailabilityChangeEmitter<uint32_t> {
+class LoopManager : public ProgramExitEmitter<int32_t>, public AvailabilityChangeEmitter<uint32_t> {
 public:
   LoopManager(const EventLoop::SpEventLoop &event_loop, std::shared_ptr<Cable> cable, unsigned int debug_struct_addr, 
       int64_t slow_usecs = LOOP_DEFAULT_SLOW_LOOP_USECS, int64_t fast_usecs = LOOP_DEFAULT_LOOP_USECS, bool check_exit = true);

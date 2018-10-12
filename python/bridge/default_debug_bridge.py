@@ -254,6 +254,7 @@ class debug_bridge(object):
     def log(self, level, *args):
         if self.verbose >= level:
             print (*args)
+            sys.stdout.flush()
 
     def get_cable(self):
         if self.cable is None:
@@ -328,7 +329,6 @@ class debug_bridge(object):
 
     def start(self):
         start_addr_config = self.config.get('**/debug_bridge/start_addr')
-        print(start_addr_config)
         if start_addr_config is not None:
             self.is_started = True
 
@@ -478,7 +478,7 @@ class debug_bridge(object):
             return self.encode_bytes("E00", buf, buf_len)
 
     def qrcmd_shutdown(self, cmd, buf, buf_len):
-        self.close()
+        self.abort()
         return self.encode_bytes("OK", buf, buf_len)
 
     def hex_string(self, s):
@@ -577,6 +577,8 @@ class debug_bridge(object):
 
             return self.qrcmd_cb(cmd[1], buf, buf_len)
         # disabled for the moment since this causes issues with breakpoints for an unknown reason
+        elif cmd.startswith("__gdb_tgt_run"):
+            self.doreset(False)
         elif cmd.startswith("__gdb_tgt_res"):
             ret = 0
             if self.has_loopers:
@@ -612,7 +614,6 @@ class debug_bridge(object):
             port,
             self.cmd_func_ptr,
             self.capabilities_str)
-
         return 0
 
     def abort(self):
@@ -625,7 +626,7 @@ class debug_bridge(object):
         self.module.bridge_loopmanager_clear()
         self.module.gdb_server_close()
 
-    def wait(self):
+    def run_loop(self):
         self.module.bridge_start()
         self.callbacks = None
         self.log(1, "Loop exited")

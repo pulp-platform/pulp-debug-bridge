@@ -84,7 +84,7 @@ void Rsp::client_connected(const tcp_socket_ptr_t &client)
 void Rsp::client_disconnected(const tcp_socket_ptr_t &UNUSED(sock)) {
   log.user("RSP: client disconnected (aborted: %d)\n", m_aborted);
 
-  if (!m_aborted)
+  if (!m_aborted && m_target_state == RSP_TARGET_STOPPED)
   {
     log.debug("RSP: clear breakpoints\n");
     // clear the breakpoints
@@ -94,6 +94,8 @@ void Rsp::client_disconnected(const tcp_socket_ptr_t &UNUSED(sock)) {
     log.debug("RSP: resume target\n");
     resume_target(false);
   }
+  
+  m_stopping = m_stopping||m_target_state == RSP_TARGET_EXITED;
   if (m_stopping) {
     stop_listener();
   }
@@ -175,6 +177,10 @@ void Rsp::resume_target(bool step, int tid)
   m_top->target->resume_all();
 }
 
+void Rsp::signal_exit(int status)
+{
+  if (m_client) m_client->signal_exit(status);
+}
 
 // Rsp::Client
 
@@ -204,7 +210,7 @@ Rsp::Client::Client(const std::shared_ptr<Rsp> rsp, tcp_socket_ptr_t client) : m
   });
   m_codec->on_ctrlc([this](){
     log.protocol("RSP: received ctrl-c\n");
-    if (m_state == RSP_TARGET_RUNNING)
+    if (is_running())
       halt_target();
     signal(NULL);
   });
@@ -216,11 +222,32 @@ Rsp::Client::Client(const std::shared_ptr<Rsp> rsp, tcp_socket_ptr_t client) : m
   m_client->set_events(Readable);
 }
 
+void Rsp::Client::signal_exit(int32_t status)
+{
+  bool signal_it = is_running();
+  m_exit_status = status;
+  if (signal_it) {
+    halt_target();
+    m_rsp->set_target_state(RSP_TARGET_EXITED);
+    signal();
+  } else {
+    m_rsp->set_target_state(RSP_TARGET_EXITED);
+  }
+}
+
 void Rsp::Client::stop()
 {
   m_wait_te->setTimeout(kEventLoopTimerDone);
   log.debug("RSP client stopping\n");
   m_client->close();
+}
+
+bool Rsp::Client::run(char * filename)
+{
+  log.debug("run program %s (new program not supported)\n", (filename?filename:"same again"));
+  m_rsp->set_target_state(RSP_TARGET_STOPPED);
+  m_top->cmd_cb("__gdb_tgt_run", NULL, 0);
+  return signal();
 }
 
 bool Rsp::Client::try_decode(char * pkt, size_t pkt_len)
@@ -242,15 +269,14 @@ bool Rsp::Client::v_packet(char* data, size_t len)
   log.debug("V Packet\n");
   if (strncmp ("vKill", data, std::min(strlen ("vKill"), len)) == 0)
   {
+    m_rsp->set_target_state(RSP_TARGET_KILLED);
     halt_target();
     return send_str("OK");
   }
-  // else if (strncmp ("vRun", data, strlen ("vRun")) == 0)
-  // {
-  //   char *filename = &data[5];
-  //   log.print(LOG_DEBUG, "Run: %s\n", filename);
-  //   return send_str("X09;process:a410");
-  // }
+  else if (strncmp ("vRun", data, strlen ("vRun")) == 0)
+  {
+    return run(&data[5]);
+  }
   else if (strncmp ("vCont?", data, std::min(strlen ("vCont?"), len)) == 0)
   {
     return send_str("vCont;c;s;C;S");
@@ -321,7 +347,7 @@ bool Rsp::Client::v_packet(char* data, size_t len)
         return send_str("N");
     }
     m_rsp->indicate_resume();
-    m_state = RSP_TARGET_RUNNING;
+    m_rsp->set_target_state(RSP_TARGET_RUNNING);
     m_top->target->resume_all();
 
     return wait();
@@ -700,7 +726,12 @@ bool Rsp::Client::signal(const std::shared_ptr<Target_core> &core)
 {
   char str[128];
   int len;
-  if (core == NULL) {
+  RspTargetState state = m_rsp->get_target_state();
+  if (state == RSP_TARGET_KILLED) {
+    len = snprintf(str, 128, "X%02x", 9);
+  } if (state == RSP_TARGET_EXITED) {
+    len = snprintf(str, 128, "W%02x", (uint32_t) m_exit_status);
+  } else if (core == NULL) {
     auto current_core = m_top->target->get_thread(m_thread_sel);
     len = snprintf(str, 128, "S%02x", get_signal(current_core));
   } else {
@@ -776,7 +807,7 @@ bool Rsp::Client::cont(char* data, size_t)
 
   m_thread_sel = m_rsp->m_thread_init;
 
-  m_state = RSP_TARGET_RUNNING;
+  m_rsp->set_target_state(RSP_TARGET_RUNNING);
   m_rsp->resume_target(false);
   return wait();
 }
@@ -812,7 +843,7 @@ bool Rsp::Client::step(char* data, size_t len)
 
   m_thread_sel = m_rsp->m_thread_init;
 
-  m_state = RSP_TARGET_RUNNING;
+  m_rsp->set_target_state(RSP_TARGET_RUNNING);
   m_rsp->resume_target(true);
   return wait();
 }
@@ -820,19 +851,26 @@ bool Rsp::Client::step(char* data, size_t len)
 void Rsp::Client::halt_target() {
   m_wait_te->setTimeout(kEventLoopTimerDone);
   m_rsp->halt_target();
-  m_state = RSP_TARGET_STOPPED;
+  m_rsp->set_target_state(RSP_TARGET_STOPPED);
 }
 
 int64_t Rsp::Client::wait_routine()
 {
-  auto stopped_core = m_top->target->check_stopped();
+  std::shared_ptr<Target_core> stopped_core;
+  try {
+    stopped_core = m_top->target->check_stopped();
+  } catch (CableException e) {
+    log.error("cable exception checking stop status %s\n", e.what());
+    stop();
+    return kEventLoopTimerDone;
+  }
 
   if (stopped_core) {
     // move to thread of stopped core
     m_thread_sel = stopped_core->get_thread_id();
     log.debug("found stopped core - thread %d\n", m_thread_sel + 1);
     m_rsp->halt_target();
-    m_state = RSP_TARGET_STOPPED;
+    m_rsp->set_target_state(RSP_TARGET_STOPPED);
     if (!signal(stopped_core)) stop();
     return kEventLoopTimerDone;
   } else {
@@ -906,6 +944,9 @@ bool Rsp::Client::decode(char* data, size_t len)
     case 'C':
       return cont(&data[0], len);
 
+    case 'R':
+      return run();
+
     case 's':
     case 'S':
       return step(&data[0], len);
@@ -941,8 +982,8 @@ bool Rsp::Client::decode(char* data, size_t len)
       send_str("OK");
       return false;
 
-    // case '!':
-    //   return send_str("OK"); // extended mode supported
+    case '!':
+      return send_str("OK"); // extended mode supported
 
     default:
       log.error("Unknown packet: starts with %c\n", data[0]);

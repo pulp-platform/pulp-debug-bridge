@@ -24,7 +24,6 @@
 int BridgeCommands::start_bridge() {
     if (m_command_stack.size() != 1) throw BridgeUnmatchedLoopException();
     queue_next_command();
-    m_state->m_event_loop->start();
     return this->m_return_value;
 }
 

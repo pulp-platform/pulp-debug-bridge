@@ -191,7 +191,7 @@ def wait(bridge):
     if args.verbose >= 4:
         print ('Waiting termination')
 
-    return bridge.wait()
+    return bridge.add_wait_exit()
 
 def flash(bridge):
     # When using the flasher, the binaries should be the flasher
@@ -460,4 +460,5 @@ def handle_commands(bridge):
             cmd_idx = cmd_idx + 1
 
 handle_commands(bridge)
+bridge.run_loop()
 print("Exiting!!")

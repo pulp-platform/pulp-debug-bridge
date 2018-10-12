@@ -55,6 +55,10 @@ void Gdb_server::target_update_power() {
   target->update_power();
 }
 
+void Gdb_server::signal_exit(int status) {
+  rsp->signal_exit(status);
+}
+
 void Gdb_server::refresh_target()
 {
   target->reinitialize();

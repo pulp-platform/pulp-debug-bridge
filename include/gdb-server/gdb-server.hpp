@@ -128,6 +128,7 @@ public:
   void stop_target();
   void refresh_target();
   void target_update_power();
+  void signal_exit(int status);
 
   Log log;
   EventLoop::SpEventLoop m_event_loop;
@@ -174,6 +175,7 @@ public:
   void commit_resume();
   bool should_resume() { return resume_prepared; }
   void set_step_mode(bool new_step);
+  bool get_step_mode() { return step; }
   void commit_step_mode();
   void resume();
   void flush();
@@ -323,6 +325,17 @@ class Rsp : public std::enable_shared_from_this<Rsp> {
     void stop();
     void abort();
     void init();
+    void signal_exit(int32_t status);
+
+    enum RspTargetState {
+      RSP_TARGET_RUNNING,
+      RSP_TARGET_STOPPED,
+      RSP_TARGET_EXITED,
+      RSP_TARGET_KILLED
+    };
+
+    void set_target_state(RspTargetState state) { m_target_state = state; }
+    RspTargetState get_target_state() { return m_target_state; }
 
     class Client
     {
@@ -330,13 +343,11 @@ class Rsp : public std::enable_shared_from_this<Rsp> {
       public:
         Client(std::shared_ptr<Rsp> rsp, tcp_socket_ptr_t client);
         void stop();
-        bool is_running() { return m_state == RSP_TARGET_RUNNING; };
+        bool is_running() { return m_rsp->get_target_state() == RSP_TARGET_RUNNING; };
         bool send_str(const char* data);
+        void signal_exit(int32_t status);
       private:
-        enum RspClientState {
-          RSP_TARGET_RUNNING,
-          RSP_TARGET_STOPPED
-        };
+
         void halt_target();
         bool try_decode(char * pkt, size_t pkt_len);
         bool remote_capability(const char * name) {
@@ -356,6 +367,8 @@ class Rsp : public std::enable_shared_from_this<Rsp> {
         bool multithread(char* data, size_t len);
 
         bool v_packet(char* data, size_t len);
+
+        bool run(char * filename = NULL);
 
         bool query(char* data, size_t len);
 
@@ -378,7 +391,8 @@ class Rsp : public std::enable_shared_from_this<Rsp> {
         bool bp_insert(char* data, size_t len);
         bool bp_remove(char* data, size_t len);
 
-        RspClientState m_state = RSP_TARGET_STOPPED;
+        int32_t m_exit_status = 0;
+
         std::shared_ptr<RspPacketCodec> m_codec;
         EventLoop::SpTimerEvent m_wait_te;
 
@@ -413,6 +427,7 @@ class Rsp : public std::enable_shared_from_this<Rsp> {
     Gdb_server * m_top = nullptr;
     std::shared_ptr<Tcp_listener> m_listener;
 
+    RspTargetState m_target_state = RSP_TARGET_STOPPED;
     int m_thread_init;
     int m_port;
     EventLoop::SpEventLoop m_event_loop;
