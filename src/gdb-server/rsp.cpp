@@ -94,7 +94,7 @@ void Rsp::client_disconnected(const tcp_socket_ptr_t &UNUSED(sock)) {
     log.debug("RSP: resume target\n");
     resume_target(false);
   }
-  
+
   m_stopping = m_stopping||m_target_state == RSP_TARGET_EXITED;
   if (m_stopping) {
     stop_listener();
@@ -150,19 +150,9 @@ void Rsp::start() {
   m_listener->start();
 }
 
-void Rsp::indicate_resume()
-{
-  m_top->cmd_cb("__gdb_tgt_res", NULL, 0);
-}
-
-void Rsp::indicate_halt()
-{
-  m_top->cmd_cb("__gdb_tgt_hlt", NULL, 0);
-}
-
 void Rsp::halt_target()
 {
-  indicate_halt();
+  m_top->emit_started(false);
   m_top->target->halt();
 }
 
@@ -173,7 +163,7 @@ void Rsp::resume_target(bool step, int tid)
     m_top->target->get_thread(tid)->prepare_resume(step);
   else
     m_top->target->prepare_resume_all(step);
-  indicate_resume();
+  m_top->emit_started(true);
   m_top->target->resume_all();
 }
 
@@ -246,7 +236,7 @@ bool Rsp::Client::run(char * filename)
 {
   log.debug("run program %s (new program not supported)\n", (filename?filename:"same again"));
   m_rsp->set_target_state(RSP_TARGET_STOPPED);
-  m_top->cmd_cb("__gdb_tgt_run", NULL, 0);
+  m_top->emit_run(filename);
   return signal();
 }
 
@@ -346,7 +336,7 @@ bool Rsp::Client::v_packet(char* data, size_t len)
       } else
         return send_str("N");
     }
-    m_rsp->indicate_resume();
+    m_top->emit_started(true);
     m_rsp->set_target_state(RSP_TARGET_RUNNING);
     m_top->target->resume_all();
 
@@ -447,7 +437,8 @@ bool Rsp::Client::query(char* data, size_t len)
   }
   else if (strncmp ("qRcmd", data, strlen ("qRcmd")) == 0||strncmp ("qXfer", data, strlen ("qXfer")) == 0)
   {
-    int ret = m_top->cmd_cb(data, reply, REPLY_BUF_LEN);
+    int ret;
+    m_top->emit_monitor_command(data, reply, REPLY_BUF_LEN, &ret);
     if (ret > 0) {
       return send_str(reply);
     } else {
@@ -640,13 +631,16 @@ bool Rsp::Client::reg_read(char* data, size_t)
     return send_str("xx");
   } else if (addr < 32) {
     log.debug("Read register 0x%02x\n", addr);
-    core->gpr_read(addr, &rdata);
+    if (core->register_available(addr))
+      core->gpr_read(addr, &rdata);
+    else
+      return send_str("xx");
   } else if (addr == 0x20) {
     log.debug("Read PC\n");
     core->actual_pc_read(&rdata);
   } else if (addr >= 0x41) { // Read CSR
     uint32_t csr_num = addr - 0x41;
-    if (valid_csr(csr_num)) {
+    if (valid_csr(csr_num) && core->register_available(addr)) {
       log.debug("Read CSR 0x%04x\n", csr_num);
       core->csr_read(csr_num, &rdata);
     } else {
@@ -673,22 +667,26 @@ bool Rsp::Client::reg_write(char* data, size_t)
 
   wdata = ntohl(wdata);
   auto core = m_top->target->get_thread(m_thread_sel);
-  if (addr < 32) {
-    log.debug("Write register 0x%02x 0x08x\n", addr, wdata);
-    core->gpr_write(addr, wdata);
-  } else if (addr == 32) {
-    log.debug("Write NPC 0x08x\n", wdata);
-    core->write(DBG_NPC_REG, wdata);
-  } else if (addr >= 0x41) {
-    uint32_t csr_num = addr - 0x41;
-    if (valid_csr(csr_num)) {
-      log.debug("Write CSR 0x%04x 0x08x\n", csr_num, wdata);
-      m_top->target->get_thread(m_thread_sel)->csr_write(csr_num, wdata);
+  if (core->register_available(addr)) {
+    if (addr < 32) {
+      log.debug("Write register 0x%02x 0x08x\n", addr, wdata);
+      core->gpr_write(addr, wdata);
+    } else if (addr == 32) {
+      log.debug("Write NPC 0x08x\n", wdata);
+      core->write(DBG_NPC_REG, wdata);
+    } else if (addr >= 0x41) {
+      uint32_t csr_num = addr - 0x41;
+      if (valid_csr(csr_num)) {
+        log.debug("Write CSR 0x%04x 0x08x\n", csr_num, wdata);
+        m_top->target->get_thread(m_thread_sel)->csr_write(csr_num, wdata);
+      } else {
+        return send_str("E01");
+      }
     } else {
       return send_str("E01");
     }
   } else {
-    return send_str("E01");
+    return send_str("E02");
   }
 
   return send_str("OK");
@@ -708,7 +706,10 @@ bool Rsp::Client::regs_send()
 
     // now build the string to send back
     for(i = 0; i < 32; i++) {
-      snprintf(&regs_str[i * 8], 9, "%08x", (unsigned int)htonl(gpr[i]));
+      if (core->register_available(i))
+        snprintf(&regs_str[i * 8], 9, "%08x", (unsigned int)htonl(gpr[i]));
+      else
+        snprintf(&regs_str[i * 8], 9, "xxxxxxxx");
     }
   
     if (core->actual_pc_read(&pc)) {

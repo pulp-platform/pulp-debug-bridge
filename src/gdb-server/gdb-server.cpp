@@ -23,9 +23,9 @@
 #include <stdarg.h>
 
 Gdb_server::Gdb_server(const EventLoop::SpEventLoop &event_loop, const std::shared_ptr<Cable> &cable, js::config *config, int socket_port,
-    cmd_cb_t cmd_cb, const char * capabilities)
+    const char * capabilities)
 : log("GDBS"), m_event_loop(std::move(event_loop)), cable(std::move(cable)), config(config),
-  m_socket_port(socket_port), cmd_cb(cmd_cb), capabilities(capabilities)
+  m_socket_port(socket_port), capabilities(capabilities)
 {
 }
 
@@ -39,18 +39,6 @@ void Gdb_server::start() {
   rsp->start();
 }
  
-int Gdb_server::target_is_started() {
-  return cmd_cb("__is_started", NULL, 0);
-}
-
-void Gdb_server::start_target() {
-  cmd_cb("__start_target", NULL, 0);
-}
-
-void Gdb_server::stop_target() {
-  cmd_cb("__stop_target", NULL, 0);
-}
-
 void Gdb_server::target_update_power() {
   target->update_power();
 }

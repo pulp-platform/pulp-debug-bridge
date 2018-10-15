@@ -281,12 +281,24 @@ extern "C" bool gdb_server_open(int socket_port, cmd_cb_t cmd_cb, const char * c
   // slow down printf if gdb is working so as not to starve it
   if (bridge->m_ioloop) bridge->m_ioloop->set_max_loops(2);
   try {
-    bridge->m_gdb_server = std::make_shared<Gdb_server>(bridge->m_event_loop, bridge->m_adu, bridge->m_system_config, socket_port, cmd_cb, capabilities);
+    bridge->m_gdb_server = std::make_shared<Gdb_server>(bridge->m_event_loop, bridge->m_adu, bridge->m_system_config, socket_port, capabilities);
     if (bridge->m_loop_manager) {
       bridge->m_loop_manager->once_exit([](int32_t status){
         bridge->m_gdb_server->signal_exit(status);
       });
     }
+    bridge->m_gdb_server->on_monitor_command([cmd_cb](const char * data, char * reply, int reply_len, int * retval) {
+      *retval = cmd_cb(data, reply, reply_len);
+    });
+    bridge->m_gdb_server->on_run([cmd_cb](char *){
+        cmd_cb("__gdb_tgt_run", NULL, 0);
+    });
+    bridge->m_gdb_server->on_started([cmd_cb](bool is_started){
+      if (is_started)
+        cmd_cb("__gdb_tgt_res", NULL, 0);
+      else
+        cmd_cb("__gdb_tgt_hlt", NULL, 0);
+    });
     bridge->m_gdb_server->start();
   } catch (CableException e) {
     s_log.error("error initializing GDB server %s\n", e.what());

@@ -114,11 +114,15 @@ public:
   }
 };
 
-class Gdb_server
+SMART_EMITTER(GdbServerTargetStarted, started)
+SMART_EMITTER(GdbRspRunCommand, run)
+SMART_EMITTER(GdbMonitorCommand, monitor_command)
+
+class Gdb_server : public GdbServerTargetStartedEmitter<bool>, public GdbMonitorCommandEmitter<const char *, char *, int, int *>, public GdbRspRunCommandEmitter<char *>
 {
 public:
   Gdb_server(const EventLoop::SpEventLoop &event_loop, const std::shared_ptr<Cable> &cable, js::config *config, int socket_port,
-    cmd_cb_t cmd_cb, const char * capabilities);
+    const char * capabilities);
   void start();
   int stop();
   void abort();
@@ -135,7 +139,6 @@ public:
   std::shared_ptr<Cable> cable;
   js::config *config;
   int m_socket_port;
-  cmd_cb_t cmd_cb;
   const char * capabilities;
 
   std::shared_ptr<Target> target;
@@ -159,6 +162,7 @@ public:
   int get_cluster_id();
   int get_core_id() { return this->core_id; }
   void get_name(char* str, size_t len);
+  bool register_available(int num);
 
   bool actual_pc_read(unsigned int* pc);
   bool is_stopped();
@@ -203,6 +207,7 @@ private:
   bool resume_prepared = false;
   bool on_trap = false;
   bool m_is_sleeping = false;
+  bool m_half_stopped = false;
   static int first_free_thread_id;
 };
 
@@ -316,7 +321,6 @@ private:
 };
 
 
-
 class Rsp : public std::enable_shared_from_this<Rsp> {
   public:
     Rsp(Gdb_server * top, int port, const EventLoop::SpEventLoop &event_loop, int64_t wait_time_usecs = 50000);
@@ -418,8 +422,6 @@ class Rsp : public std::enable_shared_from_this<Rsp> {
     void notify_finished();
     void resume_target(bool step=false, int tid=-1);
     void halt_target();
-    void indicate_halt();
-    void indicate_resume();
     void stop_listener();
 
     std::shared_ptr<Target_core> main_core = nullptr;

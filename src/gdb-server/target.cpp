@@ -271,6 +271,10 @@ void Target_core::set_power(bool is_on)
 }
 
 
+bool Target_core::register_available(int UNUSED(num))
+{
+  return is_on && !m_half_stopped;
+}
 
 void Target_core::read(uint32_t addr, uint32_t* rdata)
 {
@@ -343,15 +347,15 @@ void Target_core::stop()
     data |= 0x10000;
     this->write(DBG_CTRL_REG, data);
   }
-#define __PARANOID__
-#ifdef __PARANOID__
   // verify
   data = 0;
   this->read(DBG_CTRL_REG, &data);
-  if (!(data&0x10000))
-    m_top->log.error("read 0x%08x from CTRL_REG after stop!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n", data);
-#endif
-
+  if (!(data&0x10000)) {
+    m_half_stopped = true;
+    m_top->log.error("read 0x%08x from CTRL_REG after stop\n", data);
+  } else {
+    m_half_stopped = false;
+  }
 
   this->stopped = true;
 }

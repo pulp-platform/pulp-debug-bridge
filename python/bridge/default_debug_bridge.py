@@ -233,6 +233,7 @@ class debug_bridge(object):
         self.module.bridge_init(config.dump_to_string().encode('utf-8'), verbose)
 
         self.capabilities("")
+        # self.capabilities("qXfer:features:read+")
 
 #self.module.jtag_shift.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.POINTER(ctypes.c_char_p), ctypes.POINTER(ctypes.c_char_p)]
 
