@@ -12,7 +12,7 @@
  * limitations under the License.
  */
 
-/* 
+/*
  * Authors: Andreas Traber
  */
 
@@ -24,7 +24,7 @@
  *  1       TDI           Set as output but do not drive manually
  *  2       TDO           Set as input, should not be driven
  *  3       TMS           Set as output but do not drive manually
- *  4       ??            GPIOL0 of FT2232H, set as output 
+ *  4       ??            GPIOL0 of FT2232H, set as output
  *  5       ??            GPIOL1 of FT2232H, set as input, should not be driven
  *  6       ??            GPIOL2 of FT2232H, set as input, should not be driven
  *  7       RTCK          GPIOL3 of FT2232H, set as input, should not be driven
@@ -103,7 +103,7 @@ Ftdi::connect(js::config *config)
   int error;
   const char *description = NULL;
   struct ftdi_version_info version;
-  
+
   if (config && config->get("description") != NULL)
   {
     description = config->get("description")->get_str().c_str();
@@ -215,7 +215,7 @@ Ftdi::connect(js::config *config)
     set_bit_direction(9, 1);
 
     SET_DATA_BITS_LOW_BYTE(buf, rst_len, 0x00, 0x1b); // Set value & direction of ADBUS lines, direction (1 == output)
-    SET_TCK_DIVISOR(buf, rst_len, 0x01, 0x00); // We cannot go below that on fulmine
+    SET_TCK_DIVISOR(buf, rst_len, 0x05, 0x00); // We cannot go below that on fulmine
     SET_DATA_BUFFER(buf, rst_len, SEND_IMMEDIATE);
   }
   else if (m_id == Digilent)
@@ -953,7 +953,7 @@ Ftdi::jtag_reset(bool active)
         if(ft2232_write((char *)buf, cmd_len, 0) != cmd_len) return false;
       }
       return true;
-    }    
+    }
     else if(chip == "vivosoc3")
     {
       bool result = set_bit_value(9, active);
