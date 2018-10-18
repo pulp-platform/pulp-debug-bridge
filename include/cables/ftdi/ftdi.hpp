@@ -66,6 +66,8 @@ class Ftdi : public Cable {
 
     bool jtag_reset(bool active);
 
+    bool chip_setVQPS(bool high);
+
     int flush();
 
     bool purge();

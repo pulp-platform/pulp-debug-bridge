@@ -18,6 +18,8 @@
 
 from bridge.default_debug_bridge import *
 import time
+import math
+import argparse
 
 JTAG_SOC_AXIREG = 4
 
@@ -29,6 +31,159 @@ BOOT_MODE_JTAG_HYPER = 11
 CONFREG_BOOT_WAIT = 1
 CONFREG_PGM_LOADED = 1
 CONFREG_INIT = 0
+
+INFO_FUSE_OFFSET = 0
+INFO2_FUSE_OFFSET = 1
+AES_KEY_FUSE_OFFSET = 2
+AES_IV_FUSE_OFFSET = 18
+WAIT_XTAL_DELTA_FUSE_OFFSET = 26
+WAIT_XTAL_MIN_FUSE_OFFSET = 28
+WAIT_XTAL_MAX_FUSE_OFFSET = 29
+HYPER_RDS_DELAY_FUSE_OFFSET = 30
+FLL_FREQ_FUSE_OFFSET = 31
+FLL_TOLERANCE_FUSE_OFFSET = 32
+FLL_ASSERT_CYCLES_FUSE_OFFSET = 33
+USER_FUSE_OFFSET = 48
+USER_FUSE_SIZE = 80
+
+FUSES_ORD = [
+    "INFO",
+    "PLT",
+    "BOOT",
+    "ENCRYPTED",
+    "WAIT_XTAL",
+    "INFO2",
+    "FLL_FREQ_SET",
+    "FLL_CONF",
+    "FLL_BYPASS_LOCK",
+    "SPIM_CLKDIV",
+    "AES_KEY",
+    "AES_IV",
+    "WAIT_XTAL_DELTA",
+    "WAIT_XTAL_MAX",
+    "WAIT_XTAL_MIN",
+    "HYPER_RDS_DELAY",
+    "FLL_FREQ",
+    "FLL_TOLERANCE",
+    "FLL_ASSERT_CYCLES",
+]
+
+FUSES = {
+    "INFO": {
+        "fuse_offset": INFO_FUSE_OFFSET * 8,
+        "bit_len": 8,
+        "format": "binary",
+        "writable": False
+    },
+    "PLT": {
+        "fuse_offset": (INFO_FUSE_OFFSET * 8) + 0,
+        "bit_len": 3,
+        "format": "binary",
+        "writable": False
+    },
+    "BOOT": {
+        "fuse_offset": (INFO_FUSE_OFFSET * 8) + 3,
+        "bit_len": 3,
+        "format": "binary",
+        "writable": True
+    },
+    "ENCRYPTED": {
+        "fuse_offset": (INFO_FUSE_OFFSET * 8) + 6,
+        "bit_len": 1,
+        "format": "binary",
+        "writable": True
+    },
+    "WAIT_XTAL": {
+        "fuse_offset": (INFO_FUSE_OFFSET * 8) + 7,
+        "bit_len": 1,
+        "format": "binary",
+        "writable": True
+    },
+    "INFO2": {
+        "fuse_offset": INFO2_FUSE_OFFSET * 8,
+        "bit_len": 8,
+        "format": "binary",
+        "writable": False
+    },
+    "FLL_FREQ_SET": {
+        "fuse_offset": (INFO2_FUSE_OFFSET * 8) + 0,
+        "bit_len": 1,
+        "format": "binary",
+        "writable": True
+    },
+    "FLL_CONF": {
+        "fuse_offset": (INFO2_FUSE_OFFSET * 8) + 1,
+        "bit_len": 1,
+        "format": "binary",
+        "writable": True
+    },
+    "FLL_BYPASS_LOCK": {
+        "fuse_offset": (INFO2_FUSE_OFFSET * 8) + 2,
+        "bit_len": 1,
+        "format": "binary",
+        "writable": True
+    },
+    "SPIM_CLKDIV": {
+        "fuse_offset": (INFO2_FUSE_OFFSET * 8) + 3,
+        "bit_len": 1,
+        "format": "binary",
+        "writable": True
+    },
+    "AES_KEY": {
+        "fuse_offset": AES_KEY_FUSE_OFFSET * 8,
+        "bit_len": 16 * 8,
+        "format": "hex",
+        "writable": True
+    },
+    "AES_IV": {
+        "fuse_offset": AES_IV_FUSE_OFFSET * 8,
+        "bit_len": 8 * 8,
+        "format": "hex",
+        "writable": True
+    },
+    "WAIT_XTAL_DELTA": {
+        "fuse_offset": WAIT_XTAL_DELTA_FUSE_OFFSET * 8,
+        "bit_len": 2 * 8,
+        "format": "hex",
+        "writable": True
+    },
+    "WAIT_XTAL_MIN": {
+        "fuse_offset": WAIT_XTAL_MIN_FUSE_OFFSET * 8,
+        "bit_len": 1 * 8,
+        "format": "hex",
+        "writable": True
+    },
+    "WAIT_XTAL_MAX": {
+        "fuse_offset": WAIT_XTAL_MAX_FUSE_OFFSET * 8,
+        "bit_len": 1 * 8,
+        "format": "hex",
+        "writable": True
+    },
+    "HYPER_RDS_DELAY": {
+        "fuse_offset": HYPER_RDS_DELAY_FUSE_OFFSET * 8,
+        "bit_len": 1 * 8,
+        "format": "hex",
+        "writable": True
+    },
+    "FLL_FREQ": {
+        "fuse_offset": FLL_FREQ_FUSE_OFFSET * 8,
+        "bit_len": 1 * 8,
+        "format": "hex",
+        "writable": True
+    },
+    "FLL_TOLERANCE": {
+        "fuse_offset": FLL_TOLERANCE_FUSE_OFFSET * 8,
+        "bit_len": 1 * 8,
+        "format": "hex",
+        "writable": True
+    },
+    "FLL_ASSERT_CYCLES": {
+        "fuse_offset": FLL_ASSERT_CYCLES_FUSE_OFFSET * 8,
+        "bit_len": 1 * 8,
+        "format": "hex",
+        "writable": True
+    },
+}
 
 FEATURES={
     'target.xml':'''<?xml version="1.0"?>
@@ -73,6 +228,26 @@ FEATURES={
 </target>
 '''
 }
+
+def extract_binary(buffer, bstart, blen):
+    sbuffer = []
+    idx = int(math.floor(bstart / 8))
+    bend = int(bstart) + int(blen)
+    while idx * 8 < bend:
+        rest = bend - idx * 8
+        b = ord(buffer[idx])
+        if rest < 8:
+            sbuffer.append("{0:0{1}b}".format(b>>(8-rest), rest))
+        else:
+            sbuffer.append("{:08b}".format(b))
+        idx = idx + 1
+    return "".join(sbuffer)
+
+def extract_hex(buffer, bytestart, bytelen):
+    sbuffer = []
+    for idx in range(bytestart, bytestart+bytelen-1):
+        sbuffer.append("{0:02x}".format(ord(buffer[idx])))
+    return "".join(sbuffer)
 
 class gap_debug_bridge(debug_bridge):
 
@@ -172,6 +347,183 @@ class gap_debug_bridge(debug_bridge):
 
         self.start_cores = True
         return res
+
+    def fuse_validate(self, args, do_write):
+        if do_write and args.fuse_value is None:
+            raise Exception("--fuse-value must be specified for a write")
+
+        if args.fuse_offset is not None:
+            if do_write and args.fuse_offset / 8 < USER_FUSE_OFFSET:
+                raise Exception("--fuse-name must be used for GAP system fuses")
+            if args.fuse_offset >= (USER_FUSE_OFFSET * 8) + (USER_FUSE_SIZE * 8):
+                raise Exception("--fuse-offset is invalid")
+
+        else:
+            if args.fuse_name is None:
+                raise Exception("--fuse-offset or --fuse-name must be specified")
+
+            if args.fuse_name not in FUSES:
+                if args.fuse_name.startswith("USER"):
+                    user_loc = args.fuse_name[4:].split('_', 1)
+                    if len(user_loc) == 1:
+                        reg = int(user_loc[0])
+                        if reg < 0 or reg >= USER_FUSE_SIZE:
+                            raise Exception("user register is outside bounds")
+                        fuse = { "fuse_offset": (USER_FUSE_OFFSET + reg) * 8, "bit_len": 8, "format": "hex", "writable": True }
+                    elif len(user_loc) == 2:
+                        reg = int(user_loc[0])
+                        bit = int(user_loc[1])
+                        if reg < 0 or reg >= USER_FUSE_SIZE:
+                            raise Exception("user register is outside bounds")
+                        if bit < 0 or bit > 7:
+                            raise Exception("user register bit is outside bounds")
+                        fuse = { "fuse_offset": (USER_FUSE_OFFSET + reg) * 8 + 7 - bit, "bit_len": 1, "format": "binary", "writable": True }
+                    else:
+                        raise Exception("invalid user register. Must be USER1 or USER1_1.")
+                elif args.fuse_name == "ALL":
+                    low = 1000000
+                    high = 0
+                    for fn in FUSES:
+                        f = FUSES[fn]
+                        if f["fuse_offset"] < low:
+                            low = f["fuse_offset"]
+                        last = f["fuse_offset"] + f["bit_len"] - 1
+                        if last > high:
+                            high = last
+                    fuse = { "fuse_offset": low, "bit_len": high - low + 1, "format": "all", "writable": False }
+                else:
+                    raise Exception("--fuse-name not found")
+            else:
+                fuse = FUSES[args.fuse_name]
+
+            if do_write:
+                if fuse["bit_len"] != args.fuse_value["bit_len"]:
+                    raise Exception("--fuse-value is of incorrect length")
+
+                if not fuse["writable"]:
+                    raise Exception("you cannot burn this fuse")
+
+            else:
+                if args.fuse_format is None:
+                    args.fuse_format = fuse['format']
+                args.fuse_read_len = fuse["bit_len"]
+
+            args.fuse_offset = fuse["fuse_offset"]
+
+        if not do_write:
+            if args.fuse_read_len is None:
+                raise Exception("--fuse-read-len must be specified")
+            if args.fuse_read_len + args.fuse_offset > (USER_FUSE_OFFSET * 8) + (USER_FUSE_SIZE * 8):
+                raise Exception("--fuse-read-len is out of range")
+
+
+# int32 bridge -> gap 1 op ready 1 b0
+# int32 gap -> bridge loaded / finished 1 b0
+# int32 1 write / 0 read
+# char buffer 128 bytes
+# bit_pos int32
+# bit_len int32
+# int32 status (always 0 currently - will be checked!)
+
+    def print_all_fuses(self, bit_offset, buffer):
+        print("All fuses")
+        for fname in FUSES_ORD:
+            f = FUSES[fname]
+            if f['format'] == "binary":
+                print("{0}: {1}".format(fname, extract_binary(buffer, bit_offset + f["fuse_offset"], f["bit_len"])))
+            elif f['format'] == "hex":
+                bstart = (bit_offset + f["fuse_offset"])/8
+                blen = f["bit_len"]/8
+                if f["bit_len"]%8 > 0:
+                    blen = blen + 1
+                print("{0}: {1}".format(fname, extract_binary(buffer, bstart, blen)))
+
+    def fuse(self, bit_offset, bit_len, buffer = None, fmt = "binary"):
+        self.log(1, "Fuse operation at offset {} len {}".format(bit_offset, bit_len))
+        addrHeader = self._get_binary_symbol_addr('fuseHeader')
+        addrFuseVerMaj = addrHeader
+        addrFuseVerMin = addrHeader + 4
+        addrBridgeReady = addrHeader + 8
+        addrGapReady = addrHeader + 12
+        addrOp = addrHeader + 16
+        addrPos = addrHeader + 20
+        addrLen = addrHeader + 24
+        addrStatus = addrHeader + 28
+        addrLogLevel = addrHeader + 32
+        addrBuffer = addrHeader + 36
+        bit_offset = bit_offset
+        bit_len = bit_len
+        fmt = fmt
+        if buffer is None:
+            do_write = False
+        else:
+            do_write = True
+            write_buffer = buffer           
+
+        class state:
+            state = "init"
+
+        def fuse_proc():
+            if state.state == "init":
+                if self.read_32(addrGapReady) == 0:
+                    return 0
+                ver_maj = self.read_32(addrFuseVerMaj)
+                ver_min = self.read_32(addrFuseVerMin)
+                self.write_32(addrLogLevel, self.verbose)
+                self.log(0, "Fuser version {}.{} detected".format(ver_maj, ver_min))
+                if ver_maj != 1:
+                    self.log(1, "Fuse failed. Incorrect fuser version")
+                    return -1
+
+                state.state = "op"
+            if state.state == "op":
+                self.write_32(addrGapReady, 0)
+                self.write_32(addrPos, bit_offset)
+                self.write_32(addrLen, bit_len)
+                if do_write:
+                    self.write_32(addrOp, 1)
+                    self.write(addrBuffer, math.ceil(bit_len/8), write_buffer)
+                    self.get_cable().set_VQPS(True)
+                else:
+                    self.write_32(addrOp, 0)
+
+                self.log(3, "indicate parameters set")
+                self.write_32(addrBridgeReady, 1)
+                state.state = "wait"
+            if state.state == "wait":
+                if self.read_32(addrGapReady) == 0:
+                    return 0
+                state.state = "result"
+            if state.state == "result":
+                self.log(3, "Fuser operation indicated complete")
+                if do_write:
+                    self.get_cable().set_VQPS(False)
+                status = self.read_32(addrStatus)
+                if status != 0:
+                    self.log(0, "Error in fuse operation")
+                elif not do_write:
+                    bsize = math.ceil(bit_len / 8)
+                    buffer = self.read(addrBuffer, bsize)
+                    if fmt == "binary":
+                        self.log(0, "fuse contents: {0}".format(extract_binary(buffer, 0, bit_len)))
+                    elif fmt == "all":
+                        self.print_all_fuses(bit_offset, buffer)
+                    else:
+                        self.log(0, "fuse contents: {0}".format(extract_hex(buffer, 0, math.ceil(bit_len / 8) + 1)))
+
+                else:
+                    self.log(1, "fuse written")
+
+                state.state = "init"
+                # exit fuser
+                self.write_32(addrBridgeReady, 2)
+                return -1
+
+        # keep a reference to the callback
+        self.fuse_cb = self.timer_cb_typ(fuse_proc)
+        self.module.bridge_loop_timeout(self.fuse_cb, 100000)
+
+        return True
 
     # the flash process needs to happen asynchronously since we want the loopers
     # to be running

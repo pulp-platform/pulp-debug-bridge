@@ -51,12 +51,11 @@ void Ioloop::print_one(hal_debug_struct_t *debug_struct, uint32_t len) {
   fputs(buff, stdout);
 }
 
-LooperFinishedStatus Ioloop::loop_proc(hal_debug_struct_t *debug_struct)
-{
+LooperFinishedStatus Ioloop::print_many(hal_debug_struct_t *debug_struct, int cnt) {
   try {
     uint32_t len;
     int iter = 0;
-    while((len = print_len(debug_struct)) && (m_max_loops == -1 || iter++ < m_max_loops)) {
+    while((len = print_len(debug_struct)) && (cnt == -1 || iter++ < cnt)) {
       print_one(debug_struct, len);
     }
     fflush(NULL);
@@ -64,6 +63,16 @@ LooperFinishedStatus Ioloop::loop_proc(hal_debug_struct_t *debug_struct)
   } catch (LoopCableException e) {
     return LooperFinishedStopAll;
   }
+}
+
+LooperFinishedStatus Ioloop::loop_proc(hal_debug_struct_t *debug_struct)
+{
+  return print_many(debug_struct, m_max_loops);
+}
+
+void Ioloop::flush(hal_debug_struct_t *debug_struct)
+{
+  print_many(debug_struct, -1);
 }
 
 Ioloop::Ioloop(LoopManager * top) : 

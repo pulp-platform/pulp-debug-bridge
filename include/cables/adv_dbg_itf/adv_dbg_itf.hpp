@@ -43,20 +43,18 @@ class Adv_dbg_itf : public Cable  {
     void lock();
     void unlock();
 
-
     bool access(bool write, unsigned int addr, int size, char* buffer);
 
     void device_select(unsigned int i);
-
-
 
     bool chip_reset(bool active);
     bool jtag_reset(bool active);
     bool jtag_soft_reset();
 
-
     bool bit_inout(char* inbit, char outbit, bool last);
     bool stream_inout(char* instream, char* outstream, unsigned int n_bits, bool last);
+
+    std::shared_ptr<Cable> get_device() { return m_dev; };
 
     int flush();
 

@@ -115,6 +115,21 @@ extern "C" bool chip_reset(bool active)
   return bridge->m_adu->chip_reset(active);
 }
 
+#ifdef __USE_FTDI__
+extern "C" bool cable_set_VQPS(bool active)
+{
+  if (!bridge->m_adu) return false;
+  auto dev = bridge->m_adu->get_device();
+  if (!dev) return false;
+  auto ftdi = std::dynamic_pointer_cast<Ftdi>(dev);
+  if (!ftdi) {
+    s_log.error("bad cable type");
+    return false;
+  }
+  return ftdi->chip_setVQPS(active);
+}
+#endif
+
 extern "C" bool jtag_reset(bool active)
 {
   if (!bridge->m_adu) return false;

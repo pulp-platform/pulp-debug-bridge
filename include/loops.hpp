@@ -74,6 +74,7 @@ public:
   bool get_paused() { return m_paused; }
   void set_paused(bool paused) { m_paused = paused; }
   virtual void destroy() { m_destroyed = true; }
+  virtual void flush(hal_debug_struct_t *) {}
 protected:
   LoopManager * m_top;
   bool m_paused = false, m_destroyed = false;
@@ -90,6 +91,7 @@ public:
   void set_debug_struct_addr(unsigned int debug_struct_addr);
   void start(bool fast);
   void set_loop_speed(bool fast);
+  void flush();
   void stop();
   void add_looper(const std::shared_ptr<Looper> &looper);
   void remove_looper(Looper * looper);
@@ -271,9 +273,11 @@ public:
   LooperFinishedStatus loop_proc(hal_debug_struct_t *debug_struct);
   LooperFinishedStatus register_proc(hal_debug_struct_t *debug_struct);
   void set_max_loops(int max_loops) { m_max_loops = max_loops; }
+  void flush(hal_debug_struct_t *debug_struct);
 private:
   uint32_t print_len(hal_debug_struct_t *debug_struct);
   void print_one(hal_debug_struct_t *debug_struct, uint32_t len);
+  LooperFinishedStatus print_many(hal_debug_struct_t *debug_struct, int cnt);
   int m_max_loops = 10;
   Log log;
 };

@@ -42,6 +42,31 @@ void LoopManager::access(bool write, unsigned int addr, int len, char * buf)
         throw LoopCableException();
 }
 
+void LoopManager::flush() {
+    try {
+#if defined(__NEW_REQLOOP__) && defined(__CHECK_AVAILABILITY__)
+        if (!target_is_available()) return;
+#endif
+        hal_debug_struct_t * debug_struct = activate();
+        if (debug_struct == NULL) return;
+        if (m_check_exit && program_has_exited(debug_struct)) return;
+
+        auto ilooper = m_loopers.begin();
+
+        while (ilooper != m_loopers.end() && target_is_available()) {
+            auto looper = *ilooper;
+            if (looper->get_paused()) {
+                ilooper++;
+                continue;
+            }
+            looper->flush(debug_struct);
+            ilooper++;
+        }
+    } catch (LoopCableException e) {
+        log.error("Loop manager cable error during flush\n");
+    }
+}
+
 int64_t LoopManager::run_loops() {
     try {
 #if defined(__NEW_REQLOOP__) && defined(__CHECK_AVAILABILITY__)

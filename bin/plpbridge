@@ -193,6 +193,39 @@ def wait(bridge):
 
     return bridge.add_wait_exit()
 
+
+def fuse(bridge, do_write):
+    if args.fuser is not None:
+        fuser = args.fuser
+    else:
+        fuser = os.environ["INSTALL_DIR"] + "/bin/fuser"
+
+    bridge.fuse_validate(args, do_write)
+
+    def fuse_cb(state):
+        if args.verbose >=4:
+            print("Fusing")
+
+        if do_write:
+            return bridge.fuse(args.fuse_offset, args.fuse_value["bit_len"], buffer = args.fuse_value["buffer"])
+        else:
+            return bridge.fuse(args.fuse_offset, args.fuse_read_len, fmt = args.fuse_format)
+
+    bridge.add_repeat_start(0, 1)
+    load(bridge, binaries=[ fuser ], mode='jtag')
+    ioloop(bridge)
+    start(bridge)
+    add_command(bridge, fuse_cb)
+    bridge.add_wait_exit()
+    stop(bridge)
+    bridge.add_repeat_end()
+
+def fuse_read(bridge):
+    fuse(bridge, False)
+
+def fuse_write(bridge):
+    fuse(bridge, True)
+
 def flash(bridge):
     # When using the flasher, the binaries should be the flasher
     if args.flasher is not None:
@@ -264,6 +297,8 @@ commands = {
   'wait'    : ['Wait termination',                  wait],
   'reset'   : ['Chip reset',                        reset],
   'script'  : ['Execute user scripts',              script],
+  'fuse_read' : ['Read contents of efuse',         fuse_read],
+  'fuse_write'  : ['Write contents of efuse',      fuse_write],
   'loop'    : ['loop a sequence of commands. loop=times,delay times default is -1 - loop forever. delay is in ms.'],
   'endloop'    : ['end previous loop'],
 }
@@ -274,6 +309,40 @@ command_help = """Available commands:
 
 for name, cmd in commands.items():
   command_help += '  %-10s %s\n' % (name, cmd[0])
+
+def auto_int(x):
+    return int(x, 0)
+
+def fuse_value(val):
+    value = { "buffer": [], "bit_len": 0 }
+    if val.startswith('0x'):
+        for x in range(2, len(val), 2):
+            value["buffer"].append(int(val[x:x+2], 16))
+            value["bit_len"] += 8
+        return value
+
+    if val.startswith('0b'):
+        start_idx = 2
+    else:
+        start_idx = 0
+
+    byte_val = 0
+    for x in range(start_idx, len(val), 1):
+        byte_val <<= 1
+        if val[x] == "1":
+            byte_val = byte_val + 1
+
+        value["bit_len"] = value["bit_len"] + 1
+
+        if value["bit_len"] != 0 and value["bit_len"] % 8 == 0:
+            value["buffer"].append(byte_val)
+            byte_val = 0
+
+    if value["bit_len"] % 8 != 0:
+        print(byte_val, value["bit_len"] % 8, 8 - (value["bit_len"] % 8), byte_val << (7 - (value["bit_len"] % 8)))
+        value["buffer"].append(byte_val << (8 - (value["bit_len"] % 8)))
+    print(value)
+    return value
 
 parser = argparse.ArgumentParser(description='Control a pulp target',
   epilog=command_help, formatter_class=argparse.RawDescriptionHelpFormatter, add_help=False
@@ -294,8 +363,6 @@ parser.add_argument("--help", dest="help", action='store_true', default=False, h
 parser.add_argument("--cable", dest="cable", default=None, help="Specify cable")
 parser.add_argument("--chip", dest="chip", default=None, help="Specify target chip")
 parser.add_argument("--binary", dest="binaries", default=[], action="append", help="Specify a binary to be loaded by the load command")
-parser.add_argument("--flash-image", dest="flash_image", default=None, help="Specify a flash image to be flashed")
-parser.add_argument("--flasher", dest="flasher", default=None, help="Specify absolute path of on chip flash program")
 parser.add_argument("--boot-mode", dest="boot_mode", default=None, help="Specify the boot mode")
 
 [args, otherArgs] = parser.parse_known_args()
@@ -313,6 +380,22 @@ if 'write' in args.command:
 if 'gdb' in args.command:
   parser.add_argument("--rsp-port", dest="rsp_port", default=1234, help="Specify the port number that the RSP will use to open a socket for GDB connection")
 
+if 'fuse_read' in args.command:
+    parser.add_argument("--fuse-name", dest="fuse_name", default=None, help="Specify the fuse name")
+    parser.add_argument("--fuse-offset", dest="fuse_offset", type=auto_int, default=None, help="Specify the fuse bit offset to start read")
+    parser.add_argument("--fuse-read-len", dest="fuse_read_len", type=auto_int, default=None, help="Specify the amount of bits to read")
+    parser.add_argument("--fuser", dest="fuser", default=None, help="Specify absolute path of on chip fuse program")
+    parser.add_argument("--fuse-format", dest="fuse_format", default=None, help="Specify the format to print the fuse contents: hex or binary")
+
+if 'fuse_write' in args.command:
+    parser.add_argument("--fuse-name", dest="fuse_name", default=None, help="Specify the fuse name")
+    parser.add_argument("--fuse-offset", dest="fuse_offset", type=auto_int, default=None, help="Specify the fuse bit offset to start write")
+    parser.add_argument("--fuse-value", dest="fuse_value", type=fuse_value, default=None, help="Specify the fuse value 0b0101 or 0xff or 101")
+    parser.add_argument("--fuser", dest="fuser", default=None, help="Specify absolute path of on chip fuse program")
+
+if 'flash' in args.command:
+    parser.add_argument("--flash-image", dest="flash_image", default=None, help="Specify a flash image to be flashed")
+    parser.add_argument("--flasher", dest="flasher", default=None, help="Specify absolute path of on chip flash program")
 
 args = parser.parse_args()
 
@@ -459,6 +542,14 @@ def handle_commands(bridge):
 
             cmd_idx = cmd_idx + 1
 
-handle_commands(bridge)
+try:
+    handle_commands(bridge)
+except Exception as ex:
+    fatal_error(str(ex))
+    bridge.close()
+    if args.debug:
+        raise
+    sys.exit(1)
+
 bridge.run_loop()
 print("Exiting!!")

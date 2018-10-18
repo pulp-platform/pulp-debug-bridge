@@ -133,6 +133,9 @@ class Ctype_cable(object):
     def chip_reset(self, value):
         return self.module.chip_reset(value)
 
+    def set_VQPS(self, value):
+        return self.module.cable_set_VQPS(value)
+
     def jtag_reset(self, value):
         return self.module.jtag_reset(value)
 
@@ -262,6 +265,12 @@ class debug_bridge(object):
             self.__mount_cable()
 
         return self.cable
+
+    def fuse_validate(self, args, do_write):
+        raise Exception('Fuses are not supported on this target')
+
+    def fuse(self, bit_offset, bit_len, buffer = None, fmt = "binary"):
+        raise Exception('Fuses are not supported on this target')
 
     def load_jtag(self):
         return self.load_default()

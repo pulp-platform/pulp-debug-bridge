@@ -327,6 +327,31 @@ bool Ftdi::chip_reset(bool active)
   }
 }
 
+bool Ftdi::chip_setVQPS(bool high)
+{
+	if (high)
+		log.debug("ft223: chip VQPS set to 2.5V\n");
+	else
+		log.debug("ft223: chip VQPS set to 0V\n");
+
+	if (m_id == Digilent)
+	{
+   		std::string chip = this->config->get("**/chip/name")->get_str();
+		if (chip == "gap")
+		{
+      log.debug("ft223: setting for gap\n");
+			return set_bit_value(5, !high) ;
+		}
+		else
+		{
+      log.debug("ft223: error cannot set VQPS on this chip\n");
+			return false ;
+		}
+	}
+	else
+		return false ;
+}
+
 int
 Ftdi::ft2232_seq_purge(int /* purge_rx */, int /* purge_tx */) {
   int ret = 0;
