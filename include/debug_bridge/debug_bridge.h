@@ -21,6 +21,10 @@
 #ifndef __DEBUG_BRIDGE_DEBUG_BRIDGE_H__
 #define __DEBUG_BRIDGE_DEBUG_BRIDGE_H__
 
+#define PROTOCOL_VERSION_0 0    // Initial version
+#define PROTOCOL_VERSION_1 1    // Added runtime / bridge state synchronization
+#define PROTOCOL_VERSION_2 2    // Added bridge to runtime requests
+
 #define HAL_PRINTF_BUF_SIZE 128
 
 typedef enum {
@@ -33,7 +37,9 @@ typedef enum {
   HAL_BRIDGE_REQ_FB_OPEN = 6,
   HAL_BRIDGE_REQ_FB_UPDATE = 7,
   HAL_BRIDGE_REQ_TARGET_STATUS_SYNC = 8,
-  HAL_BRIDGE_REQ_FIRST_USER = 9
+  HAL_BRIDGE_REQ_REPLY = 9,
+  HAL_BRIDGE_TARGET_REQ_EFUSE_ACCESS = 10,
+  HAL_BRIDGE_REQ_FIRST_USER = 11
 } hal_bridge_req_e;
 
 typedef enum {
@@ -41,6 +47,7 @@ typedef enum {
 } hal_bridge_fb_format_e;
 
 typedef struct hal_bridge_req_s {
+  uint64_t bridge_data;
   uint32_t next;
   uint32_t size;
   uint32_t type;
@@ -88,6 +95,11 @@ typedef struct hal_bridge_req_s {
       uint32_t height;
     } fb_update;
     struct {
+      uint32_t is_write;
+      uint32_t index;
+      uint32_t value;
+    } efuse_access;
+    struct {
     } target_status_sync;
   };
 } hal_bridge_req_t;
@@ -102,6 +114,8 @@ typedef struct {
 
 // This structure can be used to interact with the host loader
 typedef struct {
+
+  uint32_t protocol_version;
 
   hal_target_state_t target;
 
@@ -124,6 +138,8 @@ typedef struct {
   uint32_t first_req;
   uint32_t last_req;
   uint32_t first_bridge_req;
+  uint32_t first_bridge_free_req;
+  uint32_t target_req;
 
   uint32_t notif_req_addr;
   uint32_t notif_req_value;

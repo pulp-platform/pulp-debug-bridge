@@ -102,6 +102,13 @@ def write(bridge):
 
     return 0
 
+def efuse_write(bridge):
+    addr = int(args.addr, 0)
+    value = int(args.value, 0)
+
+    bridge.efuse_access(True, addr, value)
+
+    return 0
 
 def load(bridge):
 
@@ -197,18 +204,19 @@ def script(bridge):
 
 
 commands = {
-  'read'    : ['Read data from the target',         read],
-  'write'   : ['Write data to the target',          write],
-  'load'    : ['Load a binary into the target',     load],
-  'ioloop'  : ['Activate IO loop',                  ioloop],
-  'reqloop' : ['Activate request loop',             reqloop],
-  'gdb'     : ['Open RSP server for GDB connection',gdb],
-  'start'   : ['Start execution',                   start],
-  'stop'    : ['Stop execution',                    stop],
-  'flash'   : ['Flash the flash image',             flash],
-  'wait'    : ['Wait termination',                  wait],
-  'reset'   : ['Chip reset',                        reset],
-  'script'  : ['Execute user scripts',              script],
+  'read'        : ['Read data from the target',         read],
+  'write'       : ['Write data to the target',          write],
+  'load'        : ['Load a binary into the target',     load],
+  'ioloop'      : ['Activate IO loop',                  ioloop],
+  'reqloop'     : ['Activate request loop',             reqloop],
+  'gdb'         : ['Open RSP server for GDB connection',gdb],
+  'start'       : ['Start execution',                   start],
+  'stop'        : ['Stop execution',                    stop],
+  'flash'       : ['Flash the flash image',             flash],
+  'wait'        : ['Wait termination',                  wait],
+  'reset'       : ['Chip reset',                        reset],
+  'script'      : ['Execute user scripts',              script],
+  'efuse_write' : ['Write to efuse',                    efuse_write],
 }
 
 
@@ -243,6 +251,10 @@ parser.add_argument("--flash-image", dest="fimages", default=[], action="append"
 if 'read' in args.command or 'write' in args.command:
   parser.add_argument("--addr", dest="addr", default=None, help="Specify the address of the access for read and write commands")
   parser.add_argument("--size", dest="size", default="4", help="Specify the size of the access for read and write commands")
+
+if 'efuse_write' in args.command:
+  parser.add_argument("--addr", dest="addr", default=None, help="Specify the address of the access for read and write commands")
+  parser.add_argument("--value", dest="value", default=None, help="Specify the value to be written for write command")
 
 if 'read' in args.command:
   parser.add_argument("--width", dest="width", default=1, type=int, help="Specify the word size in bytes used to display numbers for read commands")

@@ -27,10 +27,21 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
+#include <mutex>
+#include <queue>
+#include <condition_variable>
 
 #if defined(__USE_SDL__)
 #include <SDL.h>
 #endif
+
+class Target_req
+{
+public:
+  bool done;
+
+  hal_bridge_req_t target_req;
+};
 
 class Reqloop
 {
@@ -39,6 +50,8 @@ public:
   void reqloop_routine();
   int stop(bool kill);
   hal_debug_struct_t *activate();
+
+  void efuse_access(bool write, int id, uint32_t value);
 
 private:
   void reply_req(hal_debug_struct_t *debug_struct, hal_bridge_req_t *target_req, hal_bridge_req_t *req);
@@ -51,9 +64,14 @@ private:
   bool handle_req_fb_update(hal_debug_struct_t *debug_struct, hal_bridge_req_t *req, hal_bridge_req_t *target_req);
   bool handle_req_target_status_sync(hal_debug_struct_t *debug_struct, hal_bridge_req_t *req, hal_bridge_req_t *target_req);
   bool handle_req_disconnect(hal_debug_struct_t *debug_struct, hal_bridge_req_t *target_req, hal_bridge_req_t *req);
+  bool handle_req_reply(hal_debug_struct_t *debug_struct, hal_bridge_req_t *target_req, hal_bridge_req_t *req);
   bool handle_req(hal_debug_struct_t *debug_struct, hal_bridge_req_t *target_req, hal_bridge_req_t *req);
   void update_target_status(hal_debug_struct_t *debug_struct);
   void wait_target_available(hal_debug_struct_t *debug_struct);
+
+  void notif_target(hal_debug_struct_t *debug_struct);
+  void handle_target_req(hal_debug_struct_t *debug_struct, Target_req *target_req);
+  void handle_bridge_to_target_reqs(hal_debug_struct_t *debug_struct);
 
   Log *log;
   std::thread *thread;
@@ -61,10 +79,14 @@ private:
   bool end = false;
   unsigned int debug_struct_addr;
   int status = 0;
+  bool connected = false;   // Set to true once the applicatoin has sent the connect request
 
   hal_target_state_t target;
 
+  std::queue<Target_req *> target_reqs;
 
+  std::mutex mutex;
+  std::condition_variable cond;
 };
 
 class Framebuffer
@@ -209,7 +231,17 @@ hal_debug_struct_t *Reqloop::activate()
 
   cable->access(false, debug_struct_addr, 4, (char*)&debug_struct);
 
-  if (debug_struct != NULL) {
+  if (debug_struct != NULL)
+  {
+    uint32_t protocol_version;
+    cable->access(false, (unsigned int)(long)&debug_struct->protocol_version, 4, (char*)&protocol_version);
+    
+    if (protocol_version != PROTOCOL_VERSION_2)
+    {
+      this->log->error("Protocol version mismatch between bridge and runtime (bridge: %d, runtime: %d)\n", PROTOCOL_VERSION_2, protocol_version);
+      throw std::logic_error("Unable to connect to runtime");
+    }
+
     // The binary has just started, we need to tell him we want to watch for requests
     unsigned int value = 0;
 
@@ -223,17 +255,22 @@ hal_debug_struct_t *Reqloop::activate()
 
 
 
-void Reqloop::reply_req(hal_debug_struct_t *debug_struct, hal_bridge_req_t *target_req, hal_bridge_req_t *req)
+void Reqloop::notif_target(hal_debug_struct_t *debug_struct)
 {
-  uint32_t value = 1;
-  this->cable->access(true, (unsigned int)(long)&target_req->done, sizeof(target_req->done), (char*)&value);
-
   uint32_t notif_req_addr;
   uint32_t notif_req_value;
   cable->access(false, (unsigned int)(long)&debug_struct->notif_req_addr, 4, (char*)&notif_req_addr);
   cable->access(false, (unsigned int)(long)&debug_struct->notif_req_value, 4, (char*)&notif_req_value);
 
   cable->access(true, (unsigned int)(long)notif_req_addr, 4, (char*)&notif_req_value);
+}
+
+void Reqloop::reply_req(hal_debug_struct_t *debug_struct, hal_bridge_req_t *target_req, hal_bridge_req_t *req)
+{
+  uint32_t value = 1;
+  this->cable->access(true, (unsigned int)(long)&target_req->done, sizeof(target_req->done), (char*)&value);
+
+  this->notif_target(debug_struct);
 }
 
 static int transpose_code(int code)
@@ -256,12 +293,24 @@ static int transpose_code(int code)
 
 bool Reqloop::handle_req_connect(hal_debug_struct_t *debug_struct, hal_bridge_req_t *req, hal_bridge_req_t *target_req)
 {
+  this->connected = true;
   this->reply_req(debug_struct, target_req, req);
+  return false;
+}
+
+bool Reqloop::handle_req_reply(hal_debug_struct_t *debug_struct, hal_bridge_req_t *req, hal_bridge_req_t *target_req)
+{
+  Target_req *bridge_req = (Target_req *)req->bridge_data;
+  this->mutex.lock();
+  bridge_req->done = true;
+  this->cond.notify_all();
+  this->mutex.unlock();
   return false;
 }
 
 bool Reqloop::handle_req_disconnect(hal_debug_struct_t *debug_struct, hal_bridge_req_t *req, hal_bridge_req_t *target_req)
 {
+  this->connected = false;
   this->reply_req(debug_struct, target_req, req);
   return true;
 }
@@ -414,6 +463,7 @@ bool Reqloop::handle_req(hal_debug_struct_t *debug_struct, hal_bridge_req_t *req
     case HAL_BRIDGE_REQ_FB_OPEN:    return this->handle_req_fb_open(debug_struct, req, target_req);
     case HAL_BRIDGE_REQ_FB_UPDATE:  return this->handle_req_fb_update(debug_struct, req, target_req);
     case HAL_BRIDGE_REQ_TARGET_STATUS_SYNC:    return this->handle_req_target_status_sync(debug_struct, req, target_req);
+    case HAL_BRIDGE_REQ_REPLY:    return this->handle_req_reply(debug_struct, req, target_req);
     default:
       this->log->print(LOG_ERROR, "Received unknown request from target (type: %d)\n", req->type);
   }
@@ -436,6 +486,47 @@ void Reqloop::wait_target_available(hal_debug_struct_t *debug_struct)
   }
 }
 
+
+void Reqloop::handle_target_req(hal_debug_struct_t *debug_struct, Target_req *target_req)
+{
+  // First get a request from the target
+  hal_bridge_req_t *req = NULL;
+  this->cable->access(false, (unsigned int)(long)&debug_struct->first_bridge_free_req, 4, (char*)&req);
+  uint32_t next;
+  this->cable->access(false, (unsigned int)(long)&req->next, 4, (char*)&next);
+  this->cable->access(true, (unsigned int)(long)&debug_struct->first_bridge_free_req, 4, (char*)&next);
+  this->cable->access(true, (unsigned int)(long)req, sizeof(hal_bridge_req_t), (char*)&target_req->target_req);
+  this->cable->access(true, (unsigned int)(long)&req->bridge_data, sizeof(target_req), (char*)&target_req);
+
+
+  // Store it to the debug structure
+  this->cable->access(true, (unsigned int)(long)&debug_struct->target_req, 4, (char*)&req);
+
+  // And notify the target so that it is processed
+  this->notif_target(debug_struct);
+}
+
+void Reqloop::handle_bridge_to_target_reqs(hal_debug_struct_t *debug_struct)
+{
+  if (!this->connected)
+    return;
+
+  while(this->target_reqs.size())
+  {
+    // Runtime can only handle one request, first check if no request is already
+    // pushed.
+    uint32_t target_req;
+    this->cable->access(false, (unsigned int)(long)&debug_struct->target_req, 4, (char*)&target_req);
+    if (target_req)
+      break;
+
+    this->mutex.lock();
+    Target_req *bridge_target_req = this->target_reqs.front();
+    this->target_reqs.pop();
+    this->handle_target_req(debug_struct, bridge_target_req);
+    this->mutex.unlock();
+  }
+}
 
 void Reqloop::reqloop_routine()
 {
@@ -486,6 +577,7 @@ void Reqloop::reqloop_routine()
         fflush(NULL);
       }
 
+      // Handle target to bridge requests
       while(1) {
         hal_bridge_req_t *first_bridge_req=NULL, *last_req=NULL, *next=NULL, *next_next=NULL;
 
@@ -507,6 +599,9 @@ void Reqloop::reqloop_routine()
         this->wait_target_available(debug_struct);
       }
 
+      // Handle bridge to target requests
+      this->handle_bridge_to_target_reqs(debug_struct);
+
       // Small sleep to not poll too often
       usleep(500);
     }
@@ -518,6 +613,27 @@ void Reqloop::reqloop_routine()
 
 end:
   log->warning("Got access error in reqloop\n");
+}
+
+void Reqloop::efuse_access(bool write, int id, uint32_t value)
+{
+  Target_req *req = new Target_req();
+  req->done = false;
+
+  req->target_req.type = HAL_BRIDGE_TARGET_REQ_EFUSE_ACCESS;
+  req->target_req.efuse_access.is_write = write;
+  req->target_req.efuse_access.index = id;
+  req->target_req.efuse_access.value = value;
+
+  std::unique_lock<std::mutex> lock(this->mutex);
+  this->target_reqs.push(req);
+
+  while(!req->done)
+  {
+    this->cond.wait(lock);
+  }
+
+  lock.unlock();
 }
 
 Reqloop::Reqloop(Cable *cable, unsigned int debug_struct_addr) : cable(cable), debug_struct_addr(debug_struct_addr)
@@ -537,6 +653,12 @@ extern "C" void bridge_reqloop_close(void *arg, int kill)
 {
   Reqloop *reqloop = (Reqloop *)arg;
   reqloop->stop(kill);
+}
+
+extern "C" void bridge_reqloop_efuse_access(void *arg, bool write, int id, uint32_t value)
+{
+  Reqloop *reqloop = (Reqloop *)arg;
+  reqloop->efuse_access(write, id, value);
 }
 
 

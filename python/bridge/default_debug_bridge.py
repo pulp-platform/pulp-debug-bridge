@@ -151,6 +151,8 @@ class debug_bridge(object):
         self.module.bridge_reqloop_open.argtypes = [ctypes.c_void_p, ctypes.c_uint]
         self.module.bridge_reqloop_open.restype = ctypes.c_void_p
         
+        self.module.bridge_reqloop_efuse_access.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_int, ctypes.c_uint]
+        
         self.module.bridge_reqloop_close.argtypes = [ctypes.c_void_p, ctypes.c_int]
 
         self.module.bridge_init(config.dump_to_string().encode('utf-8'), verbose)
@@ -338,6 +340,11 @@ class debug_bridge(object):
             self.get_cable().get_instance(), addr)
 
         return 0
+
+    def efuse_access(self, is_write, index, value):
+        print ('efuse access')
+        self.module.bridge_reqloop_efuse_access(self.reqloop_handle, is_write, index, value)
+        print ('efuse access done')
 
     def flash(self):
         raise Exception('Flash is not supported on this target')
