@@ -85,19 +85,22 @@ FUSES = {
         "fuse_offset": (INFO_FUSE_OFFSET * 8) + 3,
         "bit_len": 3,
         "format": "binary",
-        "writable": True
+        "writable": True,
+        "danger": True
     },
     "ENCRYPTED": {
         "fuse_offset": (INFO_FUSE_OFFSET * 8) + 6,
         "bit_len": 1,
         "format": "binary",
-        "writable": True
+        "writable": True,
+        "danger": True
     },
     "WAIT_XTAL": {
         "fuse_offset": (INFO_FUSE_OFFSET * 8) + 7,
         "bit_len": 1,
         "format": "binary",
-        "writable": True
+        "writable": True,
+        "danger": True
     },
     "INFO2": {
         "fuse_offset": INFO2_FUSE_OFFSET * 8,
@@ -109,79 +112,92 @@ FUSES = {
         "fuse_offset": (INFO2_FUSE_OFFSET * 8) + 0,
         "bit_len": 1,
         "format": "binary",
-        "writable": True
+        "writable": True,
+        "danger": True
     },
     "FLL_CONF": {
         "fuse_offset": (INFO2_FUSE_OFFSET * 8) + 1,
         "bit_len": 1,
         "format": "binary",
-        "writable": True
+        "writable": True,
+        "danger": True
     },
     "FLL_BYPASS_LOCK": {
         "fuse_offset": (INFO2_FUSE_OFFSET * 8) + 2,
         "bit_len": 1,
         "format": "binary",
-        "writable": True
+        "writable": True,
+        "danger": True
     },
     "SPIM_CLKDIV": {
         "fuse_offset": (INFO2_FUSE_OFFSET * 8) + 3,
         "bit_len": 1,
         "format": "binary",
-        "writable": True
+        "writable": True,
+        "danger": True
     },
     "AES_KEY": {
         "fuse_offset": AES_KEY_FUSE_OFFSET * 8,
         "bit_len": 16 * 8,
         "format": "hex",
-        "writable": True
+        "writable": True,
+        "danger": True
     },
     "AES_IV": {
         "fuse_offset": AES_IV_FUSE_OFFSET * 8,
         "bit_len": 8 * 8,
         "format": "hex",
-        "writable": True
+        "writable": True,
+        "danger": True
     },
     "WAIT_XTAL_DELTA": {
         "fuse_offset": WAIT_XTAL_DELTA_FUSE_OFFSET * 8,
         "bit_len": 2 * 8,
         "format": "hex",
-        "writable": True
+        "writable": True,
+        "danger": True
     },
     "WAIT_XTAL_MIN": {
         "fuse_offset": WAIT_XTAL_MIN_FUSE_OFFSET * 8,
         "bit_len": 1 * 8,
         "format": "hex",
-        "writable": True
+        "writable": True,
+        "danger": True
     },
     "WAIT_XTAL_MAX": {
         "fuse_offset": WAIT_XTAL_MAX_FUSE_OFFSET * 8,
         "bit_len": 1 * 8,
         "format": "hex",
-        "writable": True
+        "writable": True,
+        "danger": True
     },
     "HYPER_RDS_DELAY": {
         "fuse_offset": HYPER_RDS_DELAY_FUSE_OFFSET * 8,
         "bit_len": 1 * 8,
         "format": "hex",
-        "writable": True
+        "writable": True,
+        "danger": True
     },
     "FLL_FREQ": {
         "fuse_offset": FLL_FREQ_FUSE_OFFSET * 8,
         "bit_len": 1 * 8,
         "format": "hex",
-        "writable": True
+        "writable": True,
+        "danger": True
     },
     "FLL_TOLERANCE": {
         "fuse_offset": FLL_TOLERANCE_FUSE_OFFSET * 8,
         "bit_len": 1 * 8,
         "format": "hex",
-        "writable": True
+        "writable": True,
+        "danger": True
     },
     "FLL_ASSERT_CYCLES": {
         "fuse_offset": FLL_ASSERT_CYCLES_FUSE_OFFSET * 8,
         "bit_len": 1 * 8,
         "format": "hex",
-        "writable": True
+        "writable": True,
+        "danger": True
     },
 }
 
@@ -397,6 +413,8 @@ class gap_debug_bridge(debug_bridge):
                 fuse = FUSES[args.fuse_name]
 
             if do_write:
+                if not args.danger:
+                    raise Exception("--danger must be specified to write this fuse - !!!!!! THIS OPERATION CAN PERMANENTLY RENDER YOUR GAP8 UNBOOTABLE !!!!!!")
                 if fuse["bit_len"] != args.fuse_value["bit_len"]:
                     raise Exception("--fuse-value is of incorrect length")
 
@@ -416,14 +434,6 @@ class gap_debug_bridge(debug_bridge):
             if args.fuse_read_len + args.fuse_offset > (USER_FUSE_OFFSET * 8) + (USER_FUSE_SIZE * 8):
                 raise Exception("--fuse-read-len is out of range")
 
-
-# int32 bridge -> gap 1 op ready 1 b0
-# int32 gap -> bridge loaded / finished 1 b0
-# int32 1 write / 0 read
-# char buffer 128 bytes
-# bit_pos int32
-# bit_len int32
-# int32 status (always 0 currently - will be checked!)
 
     def print_all_fuses(self, bit_offset, buffer):
         print("All fuses")
@@ -505,11 +515,11 @@ class gap_debug_bridge(debug_bridge):
                     bsize = math.ceil(bit_len / 8)
                     buffer = self.read(addrBuffer, bsize)
                     if fmt == "binary":
-                        self.log(0, "fuse contents: {0}".format(extract_binary(buffer, 0, bit_len)))
+                        print("fuse contents: {0}".format(extract_binary(buffer, 0, bit_len)))
                     elif fmt == "all":
                         self.print_all_fuses(bit_offset, buffer)
                     else:
-                        self.log(0, "fuse contents: {0}".format(extract_hex(buffer, 0, math.ceil(bit_len / 8) + 1)))
+                        print("fuse contents: {0}".format(extract_hex(buffer, 0, math.ceil(bit_len / 8) + 1)))
 
                 else:
                     self.log(1, "fuse written")

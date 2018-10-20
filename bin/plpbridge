@@ -204,7 +204,7 @@ def fuse(bridge, do_write):
 
     def fuse_cb(state):
         if args.verbose >=4:
-            print("Fusing")
+            print("Executing fuse operation")
 
         if do_write:
             return bridge.fuse(args.fuse_offset, args.fuse_value["bit_len"], buffer = args.fuse_value["buffer"])
@@ -339,9 +339,8 @@ def fuse_value(val):
             byte_val = 0
 
     if value["bit_len"] % 8 != 0:
-        print(byte_val, value["bit_len"] % 8, 8 - (value["bit_len"] % 8), byte_val << (7 - (value["bit_len"] % 8)))
         value["buffer"].append(byte_val << (8 - (value["bit_len"] % 8)))
-    print(value)
+
     return value
 
 parser = argparse.ArgumentParser(description='Control a pulp target',
@@ -392,6 +391,7 @@ if 'fuse_write' in args.command:
     parser.add_argument("--fuse-offset", dest="fuse_offset", type=auto_int, default=None, help="Specify the fuse bit offset to start write")
     parser.add_argument("--fuse-value", dest="fuse_value", type=fuse_value, default=None, help="Specify the fuse value 0b0101 or 0xff or 101")
     parser.add_argument("--fuser", dest="fuser", default=None, help="Specify absolute path of on chip fuse program")
+    parser.add_argument("--danger", dest="danger", action="store_true", help="Must be added for fuse operations that could render chip unbootable")
 
 if 'flash' in args.command:
     parser.add_argument("--flash-image", dest="flash_image", default=None, help="Specify a flash image to be flashed")
@@ -552,4 +552,4 @@ except Exception as ex:
     sys.exit(1)
 
 bridge.run_loop()
-print("Exiting!!")
+print("commands completed")
