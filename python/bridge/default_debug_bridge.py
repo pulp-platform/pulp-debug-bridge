@@ -262,7 +262,6 @@ class debug_bridge(object):
         return 0
 
     def stop(self):
-
         stop_addr_config = self.config.get('**/debug_bridge/stop_addr')
         if stop_addr_config is not None:
             self.write_32(stop_addr_config.get_int(), self.config.get('**/debug_bridge/stop_value').get_int()) != 0
@@ -342,6 +341,11 @@ class debug_bridge(object):
         return 0
 
     def efuse_access(self, is_write, index, value):
+        self.binaries = [ os.path.join(os.environ.get('PULP_SDK_INSTALL'), 'bin', 'flasher-gap_rev1') ]
+        self.stop()
+        self.load()
+        self.reqloop()
+        self.start()
         print ('efuse access')
         self.module.bridge_reqloop_efuse_access(self.reqloop_handle, is_write, index, value)
         print ('efuse access done')
