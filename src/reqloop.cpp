@@ -51,7 +51,7 @@ public:
   int stop(bool kill);
   hal_debug_struct_t *activate();
 
-  void efuse_access(bool write, int id, uint32_t value);
+  void efuse_access(bool write, int id, uint32_t value, uint32_t mask);
 
 private:
   void reply_req(hal_debug_struct_t *debug_struct, hal_bridge_req_t *target_req, hal_bridge_req_t *req);
@@ -236,11 +236,13 @@ hal_debug_struct_t *Reqloop::activate()
     uint32_t protocol_version;
     cable->access(false, (unsigned int)(long)&debug_struct->protocol_version, 4, (char*)&protocol_version);
     
-    if (protocol_version != PROTOCOL_VERSION_2)
+    if (protocol_version != PROTOCOL_VERSION_3)
     {
       this->log->error("Protocol version mismatch between bridge and runtime (bridge: %d, runtime: %d)\n", PROTOCOL_VERSION_2, protocol_version);
       throw std::logic_error("Unable to connect to runtime");
     }
+
+    this->cable->access(false, (unsigned int)(long)&debug_struct->target.connected, 4, (char*)&this->connected);
 
     // The binary has just started, we need to tell him we want to watch for requests
     unsigned int value = 0;
@@ -304,6 +306,13 @@ bool Reqloop::handle_req_reply(hal_debug_struct_t *debug_struct, hal_bridge_req_
   this->mutex.lock();
   bridge_req->done = true;
   this->cond.notify_all();
+
+  // Put back the target request into the list of free target requests
+  hal_bridge_req_t *first_req = NULL;
+  this->cable->access(false, (unsigned int)(long)&debug_struct->first_bridge_free_req, 4, (char*)&first_req);
+  this->cable->access(true, (unsigned int)(long)&target_req->next, 4, (char*)&first_req);
+  this->cable->access(true, (unsigned int)(long)&debug_struct->first_bridge_free_req, 4, (char*)&target_req);
+
   this->mutex.unlock();
   return false;
 }
@@ -492,6 +501,13 @@ void Reqloop::handle_target_req(hal_debug_struct_t *debug_struct, Target_req *ta
   // First get a request from the target
   hal_bridge_req_t *req = NULL;
   this->cable->access(false, (unsigned int)(long)&debug_struct->first_bridge_free_req, 4, (char*)&req);
+
+  if (req == NULL)
+  {
+    this->log->error("Unable to allocate bridge to target request");
+    throw std::logic_error("Unable to allocate bridge to target request");
+  }
+
   uint32_t next;
   this->cable->access(false, (unsigned int)(long)&req->next, 4, (char*)&next);
   this->cable->access(true, (unsigned int)(long)&debug_struct->first_bridge_free_req, 4, (char*)&next);
@@ -615,7 +631,7 @@ end:
   log->warning("Got access error in reqloop\n");
 }
 
-void Reqloop::efuse_access(bool write, int id, uint32_t value)
+void Reqloop::efuse_access(bool write, int id, uint32_t value, uint32_t mask)
 {
   Target_req *req = new Target_req();
   req->done = false;
@@ -624,6 +640,7 @@ void Reqloop::efuse_access(bool write, int id, uint32_t value)
   req->target_req.efuse_access.is_write = write;
   req->target_req.efuse_access.index = id;
   req->target_req.efuse_access.value = value;
+  req->target_req.efuse_access.mask = mask;
 
   std::unique_lock<std::mutex> lock(this->mutex);
   this->target_reqs.push(req);
@@ -655,10 +672,10 @@ extern "C" void bridge_reqloop_close(void *arg, int kill)
   reqloop->stop(kill);
 }
 
-extern "C" void bridge_reqloop_efuse_access(void *arg, bool write, int id, uint32_t value)
+extern "C" void bridge_reqloop_efuse_access(void *arg, bool write, int id, uint32_t value, uint32_t mask)
 {
   Reqloop *reqloop = (Reqloop *)arg;
-  reqloop->efuse_access(write, id, value);
+  reqloop->efuse_access(write, id, value, mask);
 }
 
 

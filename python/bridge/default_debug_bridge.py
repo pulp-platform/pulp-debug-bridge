@@ -151,7 +151,7 @@ class debug_bridge(object):
         self.module.bridge_reqloop_open.argtypes = [ctypes.c_void_p, ctypes.c_uint]
         self.module.bridge_reqloop_open.restype = ctypes.c_void_p
         
-        self.module.bridge_reqloop_efuse_access.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_int, ctypes.c_uint]
+        self.module.bridge_reqloop_efuse_access.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_int, ctypes.c_uint, ctypes.c_uint]
         
         self.module.bridge_reqloop_close.argtypes = [ctypes.c_void_p, ctypes.c_int]
 
@@ -340,14 +340,20 @@ class debug_bridge(object):
 
         return 0
 
-    def efuse_access(self, is_write, index, value):
+    def efuse_access(self, flasher_init, is_write, index, value, mask):
         self.binaries = [ os.path.join(os.environ.get('PULP_SDK_INSTALL'), 'bin', 'flasher-gap_rev1') ]
-        self.stop()
-        self.load()
+
+        if flasher_init:
+            self.stop()
+            self.load()
+
         self.reqloop()
-        self.start()
+
+        if flasher_init:
+            self.start()
+
         print ('efuse access')
-        self.module.bridge_reqloop_efuse_access(self.reqloop_handle, is_write, index, value)
+        self.module.bridge_reqloop_efuse_access(self.reqloop_handle, is_write, index, value, mask)
         print ('efuse access done')
 
     def flash(self):

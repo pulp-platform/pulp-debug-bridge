@@ -24,6 +24,7 @@
 #define PROTOCOL_VERSION_0 0    // Initial version
 #define PROTOCOL_VERSION_1 1    // Added runtime / bridge state synchronization
 #define PROTOCOL_VERSION_2 2    // Added bridge to runtime requests
+#define PROTOCOL_VERSION_3 3    // Added field "connected" in target state to allow bridge to reconnect several times
 
 #define HAL_PRINTF_BUF_SIZE 128
 
@@ -98,6 +99,7 @@ typedef struct hal_bridge_req_s {
       uint32_t is_write;
       uint32_t index;
       uint32_t value;
+      uint32_t mask;
     } efuse_access;
     struct {
     } target_status_sync;
@@ -106,11 +108,12 @@ typedef struct hal_bridge_req_s {
 
 typedef struct {
   volatile int32_t available;
-} hal_target_state_t;
+  volatile int32_t connected;
+} __attribute__((packed)) hal_target_state_t;
 
 typedef struct {
   volatile int32_t connected;
-} hal_bridge_state_t;
+} __attribute__((packed)) hal_bridge_state_t;
 
 // This structure can be used to interact with the host loader
 typedef struct {
@@ -144,6 +147,6 @@ typedef struct {
   uint32_t notif_req_addr;
   uint32_t notif_req_value;
 
-} hal_debug_struct_t;
+} __attribute__((packed)) hal_debug_struct_t;
 
 #endif
