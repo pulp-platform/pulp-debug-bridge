@@ -242,7 +242,9 @@ hal_debug_struct_t *Reqloop::activate()
       throw std::logic_error("Unable to connect to runtime");
     }
 
-    this->cable->access(false, (unsigned int)(long)&debug_struct->target.connected, 4, (char*)&this->connected);
+    int32_t is_connected;
+    this->cable->access(false, (unsigned int)(long)&debug_struct->target.connected, 4, (char*)&is_connected);
+    this->connected = is_connected;
 
     // The binary has just started, we need to tell him we want to watch for requests
     unsigned int value = 0;
