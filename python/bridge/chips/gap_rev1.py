@@ -24,7 +24,7 @@ JTAG_SOC_AXIREG = 4
 JTAG_SOC_CONFREG = 7
 JTAG_SOC_CONFREG_WIDTH = 4
 
-BOOT_MODE_JTAG = 4
+BOOT_MODE_JTAG = 1
 BOOT_MODE_JTAG_HYPER = 11
 CONFREG_BOOT_WAIT = 1
 CONFREG_PGM_LOADED = 1
@@ -46,14 +46,14 @@ class gap_debug_bridge(debug_bridge):
         if self.verbose:
             print ("Notifying to boot code that we are doing a JTAG boot")
         self.get_cable().chip_reset(True)
-        self.get_cable().jtag_set_reg(JTAG_SOC_CONFREG, JTAG_SOC_CONFREG_WIDTH, BOOT_MODE_JTAG)
+        self.get_cable().jtag_set_reg(JTAG_SOC_CONFREG, JTAG_SOC_CONFREG_WIDTH, (BOOT_MODE_JTAG << 1) | 1)
         self.get_cable().chip_reset(False)
 
         # Now wait until the boot code tells us we can load the code
         if self.verbose:
             print ("Waiting for notification from boot code")
         while True:
-            reg_value = self.get_cable().jtag_get_reg(JTAG_SOC_CONFREG, JTAG_SOC_CONFREG_WIDTH, BOOT_MODE_JTAG)
+            reg_value = self.get_cable().jtag_get_reg(JTAG_SOC_CONFREG, JTAG_SOC_CONFREG_WIDTH, (BOOT_MODE_JTAG << 1) | 1)
             if reg_value == CONFREG_BOOT_WAIT:
                 break
         print ("Received for notification from boot code")
