@@ -258,8 +258,9 @@ Reqloop::ReqloopFinishedStatus Reqloop::handle_req_open(hal_debug_struct_t *debu
   std::vector<char> name(req->open.name_len+1);
 
   m_top->access(false, (unsigned int)req->open.name, req->open.name_len+1, &(name[0]));
-  m_top->log.detail("reqloop open %s\n", &(name[0]));
   int res = open(&(name[0]), req->open.flags, req->open.mode);
+
+  m_top->log.detail("reqloop open %s fd %d\n", &(name[0]), res);
 
   m_top->access(true, PTR_2_INT(&target_req->open.retval), 4, (char*)&res);
 
@@ -369,7 +370,7 @@ Reqloop::ReqloopFinishedStatus Reqloop::handle_req_write(hal_debug_struct_t *deb
   m_fstate = FileReqState(req->write.file, req->write.len, req->write.ptr);
   m_top->log.detail("reqloop write fd %u %u\n", m_fstate.m_fd, m_fstate.m_size);
   if (handle_req_write_one(debug_struct, req, target_req) == m_req_pause) {
-    m_active_timer = m_event_loop->getTimerEvent(std::bind(&Reqloop::handle_req_read_one, this->shared_from_this(), debug_struct, req, target_req), m_req_pause);
+    m_active_timer = m_event_loop->getTimerEvent(std::bind(&Reqloop::handle_req_write_one, this->shared_from_this(), debug_struct, req, target_req), m_req_pause);
     return ReqloopFinishedCompletingReq;
   }
   return ReqloopFinishedMoreReqs;
@@ -477,6 +478,7 @@ Reqloop::ReqloopFinishedStatus Reqloop::handle_req_target_status_sync(hal_debug_
 
   m_top->access(false, PTR_2_INT(&debug_struct->target), sizeof(hal_target_state_t), (char *)&target);
   m_top->target_state_sync(&target);
+  log.detail("New target state %d\n", target);
 
   this->reply_req(debug_struct, target_req, req);
   return ReqloopFinishedMoreReqs;
