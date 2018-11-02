@@ -76,27 +76,27 @@ FUSES = {
         "writable": False
     },
     "PLT": {
-        "fuse_offset": (INFO_FUSE_OFFSET * 8) + 0,
+        "fuse_offset": (INFO_FUSE_OFFSET * 8) + 5, # Offset is from bit 7 in all cases
         "bit_len": 3,
         "format": "binary",
         "writable": False
     },
     "BOOT": {
-        "fuse_offset": (INFO_FUSE_OFFSET * 8) + 3,
+        "fuse_offset": (INFO_FUSE_OFFSET * 8) + 2,
         "bit_len": 3,
         "format": "binary",
         "writable": True,
         "danger": True
     },
     "ENCRYPTED": {
-        "fuse_offset": (INFO_FUSE_OFFSET * 8) + 6,
+        "fuse_offset": (INFO_FUSE_OFFSET * 8) + 1,
         "bit_len": 1,
         "format": "binary",
         "writable": True,
         "danger": True
     },
     "WAIT_XTAL": {
-        "fuse_offset": (INFO_FUSE_OFFSET * 8) + 7,
+        "fuse_offset": (INFO_FUSE_OFFSET * 8) + 0,
         "bit_len": 1,
         "format": "binary",
         "writable": True,
@@ -109,28 +109,28 @@ FUSES = {
         "writable": False
     },
     "FLL_FREQ_SET": {
-        "fuse_offset": (INFO2_FUSE_OFFSET * 8) + 0,
+        "fuse_offset": (INFO2_FUSE_OFFSET * 8) + 7,
         "bit_len": 1,
         "format": "binary",
         "writable": True,
         "danger": True
     },
     "FLL_CONF": {
-        "fuse_offset": (INFO2_FUSE_OFFSET * 8) + 1,
+        "fuse_offset": (INFO2_FUSE_OFFSET * 8) + 6,
         "bit_len": 1,
         "format": "binary",
         "writable": True,
         "danger": True
     },
     "FLL_BYPASS_LOCK": {
-        "fuse_offset": (INFO2_FUSE_OFFSET * 8) + 2,
+        "fuse_offset": (INFO2_FUSE_OFFSET * 8) + 5,
         "bit_len": 1,
         "format": "binary",
         "writable": True,
         "danger": True
     },
     "SPIM_CLKDIV": {
-        "fuse_offset": (INFO2_FUSE_OFFSET * 8) + 3,
+        "fuse_offset": (INFO2_FUSE_OFFSET * 8) + 4,
         "bit_len": 1,
         "format": "binary",
         "writable": True,
@@ -377,7 +377,6 @@ class gap_debug_bridge(debug_bridge):
         else:
             if args.fuse_name is None:
                 raise Exception("--fuse-offset or --fuse-name must be specified")
-
             if args.fuse_name not in FUSES:
                 if args.fuse_name.startswith("USER"):
                     user_loc = args.fuse_name[4:].split('_', 1)
@@ -396,6 +395,8 @@ class gap_debug_bridge(debug_bridge):
                         fuse = { "fuse_offset": (USER_FUSE_OFFSET + reg) * 8 + 7 - bit, "bit_len": 1, "format": "binary", "writable": True }
                     else:
                         raise Exception("invalid user register. Must be USER1 or USER1_1.")
+                    if do_write:
+                        args.danger = True
                 elif args.fuse_name == "ALL":
                     low = 1000000
                     high = 0
