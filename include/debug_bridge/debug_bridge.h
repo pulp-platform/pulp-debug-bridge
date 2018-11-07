@@ -44,7 +44,9 @@ typedef enum {
 } hal_bridge_req_e;
 
 typedef enum {
-  HAL_BRIDGE_REQ_FB_FORMAT_GRAY = 1
+  HAL_BRIDGE_REQ_FB_FORMAT_GRAY = 1,
+  HAL_BRIDGE_REQ_FB_FORMAT_RGB = 2,
+  HAL_BRIDGE_REQ_FB_FORMAT_RAW = 3
 } hal_bridge_fb_format_e;
 
 typedef struct hal_bridge_req_s {

@@ -149,7 +149,15 @@ bool Framebuffer::open()
 
   if (format == HAL_BRIDGE_REQ_FB_FORMAT_GRAY)
   {
-
+    pixel_size = 1;
+  }
+  else if (format == HAL_BRIDGE_REQ_FB_FORMAT_RGB)
+  {
+    pixel_size = 4;
+  }
+  else if (format == HAL_BRIDGE_REQ_FB_FORMAT_RAW)
+  {
+    pixel_size = 1;
   }
   else
   {
@@ -196,15 +204,63 @@ void Framebuffer::update(uint32_t addr, int posx, int posy, int width, int heigh
   }
 
   int size = width*height*pixel_size;
-  uint8_t buffer[size];
-  this->cable->access(false, addr, size, (char*)buffer);
 
-  for (int j=0; j<height; j++)
+  if (this->format == HAL_BRIDGE_REQ_FB_FORMAT_GRAY)
   {
-    for (int i=0; i<width; i++)
+    uint8_t buffer[size];
+    this->cable->access(false, addr, size, (char*)buffer);
+
+    for (int j=0; j<height; j++)
     {
-      unsigned int value = buffer[j*width+i];
-      pixels[(j+posy)*this->width + i + posx] = (0xff << 24) | (value << 16) | (value << 8) | value;
+      for (int i=0; i<width; i++)
+      {
+        unsigned int value = buffer[j*width+i];
+        pixels[(j+posy)*this->width + i + posx] = (0xff << 24) | (value << 16) | (value << 8) | value;
+      }
+    }
+  }
+  else if (this->format == HAL_BRIDGE_REQ_FB_FORMAT_RAW)
+  {
+    uint8_t buffer[size];
+    this->cable->access(false, addr, size, (char*)buffer);
+
+    for (int j=0; j<height; j++)
+    {
+      for (int i=0; i<width; i++)
+      {
+        int shift;
+        if (j & 1)
+        {
+          if (i & 1)
+            shift = 16;
+          else
+            shift = 8;
+        }
+        else
+        {
+          if (i & 1)
+            shift = 8;
+          else
+            shift = 0;
+        }
+
+        unsigned int value = buffer[j*width+i];
+        pixels[(j+posy)*this->width + i + posx] = (0xff << 24) | (value << shift);
+      }
+    }
+  }
+  else
+  {
+    uint32_t buffer[size];
+    this->cable->access(false, addr, size*4, (char*)buffer);
+
+    for (int j=0; j<height; j++)
+    {
+      for (int i=0; i<width; i++)
+      {
+        unsigned int value = buffer[j*width+i];
+        pixels[(j+posy)*this->width + i + posx] = (0xff << 24) | value;
+      }
     }
   }
 
