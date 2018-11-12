@@ -64,7 +64,7 @@ class gap_debug_bridge(debug_bridge):
         return 0
 
 
-    def load_jtag(self):
+    def load_jtag(self, binaries):
 
         if self.verbose:
             print ('Loading binary through jtag')
@@ -75,7 +75,7 @@ class gap_debug_bridge(debug_bridge):
         # Load the binary through jtag
         if self.verbose:
             print ("Loading binaries")
-        for binary in self.binaries:
+        for binary in binaries:
             if self.load_elf(binary=binary):
                 return 1
 
@@ -99,7 +99,7 @@ class gap_debug_bridge(debug_bridge):
         return 0
 
 
-    def load_jtag_hyper(self):
+    def load_jtag_hyper(self, binaries):
 
         if self.verbose:
             print ('Loading binary through jtag_hyper')

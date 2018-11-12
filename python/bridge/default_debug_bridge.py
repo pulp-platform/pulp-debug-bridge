@@ -183,10 +183,10 @@ class debug_bridge(object):
 
         return self.cable
 
-    def load_jtag(self):
-        return self.load_default()
+    def load_jtag(self, binaries):
+        return self.load_default(binaries)
 
-    def load_jtag_hyper(self):
+    def load_jtag_hyper(self, binaries):
         raise Exception('JTAG boot is not supported on this target')
 
     def load_elf(self, binary):
@@ -233,20 +233,23 @@ class debug_bridge(object):
 
         return 0
 
-    def load(self):
+    def load(self, binaries=None):
+        if binaries is None:
+            binaries = self.binaries
+
         mode = self.config.get_child_str('**/debug_bridge/boot-mode')
         if mode is None:
             mode = 'jtag'
 
         if mode == 'jtag':
-            return self.load_jtag()
+            return self.load_jtag(binaries)
         elif mode == 'jtag_hyper':
-            return self.load_jtag_hyper()
+            return self.load_jtag_hyper(binaries)
         else:
-            return self.load_default()
+            return self.load_default(binaries)
 
-    def load_default(self):
-        for binary in self.binaries:
+    def load_default(self, binaries):
+        for binary in binaries:
             if self.load_elf(binary=binary):
                 return 1
 
@@ -340,12 +343,16 @@ class debug_bridge(object):
 
         return 0
 
-    def efuse_access(self, flasher_init, is_write, index, value, mask):
-        self.binaries = [ os.path.join(os.environ.get('PULP_SDK_INSTALL'), 'bin', 'flasher-gap_rev1') ]
+    def reqloop_close(self, force=False):
+        if self.reqloop_handle is not None:
+            return self.module.bridge_reqloop_close(self.reqloop_handle, force)
+        return 0
 
+
+    def efuse_access(self, flasher_init, is_write, index, value, mask):
         if flasher_init:
             self.stop()
-            self.load()
+            self.load([ os.path.join(os.environ.get('PULP_SDK_INSTALL'), 'bin', 'flasher-gap_rev1') ])
 
         self.reqloop()
 
@@ -355,6 +362,8 @@ class debug_bridge(object):
         print ('efuse access')
         self.module.bridge_reqloop_efuse_access(self.reqloop_handle, is_write, index, value, mask)
         print ('efuse access done')
+        self.reqloop_close(force=True)
+
 
     def flash(self):
         raise Exception('Flash is not supported on this target')

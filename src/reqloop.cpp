@@ -685,6 +685,8 @@ void Reqloop::reqloop_routine()
     log->warning("Trying to launch request loop (command reqloop) while no binary is provided\n");
   }
 
+  return;
+
 end:
   log->warning("Got access error in reqloop\n");
 }
