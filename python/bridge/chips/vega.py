@@ -86,4 +86,4 @@ class vega_debug_bridge(debug_bridge):
             if (value >> 16) & 1 == 1:
                 break
 
-        return 0
+        return True
