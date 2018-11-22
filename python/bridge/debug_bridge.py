@@ -22,6 +22,7 @@ import bridge.chips.gap_rev1 as gap_rev1
 import bridge.chips.wolfe as wolfe
 import bridge.chips.usoc_v1 as usoc_v1
 import bridge.chips.vega as vega
+import bridge.chips.arnold as arnold
 import bridge.chips.fulmine as fulmine
 
 
@@ -45,6 +46,8 @@ def get_bridge(config, binaries=[], verbose=False):
         bridge_class = usoc_v1.usoc_v1_debug_bridge
     elif chip == 'vega':
         bridge_class = vega.vega_debug_bridge
+    elif chip == 'arnold':
+        bridge_class = arnold.arnold_debug_bridge
     else:
         bridge_class = debug_bridge
 
