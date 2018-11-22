@@ -192,7 +192,8 @@ Ftdi::connect(js::config *config)
     buf[2] = 0x1b;          // direction (1 == output)
     //buf[3] = 0x8a;   // Activate this command to disabled the default divider by 5, otherwise by default we can just go up to 6MHz instead of 30MHz
     buf[3] = TCK_DIVISOR;
-    buf[4] = 0x01;         // We cannot go below that on fulmine
+    buf[4] = 0x02;         // The divisor has been put to 2 as is not reliable on silicon with less
+    // than that
     buf[5] = 0x00;
     buf[6] = SEND_IMMEDIATE;
   }
