@@ -45,9 +45,12 @@ class arnold_debug_bridge(debug_bridge):
         # the boot mode as soon as it boots from rom
         if self.verbose:
             print ("Notifying to boot code that we are doing a JTAG boot")
+        self.get_cable().jtag_reset(True)
+        self.get_cable().jtag_reset(False)
         self.get_cable().chip_reset(True)
         self.get_cable().jtag_set_reg(JTAG_SOC_CONFREG, JTAG_SOC_CONFREG_WIDTH, (BOOT_MODE_JTAG << 1) | 1)
         self.get_cable().chip_reset(False)
+
 
         # Now wait until the boot code tells us we can load the code
         if self.verbose:
@@ -63,6 +66,10 @@ class arnold_debug_bridge(debug_bridge):
 
         print ("Stopped core")
 
+        return 0
+
+    def reset(self):
+        self.stop()
         return 0
 
 
