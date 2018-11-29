@@ -111,6 +111,12 @@ def efuse_write(bridge):
 
     return 0
 
+def eeprom_write(bridge):
+    addr = int(args.addr, 0)
+
+    return bridge.eeprom_access(args.flasher_init, 0, 0, True, addr, args.file)
+
+
 def load(bridge):
 
     if args.verbose >= 4:
@@ -218,6 +224,7 @@ commands = {
   'reset'       : ['Chip reset',                        reset],
   'script'      : ['Execute user scripts',              script],
   'efuse_write' : ['Write to efuse',                    efuse_write],
+  'eeprom_write': ['Write to eeprom',                   eeprom_write],
 }
 
 
@@ -264,6 +271,11 @@ if 'read' in args.command:
 
 if 'write' in args.command:
   parser.add_argument("--value", dest="value", default=None, help="Specify the value to be written for write command")
+
+if 'eeprom_write' in args.command:
+  parser.add_argument("--file", dest="file", default=None, help="The file to be written for eeprom_write command")
+  parser.add_argument("--addr", dest="addr", default=None, help="Specify the address of the access for read and write commands")
+  parser.add_argument("--flasher-init", dest="flasher_init", action="store_true", help="Initialize flasher")
 
 if 'gdb' in args.command:
   parser.add_argument("--rsp-port", dest="rsp_port", default=1234, help="Specify the port number that the RSP will use to open a socket for GDB connection")

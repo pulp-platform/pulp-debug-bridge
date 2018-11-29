@@ -64,6 +64,10 @@ class gap_debug_bridge(debug_bridge):
         return 0
 
 
+    def clear(self):
+        self.get_cable().jtag_set_reg(JTAG_SOC_CONFREG, JTAG_SOC_CONFREG_WIDTH, 0)
+
+
     def load_jtag(self, binaries):
 
         if self.verbose:

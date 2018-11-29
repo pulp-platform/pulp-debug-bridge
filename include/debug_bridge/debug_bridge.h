@@ -25,6 +25,7 @@
 #define PROTOCOL_VERSION_1 1    // Added runtime / bridge state synchronization
 #define PROTOCOL_VERSION_2 2    // Added bridge to runtime requests
 #define PROTOCOL_VERSION_3 3    // Added field "connected" in target state to allow bridge to reconnect several times
+#define PROTOCOL_VERSION_4 4    // Added field "bridge_to_target" in requests as they are now released by the target
 
 #define HAL_PRINTF_BUF_SIZE 128
 
@@ -40,7 +41,10 @@ typedef enum {
   HAL_BRIDGE_REQ_TARGET_STATUS_SYNC = 8,
   HAL_BRIDGE_REQ_REPLY = 9,
   HAL_BRIDGE_TARGET_REQ_EFUSE_ACCESS = 10,
-  HAL_BRIDGE_REQ_FIRST_USER = 11
+  HAL_BRIDGE_TARGET_REQ_EEPROM_ACCESS = 11,
+  HAL_BRIDGE_TARGET_REQ_BUFFER_ALLOC = 12,
+  HAL_BRIDGE_TARGET_REQ_BUFFER_FREE = 13,
+  HAL_BRIDGE_REQ_FIRST_USER = 14
 } hal_bridge_req_e;
 
 typedef enum {
@@ -56,7 +60,7 @@ typedef struct hal_bridge_req_s {
   uint32_t type;
   uint32_t done;
   uint32_t popped;
-  uint32_t padding;
+  uint32_t bridge_to_target;
   union {
     struct {
       uint32_t name_len;
@@ -103,6 +107,24 @@ typedef struct hal_bridge_req_s {
       uint32_t value;
       uint32_t mask;
     } efuse_access;
+    struct {
+      uint8_t itf;
+      uint8_t cs;
+      uint8_t is_write;
+      uint8_t padding;
+      uint32_t addr;
+      uint32_t buffer;
+      uint32_t size;
+      uint32_t retval;
+    } eeprom_access;
+    struct {
+      uint32_t size;
+      uint32_t buffer;
+    } buffer_alloc;
+    struct {
+      uint32_t size;
+      uint32_t buffer;
+    } buffer_free;
     struct {
     } target_status_sync;
   };

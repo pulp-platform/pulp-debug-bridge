@@ -52,6 +52,9 @@ public:
   hal_debug_struct_t *activate();
 
   void efuse_access(bool write, int id, uint32_t value, uint32_t mask);
+  int eeprom_access(uint32_t itf, uint32_t cs, bool write, uint32_t addr, uint32_t buffer, uint32_t size);
+  void buffer_free(uint32_t addr, uint32_t size);
+  uint32_t buffer_alloc(uint32_t size);
 
 private:
   void reply_req(hal_debug_struct_t *debug_struct, hal_bridge_req_t *target_req, hal_bridge_req_t *req);
@@ -292,7 +295,7 @@ hal_debug_struct_t *Reqloop::activate()
     uint32_t protocol_version;
     cable->access(false, (unsigned int)(long)&debug_struct->protocol_version, 4, (char*)&protocol_version);
     
-    if (protocol_version != PROTOCOL_VERSION_3)
+    if (protocol_version != PROTOCOL_VERSION_4)
     {
       this->log->error("Protocol version mismatch between bridge and runtime (bridge: %d, runtime: %d)\n", PROTOCOL_VERSION_2, protocol_version);
       throw std::logic_error("Unable to connect to runtime");
@@ -361,15 +364,15 @@ bool Reqloop::handle_req_connect(hal_debug_struct_t *debug_struct, hal_bridge_re
 bool Reqloop::handle_req_reply(hal_debug_struct_t *debug_struct, hal_bridge_req_t *req, hal_bridge_req_t *target_req)
 {
   Target_req *bridge_req = (Target_req *)req->bridge_data;
+
   this->mutex.lock();
   bridge_req->done = true;
+  this->notif_target(debug_struct);
   this->cond.notify_all();
 
-  // Put back the target request into the list of free target requests
-  hal_bridge_req_t *first_req = NULL;
-  this->cable->access(false, (unsigned int)(long)&debug_struct->first_bridge_free_req, 4, (char*)&first_req);
-  this->cable->access(true, (unsigned int)(long)&target_req->next, 4, (char*)&first_req);
-  this->cable->access(true, (unsigned int)(long)&debug_struct->first_bridge_free_req, 4, (char*)&target_req);
+  // Copy the target information to the local request in case some returned
+  // information are needed
+  memcpy((void *)&bridge_req->target_req, (void *)req, sizeof(hal_bridge_req_t));
 
   this->mutex.unlock();
   return false;
@@ -558,6 +561,7 @@ void Reqloop::handle_target_req(hal_debug_struct_t *debug_struct, Target_req *ta
 {
   // First get a request from the target
   hal_bridge_req_t *req = NULL;
+
   this->cable->access(false, (unsigned int)(long)&debug_struct->first_bridge_free_req, 4, (char*)&req);
 
   if (req == NULL)
@@ -703,6 +707,7 @@ void Reqloop::efuse_access(bool write, int id, uint32_t value, uint32_t mask)
   req->target_req.efuse_access.mask = mask;
 
   std::unique_lock<std::mutex> lock(this->mutex);
+
   this->target_reqs.push(req);
 
   while(!req->done)
@@ -711,6 +716,83 @@ void Reqloop::efuse_access(bool write, int id, uint32_t value, uint32_t mask)
   }
 
   lock.unlock();
+}
+
+int Reqloop::eeprom_access(uint32_t itf, uint32_t cs, bool write, uint32_t addr, uint32_t buffer, uint32_t size)
+{
+  Target_req *req = new Target_req();
+  req->done = false;
+
+  req->target_req.type = HAL_BRIDGE_TARGET_REQ_EEPROM_ACCESS;
+  req->target_req.eeprom_access.itf = itf;
+  req->target_req.eeprom_access.cs = cs;
+  req->target_req.eeprom_access.is_write = write;
+  req->target_req.eeprom_access.addr = addr;
+  req->target_req.eeprom_access.buffer = buffer;
+  req->target_req.eeprom_access.size = size;
+
+  std::unique_lock<std::mutex> lock(this->mutex);
+  this->target_reqs.push(req);
+
+  while(!req->done)
+  {
+    this->cond.wait(lock);
+  }
+
+  int retval = req->target_req.eeprom_access.retval;
+
+  delete req;
+
+  lock.unlock();
+
+  return retval;
+}
+
+void Reqloop::buffer_free(uint32_t addr, uint32_t size)
+{
+  Target_req *req = new Target_req();
+  req->done = false;
+
+  req->target_req.type = HAL_BRIDGE_TARGET_REQ_BUFFER_FREE;
+  req->target_req.buffer_free.size = size;
+  req->target_req.buffer_free.buffer = addr;
+
+  std::unique_lock<std::mutex> lock(this->mutex);
+  this->target_reqs.push(req);
+
+  while(!req->done)
+  {
+    this->cond.wait(lock);
+  }
+
+  delete req;
+
+  lock.unlock();
+}
+
+uint32_t Reqloop::buffer_alloc(uint32_t size)
+{
+  Target_req *req = new Target_req();
+  req->done = false;
+
+  req->target_req.type = HAL_BRIDGE_TARGET_REQ_BUFFER_ALLOC;
+  req->target_req.buffer_alloc.size = size;
+
+  std::unique_lock<std::mutex> lock(this->mutex);
+  this->target_reqs.push(req);
+
+  while(!req->done)
+  {
+    this->cond.wait(lock);
+  }
+
+  uint32_t addr = req->target_req.buffer_alloc.buffer;
+
+  delete req;
+
+  lock.unlock();
+
+  return addr;
 }
 
 Reqloop::Reqloop(Cable *cable, unsigned int debug_struct_addr) : cable(cable), debug_struct_addr(debug_struct_addr)
@@ -736,6 +818,27 @@ extern "C" void bridge_reqloop_efuse_access(void *arg, bool write, int id, uint3
 {
   Reqloop *reqloop = (Reqloop *)arg;
   reqloop->efuse_access(write, id, value, mask);
+}
+
+
+extern "C" int bridge_reqloop_eeprom_access(void *arg, uint32_t itf, uint32_t cs, bool write, uint32_t addr, uint32_t buffer, uint32_t size)
+{
+  Reqloop *reqloop = (Reqloop *)arg;
+  return reqloop->eeprom_access(itf, cs, write, addr, buffer, size);
+}
+
+
+extern "C" uint32_t bridge_reqloop_buffer_alloc(void *arg, uint32_t size)
+{
+  Reqloop *reqloop = (Reqloop *)arg;
+  return reqloop->buffer_alloc(size);
+}
+
+
+extern "C" void bridge_reqloop_buffer_free(void *arg, uint32_t addr, uint32_t size)
+{
+  Reqloop *reqloop = (Reqloop *)arg;
+  reqloop->buffer_free(addr, size);
 }
 
 

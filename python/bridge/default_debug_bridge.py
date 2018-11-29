@@ -151,7 +151,15 @@ class debug_bridge(object):
         self.module.bridge_reqloop_open.argtypes = [ctypes.c_void_p, ctypes.c_uint]
         self.module.bridge_reqloop_open.restype = ctypes.c_void_p
         
+        self.module.bridge_reqloop_buffer_alloc.argtypes = [ctypes.c_void_p, ctypes.c_int]
+        self.module.bridge_reqloop_open.restype = ctypes.c_uint
+        
+        self.module.bridge_reqloop_buffer_free.argtypes = [ctypes.c_void_p, ctypes.c_uint, ctypes.c_int]
+        
         self.module.bridge_reqloop_efuse_access.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_int, ctypes.c_uint, ctypes.c_uint]
+        
+        self.module.bridge_reqloop_eeprom_access.argtypes = [ctypes.c_void_p, ctypes.c_uint, ctypes.c_uint, ctypes.c_int, ctypes.c_uint, ctypes.c_uint, ctypes.c_uint]
+        self.module.bridge_reqloop_eeprom_access.restype = ctypes.c_int
         
         self.module.bridge_reqloop_close.argtypes = [ctypes.c_void_p, ctypes.c_int]
 
@@ -349,7 +357,7 @@ class debug_bridge(object):
         return 0
 
 
-    def efuse_access(self, flasher_init, is_write, index, value, mask):
+    def __flasher_init(self, flasher_init):
         if flasher_init:
             self.stop()
             self.load([ os.path.join(os.environ.get('PULP_SDK_INSTALL'), 'bin', 'flasher-gap_rev1') ])
@@ -359,10 +367,50 @@ class debug_bridge(object):
         if flasher_init:
             self.start()
 
+
+
+    def __flasher_deinit(self):
+        self.reqloop_close(force=True)
+
+
+
+    def efuse_access(self, flasher_init, is_write, index, value, mask):
+
+        self.__flasher_init(flasher_init)
+
         print ('efuse access')
         self.module.bridge_reqloop_efuse_access(self.reqloop_handle, is_write, index, value, mask)
         print ('efuse access done')
-        self.reqloop_close(force=True)
+
+        self.__flasher_deinit()
+
+
+
+    def __alloc_buffer(self, size):
+
+        return self.module.bridge_reqloop_buffer_alloc(self.reqloop_handle, size)
+
+
+
+    def eeprom_access(self, flasher_init, itf, cs, is_write,eeprom_addr, filepath):
+        self.__flasher_init(flasher_init)
+
+        addr = self.__alloc_buffer(1024)
+
+        with open(filepath, 'rb') as file:
+            while True:
+                buff = file.read(1024)
+                if buff:
+                    self.write(addr, len(buff), buff)
+                    if self.module.bridge_reqloop_eeprom_access(self.reqloop_handle, itf, cs, True, eeprom_addr, addr, len(buff)):
+                        return -1
+                else:
+                    break
+
+        self.__flasher_deinit()
+
+        return 0
+
 
 
     def flash(self):
