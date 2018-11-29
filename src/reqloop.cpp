@@ -297,7 +297,7 @@ hal_debug_struct_t *Reqloop::activate()
     
     if (protocol_version != PROTOCOL_VERSION_4)
     {
-      this->log->error("Protocol version mismatch between bridge and runtime (bridge: %d, runtime: %d)\n", PROTOCOL_VERSION_2, protocol_version);
+      this->log->error("Protocol version mismatch between bridge and runtime (bridge: %d, runtime: %d)\n", PROTOCOL_VERSION_4, protocol_version);
       throw std::logic_error("Unable to connect to runtime");
     }
 
