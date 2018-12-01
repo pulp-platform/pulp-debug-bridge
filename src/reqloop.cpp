@@ -232,7 +232,8 @@ void Framebuffer::update(uint32_t addr, int posx, int posy, int width, int heigh
       for (int i=0; i<width; i++)
       {
         int shift;
-        if (j & 1)
+        int line = height - j - 1;
+        if (line & 1)
         {
           if (i & 1)
             shift = 16;
@@ -248,6 +249,7 @@ void Framebuffer::update(uint32_t addr, int posx, int posy, int width, int heigh
         }
 
         unsigned int value = buffer[j*width+i];
+
         pixels[(j+posy)*this->width + i + posx] = (0xff << 24) | (value << shift);
       }
     }
