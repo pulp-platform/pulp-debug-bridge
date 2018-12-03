@@ -37,26 +37,58 @@ class gap_debug_bridge(debug_bridge):
 
         self.fimages = fimages
         self.start_cores = False
+        self.boot_mode = None
 
-    def stop(self):
-
-        # Reset the chip and tell him we want to load via jtag
-        # We keep the reset active until the end so that it sees
-        # the boot mode as soon as it boots from rom
+    def set_boot_mode(self, boot_mode):
         if self.verbose:
-            print ("Notifying to boot code that we are doing a JTAG boot")
+            print ("Notifying to boot code new boot mode (mode: %d)" % boot_mode)
         self.get_cable().chip_reset(True)
-        self.get_cable().jtag_set_reg(JTAG_SOC_CONFREG, JTAG_SOC_CONFREG_WIDTH, (BOOT_MODE_JTAG << 1) | 1)
+        self.get_cable().jtag_set_reg(JTAG_SOC_CONFREG, JTAG_SOC_CONFREG_WIDTH, (boot_mode << 1) | 1)
         self.get_cable().chip_reset(False)
+        self.boot_mode = boot_mode
 
-        # Now wait until the boot code tells us we can load the code
+    def wait_available(self):
+        if self.verbose:
+            print ("Waiting for target to be available")
+
+        # Loop until we see bit 0 becoming 1, this will indicate that the
+        # target is ready to accept bridge requests
+        while True:
+            reg_value = self.get_cable().jtag_get_reg(JTAG_SOC_CONFREG, JTAG_SOC_CONFREG_WIDTH, 0)
+            if (reg_value & 2) != 0:
+                break
+
+        if self.verbose:
+            print ("Target is available")
+
+
+    def wait_ready(self, boot_mode=None):
+        if boot_mode is None:
+            boot_mode = self.boot_mode
+
+        if boot_mode is None:
+            print ('Can not wait for boot code if the boot mode is unknown')
+            return -1
+
         if self.verbose:
             print ("Waiting for notification from boot code")
         while True:
-            reg_value = self.get_cable().jtag_get_reg(JTAG_SOC_CONFREG, JTAG_SOC_CONFREG_WIDTH, (BOOT_MODE_JTAG << 1) | 1)
+            reg_value = self.get_cable().jtag_get_reg(JTAG_SOC_CONFREG, JTAG_SOC_CONFREG_WIDTH, (boot_mode << 1) | 1)
             if reg_value == CONFREG_BOOT_WAIT:
                 break
         print ("Received for notification from boot code")
+
+        return 0
+
+    def stop(self):
+        # Reset the chip and tell him we want to load via jtag
+        # We keep the reset active until the end so that it sees
+        # the boot mode as soon as it boots from rom
+        self.set_boot_mode(BOOT_MODE_JTAG)
+
+        # Now wait until the boot code tells us we can load the code
+        if self.wait_ready() != 0:
+            return -1
 
         # Stall the FC
         self.write(0x1B300000, 4, [0, 0, 1, 0])
@@ -66,6 +98,7 @@ class gap_debug_bridge(debug_bridge):
 
     def clear(self):
         self.get_cable().jtag_set_reg(JTAG_SOC_CONFREG, JTAG_SOC_CONFREG_WIDTH, 0)
+        self.boot_mode = None
 
 
     def load_jtag(self, binaries):
