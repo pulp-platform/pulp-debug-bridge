@@ -262,7 +262,8 @@ bool Ftdi::chip_reset(bool active)
     else
     {
       // Bit 9 is chip reset and active high.
-      return set_bit_value(9, active);
+      // use set bit val with delay for controllable pulse length
+      return set_bit_value_del(9, active, 1000);
     }
   } else if (m_id == Digilent) { // ftdi2232 Gapuino
     // Bit 4 is chip reset and active high.
@@ -895,6 +896,34 @@ Ftdi::set_bit_value(int bit, int value)
 }
 
 bool
+Ftdi::set_bit_value_del(int bit, int value, int del)
+{
+
+  char buf[4];
+
+  bits_value = (bits_value & ~(1<<bit)) | (value << bit);
+  if (bit >= 8)
+  {
+    buf[0] = SET_BITS_HIGH;
+    buf[1] = bits_value >> 8;
+    buf[2] = bits_direction >> 8;
+    buf[3] = SEND_IMMEDIATE;
+  }
+  else
+  {
+    buf[0] = SET_BITS_LOW;
+    buf[1] = bits_value;
+    buf[2] = bits_direction;
+    buf[3] = SEND_IMMEDIATE;
+  }
+
+  if (ft2232_write(buf, 4, 0) != 4) return false;
+  usleep(del);
+  flush();
+  return true;
+}
+
+bool
 Ftdi::set_bit_direction(int bit, int isout)
 {
   bits_direction = (bits_direction & ~(1<<bit)) | (isout << bit);
@@ -925,8 +954,11 @@ Ftdi::jtag_reset(bool active)
     }    
     else if(chip == "vivosoc3")
     {
-      bool result = set_bit_value(9, active);
-      return result;
+      // There is no JTAG reset on vivosoc3
+      // also, since this function is called upon connect,
+      // it would make mem access during application run impossible
+      //bool result = set_bit_value(9, active);
+      return true;
     }
     else
     {

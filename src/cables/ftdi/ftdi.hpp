@@ -80,6 +80,7 @@ class Ftdi : public Cable {
     };
 
     bool set_bit_value(int bit, int value);
+    bool set_bit_value_del(int bit, int value, int del);
     bool set_bit_direction(int bit, int isout);
 
     bool bit_out(char outbit, bool tms);
