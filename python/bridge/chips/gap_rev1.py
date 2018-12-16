@@ -53,10 +53,14 @@ class gap_debug_bridge(debug_bridge):
         if self.verbose:
             print ("Waiting for target to be available")
 
+        boot_mode = 0
+        if self.boot_mode is not None:
+            boot_mode = self.boot_mode
+
         # Loop until we see bit 0 becoming 1, this will indicate that the
         # target is ready to accept bridge requests
         while True:
-            reg_value = self.get_cable().jtag_get_reg(JTAG_SOC_CONFREG, JTAG_SOC_CONFREG_WIDTH, (self.boot_mode << 1) | 1)
+            reg_value = self.get_cable().jtag_get_reg(JTAG_SOC_CONFREG, JTAG_SOC_CONFREG_WIDTH, (boot_mode << 1) | 1)
             if (reg_value & 2) != 0:
                 break
 
