@@ -39,12 +39,14 @@ class gap_debug_bridge(debug_bridge):
         self.start_cores = False
         self.boot_mode = None
 
-    def set_boot_mode(self, boot_mode):
+    def set_boot_mode(self, boot_mode, reset=True):
         if self.verbose:
             print ("Notifying to boot code new boot mode (mode: %d)" % boot_mode)
-        self.get_cable().chip_reset(True)
+        if reset:
+            self.get_cable().chip_reset(True)
         self.get_cable().jtag_set_reg(JTAG_SOC_CONFREG, JTAG_SOC_CONFREG_WIDTH, (boot_mode << 1) | 1)
-        self.get_cable().chip_reset(False)
+        if reset:
+            self.get_cable().chip_reset(False)
         self.boot_mode = boot_mode
 
     def wait_available(self):
@@ -54,7 +56,7 @@ class gap_debug_bridge(debug_bridge):
         # Loop until we see bit 0 becoming 1, this will indicate that the
         # target is ready to accept bridge requests
         while True:
-            reg_value = self.get_cable().jtag_get_reg(JTAG_SOC_CONFREG, JTAG_SOC_CONFREG_WIDTH, 0)
+            reg_value = self.get_cable().jtag_get_reg(JTAG_SOC_CONFREG, JTAG_SOC_CONFREG_WIDTH, (self.boot_mode << 1) | 1)
             if (reg_value & 2) != 0:
                 break
 
@@ -95,6 +97,22 @@ class gap_debug_bridge(debug_bridge):
 
         return 0
 
+    def pause_for_conf(self):
+        self.set_boot_mode(4)
+        if self.wait_ready() != 0:
+            return -1
+        return 0
+
+    def resume_after_conf(self, boot_mode):
+        self.set_boot_mode(5, reset=False)
+        while True:
+            reg_value = self.get_cable().jtag_get_reg(JTAG_SOC_CONFREG, JTAG_SOC_CONFREG_WIDTH, (5 << 1) | 1)
+            if (reg_value & 1) == 0:
+                break
+
+        self.set_boot_mode(boot_mode, reset=False)
+
+        return 0
 
     def clear(self):
         self.get_cable().jtag_set_reg(JTAG_SOC_CONFREG, JTAG_SOC_CONFREG_WIDTH, 0)
