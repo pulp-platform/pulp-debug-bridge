@@ -117,6 +117,29 @@ def eeprom_write(bridge):
     return bridge.eeprom_access(args.flasher_init, 0, 0, True, addr, args.file)
 
 
+def flash_write(bridge):
+    addr = int(args.addr, 0)
+
+    return bridge.flash_access(args.flasher_init, 1, 0, 0, True, addr, 0, args.file)
+
+
+def flash_read(bridge):
+    addr = int(args.addr, 0)
+    size = int(args.size, 0)
+
+    return bridge.flash_access(args.flasher_init, 1, 0, 0, False, addr, size, args.file)
+
+
+def flash_erase_sector(bridge):
+    addr = int(args.addr, 0)
+
+    return bridge.flash_erase_sector(args.flasher_init, 1, 0, 0, addr)
+
+
+def flash_erase_chip(bridge):
+    return bridge.flash_erase_chip(args.flasher_init, 1, 0, 0)
+
+
 def load(bridge):
 
     if args.verbose >= 4:
@@ -225,6 +248,10 @@ commands = {
   'script'      : ['Execute user scripts',              script],
   'efuse_write' : ['Write to efuse',                    efuse_write],
   'eeprom_write': ['Write to eeprom',                   eeprom_write],
+  'flash_write' : ['Write to flash',                    flash_write],
+  'flash_read'  : ['Read from flash',                   flash_read],
+  'flash_erase_sector'  : ['Erase flash sector',        flash_erase_sector],
+  'flash_erase_chip'    : ['Erase flash',               flash_erase_chip],
 }
 
 
@@ -272,9 +299,19 @@ if 'read' in args.command:
 if 'write' in args.command:
   parser.add_argument("--value", dest="value", default=None, help="Specify the value to be written for write command")
 
-if 'eeprom_write' in args.command:
+if 'eeprom_write' in args.command or 'flash_write' in args.command or 'flash_read' in args.command:
   parser.add_argument("--file", dest="file", default=None, help="The file to be written for eeprom_write command")
   parser.add_argument("--addr", dest="addr", default=None, help="Specify the address of the access for read and write commands")
+  parser.add_argument("--flasher-init", dest="flasher_init", action="store_true", help="Initialize flasher")
+
+if 'flash_read' in args.command:
+  parser.add_argument("--size", dest="size", default="4", help="Specify the size of the access for read and write commands")
+
+if 'flash_erase_sector' in args.command:
+  parser.add_argument("--addr", dest="addr", default=None, help="Specify the address of the access for read and write commands")
+  parser.add_argument("--flasher-init", dest="flasher_init", action="store_true", help="Initialize flasher")
+
+if 'flash_erase_chip' in args.command:
   parser.add_argument("--flasher-init", dest="flasher_init", action="store_true", help="Initialize flasher")
 
 if 'gdb' in args.command:

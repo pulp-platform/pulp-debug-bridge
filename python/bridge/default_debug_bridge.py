@@ -161,6 +161,15 @@ class debug_bridge(object):
         self.module.bridge_reqloop_eeprom_access.argtypes = [ctypes.c_void_p, ctypes.c_uint, ctypes.c_uint, ctypes.c_int, ctypes.c_uint, ctypes.c_uint, ctypes.c_uint]
         self.module.bridge_reqloop_eeprom_access.restype = ctypes.c_int
         
+        self.module.bridge_reqloop_flash_access.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_uint, ctypes.c_uint, ctypes.c_int, ctypes.c_uint, ctypes.c_uint, ctypes.c_uint]
+        self.module.bridge_reqloop_flash_access.restype = ctypes.c_int
+        
+        self.module.bridge_reqloop_flash_erase_sector.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_uint, ctypes.c_uint, ctypes.c_uint]
+        self.module.bridge_reqloop_flash_erase_sector.restype = ctypes.c_int
+        
+        self.module.bridge_reqloop_flash_erase_chip.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_uint, ctypes.c_uint]
+        self.module.bridge_reqloop_flash_erase_chip.restype = ctypes.c_int
+        
         self.module.bridge_reqloop_close.argtypes = [ctypes.c_void_p, ctypes.c_int]
 
         self.module.bridge_init(config.dump_to_string().encode('utf-8'), verbose)
@@ -360,7 +369,11 @@ class debug_bridge(object):
     def __flasher_init(self, flasher_init):
         if flasher_init:
             self.stop()
-            self.load([ os.path.join(os.environ.get('PULP_SDK_INSTALL'), 'bin', 'flasher-gap_rev1') ])
+            chip = self.config.get('**/board/chip').get('name').get()
+            flasher_name = 'flasher-%s' % chip
+            flasher_path = os.path.join(os.environ.get('PULP_SDK_INSTALL'), 'bin', flasher_name)
+            self.binaries.append(flasher_path)
+            self.load([flasher_path])
 
         self.reqloop()
 
@@ -404,6 +417,7 @@ class debug_bridge(object):
                     self.write(addr, len(buff), buff)
                     if self.module.bridge_reqloop_eeprom_access(self.reqloop_handle, itf, cs, True, eeprom_addr, addr, len(buff)):
                         return -1
+                    eeprom_addr += 1024
                 else:
                     break
 
@@ -411,6 +425,67 @@ class debug_bridge(object):
 
         return 0
 
+
+
+    def flash_access(self, flasher_init, type, itf, cs, is_write,flash_addr, size, filepath):
+        self.__flasher_init(flasher_init)
+
+        addr = self.__alloc_buffer(1024)
+
+        if is_write:
+            with open(filepath, 'rb') as file:
+                while True:
+                    buff = file.read(1024)
+                    if buff:
+                        self.write(addr, len(buff), buff)
+                        if self.module.bridge_reqloop_flash_access(self.reqloop_handle, type, itf, cs, True, flash_addr, addr, len(buff)):
+                            return -1
+                        flash_addr += 1024
+                    else:
+                        break
+        else:
+            with open(filepath, 'wb') as file:
+                while size > 0:
+                    iter_size = 1024
+                    if iter_size > size:
+                        iter_size = size
+                    if self.module.bridge_reqloop_flash_access(self.reqloop_handle, type, itf, cs, False, flash_addr, addr, iter_size):
+                            return -1
+                    buff = self.read(addr, iter_size)
+                    for elem in buff:
+                        file.write(elem)
+                    size -= iter_size
+                    flash_addr += iter_size
+
+        self.__flasher_deinit()
+
+        return 0
+
+
+
+
+    def flash_erase_sector(self, flasher_init, type, itf, cs, flash_addr):
+        self.__flasher_init(flasher_init)
+
+        if self.module.bridge_reqloop_flash_erase_sector(self.reqloop_handle, type, itf, cs, flash_addr):
+            return -1
+
+        self.__flasher_deinit()
+
+        return 0
+
+
+
+
+    def flash_erase_chip(self, flasher_init, type, itf, cs):
+        self.__flasher_init(flasher_init)
+
+        if self.module.bridge_reqloop_flash_erase_chip(self.reqloop_handle, type, itf, cs):
+            return -1
+
+        self.__flasher_deinit()
+
+        return 0
 
 
     def flash(self):

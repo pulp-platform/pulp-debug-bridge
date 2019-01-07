@@ -53,6 +53,9 @@ public:
 
   void efuse_access(bool write, int id, uint32_t value, uint32_t mask);
   int eeprom_access(uint32_t itf, uint32_t cs, bool write, uint32_t addr, uint32_t buffer, uint32_t size);
+  int flash_access(int32_t type, uint32_t itf, uint32_t cs, bool write, uint32_t addr, uint32_t buffer, uint32_t size);
+  int flash_erase_sector(int32_t type, uint32_t itf, uint32_t cs, uint32_t addr);
+  int flash_erase_chip(int32_t type, uint32_t itf, uint32_t cs);
   void buffer_free(uint32_t addr, uint32_t size);
   uint32_t buffer_alloc(uint32_t size);
 
@@ -750,6 +753,92 @@ int Reqloop::eeprom_access(uint32_t itf, uint32_t cs, bool write, uint32_t addr,
   return retval;
 }
 
+int Reqloop::flash_access(int type, uint32_t itf, uint32_t cs, bool write, uint32_t addr, uint32_t buffer, uint32_t size)
+{
+  Target_req *req = new Target_req();
+  req->done = false;
+
+  req->target_req.type = HAL_BRIDGE_TARGET_REQ_FLASH_ACCESS;
+  req->target_req.flash_access.type = type;
+  req->target_req.flash_access.itf = itf;
+  req->target_req.flash_access.cs = cs;
+  req->target_req.flash_access.is_write = write;
+  req->target_req.flash_access.addr = addr;
+  req->target_req.flash_access.buffer = buffer;
+  req->target_req.flash_access.size = size;
+
+  std::unique_lock<std::mutex> lock(this->mutex);
+  this->target_reqs.push(req);
+
+  while(!req->done)
+  {
+    this->cond.wait(lock);
+  }
+
+  int retval = req->target_req.flash_access.retval;
+
+  delete req;
+
+  lock.unlock();
+
+  return retval;
+}
+
+int Reqloop::flash_erase_sector(int type, uint32_t itf, uint32_t cs, uint32_t addr)
+{
+  Target_req *req = new Target_req();
+  req->done = false;
+
+  req->target_req.type = HAL_BRIDGE_TARGET_REQ_FLASH_ERASE_SECTOR;
+  req->target_req.flash_erase_sector.type = type;
+  req->target_req.flash_erase_sector.itf = itf;
+  req->target_req.flash_erase_sector.cs = cs;
+  req->target_req.flash_erase_sector.addr = addr;
+
+  std::unique_lock<std::mutex> lock(this->mutex);
+  this->target_reqs.push(req);
+
+  while(!req->done)
+  {
+    this->cond.wait(lock);
+  }
+
+  int retval = req->target_req.flash_erase_sector.retval;
+
+  delete req;
+
+  lock.unlock();
+
+  return retval;
+}
+
+int Reqloop::flash_erase_chip(int type, uint32_t itf, uint32_t cs)
+{
+  Target_req *req = new Target_req();
+  req->done = false;
+
+  req->target_req.type = HAL_BRIDGE_TARGET_REQ_FLASH_ERASE_CHIP;
+  req->target_req.flash_erase_chip.type = type;
+  req->target_req.flash_erase_chip.itf = itf;
+  req->target_req.flash_erase_chip.cs = cs;
+
+  std::unique_lock<std::mutex> lock(this->mutex);
+  this->target_reqs.push(req);
+
+  while(!req->done)
+  {
+    this->cond.wait(lock);
+  }
+
+  int retval = req->target_req.flash_erase_chip.retval;
+
+  delete req;
+
+  lock.unlock();
+
+  return retval;
+}
+
 void Reqloop::buffer_free(uint32_t addr, uint32_t size)
 {
   Target_req *req = new Target_req();
@@ -827,6 +916,29 @@ extern "C" int bridge_reqloop_eeprom_access(void *arg, uint32_t itf, uint32_t cs
 {
   Reqloop *reqloop = (Reqloop *)arg;
   return reqloop->eeprom_access(itf, cs, write, addr, buffer, size);
+}
+
+
+extern "C" int bridge_reqloop_flash_access(void *arg, int type, uint32_t itf, uint32_t cs, bool write, uint32_t addr, uint32_t buffer, uint32_t size)
+{
+  Reqloop *reqloop = (Reqloop *)arg;
+  return reqloop->flash_access(type, itf, cs, write, addr, buffer, size);
+}
+
+
+
+extern "C" int bridge_reqloop_flash_erase_sector(void *arg, int type, uint32_t itf, uint32_t cs, uint32_t addr)
+{
+  Reqloop *reqloop = (Reqloop *)arg;
+  return reqloop->flash_erase_sector(type, itf, cs, addr);
+}
+
+
+
+extern "C" int bridge_reqloop_flash_erase_chip(void *arg, int type, uint32_t itf, uint32_t cs)
+{
+  Reqloop *reqloop = (Reqloop *)arg;
+  return reqloop->flash_erase_chip(type, itf, cs);
 }
 
 

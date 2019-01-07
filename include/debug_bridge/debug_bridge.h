@@ -44,7 +44,10 @@ typedef enum {
   HAL_BRIDGE_TARGET_REQ_EEPROM_ACCESS = 11,
   HAL_BRIDGE_TARGET_REQ_BUFFER_ALLOC = 12,
   HAL_BRIDGE_TARGET_REQ_BUFFER_FREE = 13,
-  HAL_BRIDGE_REQ_FIRST_USER = 14
+  HAL_BRIDGE_TARGET_REQ_FLASH_ACCESS = 14,
+  HAL_BRIDGE_TARGET_REQ_FLASH_ERASE_CHIP = 15,
+  HAL_BRIDGE_TARGET_REQ_FLASH_ERASE_SECTOR = 16,
+  HAL_BRIDGE_REQ_FIRST_USER = 17
 } hal_bridge_req_e;
 
 typedef enum {
@@ -117,6 +120,31 @@ typedef struct hal_bridge_req_s {
       uint32_t size;
       uint32_t retval;
     } eeprom_access;
+    struct {
+      uint8_t type;
+      uint8_t itf;
+      uint8_t cs;
+      uint8_t is_write;
+      uint32_t addr;
+      uint32_t buffer;
+      uint32_t size;
+      uint32_t retval;
+    } flash_access;
+    struct {
+      uint8_t type;
+      uint8_t itf;
+      uint8_t cs;
+      uint8_t padding;
+      uint32_t retval;
+    } flash_erase_chip;
+    struct {
+      uint8_t type;
+      uint8_t itf;
+      uint8_t cs;
+      uint8_t padding;
+      uint32_t addr;
+      uint32_t retval;
+    } flash_erase_sector;
     struct {
       uint32_t size;
       uint32_t buffer;
