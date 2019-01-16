@@ -40,6 +40,7 @@ class gap_debug_bridge(debug_bridge):
 
     def stop(self):
 
+
         # Reset the chip and tell him we want to load via jtag
         # We keep the reset active until the end so that it sees
         # the boot mode as soon as it boots from rom
