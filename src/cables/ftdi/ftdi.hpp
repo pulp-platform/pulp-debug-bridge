@@ -112,7 +112,6 @@ class Ftdi : public Cable {
     struct ftdi_context m_ftdic;
     unsigned int bits_value;
     unsigned int bits_direction;
-    js::config *config;
 
 };
 

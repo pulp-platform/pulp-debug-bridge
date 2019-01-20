@@ -35,7 +35,7 @@
 #include "jtag-proxy.hpp"
 #include "debug_bridge/proxy.hpp"
 
-Jtag_proxy::Jtag_proxy(Log* log)
+Jtag_proxy::Jtag_proxy(Log* log) : Cable(NULL)
 {
 }   
 

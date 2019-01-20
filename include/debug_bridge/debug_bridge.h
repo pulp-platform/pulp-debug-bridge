@@ -159,11 +159,12 @@ typedef struct hal_bridge_req_s {
 } hal_bridge_req_t;
 
 typedef struct {
-  volatile int32_t available;
   volatile int32_t connected;
 } __attribute__((packed)) hal_target_state_t;
 
 typedef struct {
+  // The bridge will set it to one when it finds the debug struct to notify
+  // the target that the bridge is present.
   volatile int32_t connected;
 } __attribute__((packed)) hal_bridge_state_t;
 

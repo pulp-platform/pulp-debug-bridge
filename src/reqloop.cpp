@@ -35,6 +35,15 @@
 #include <SDL.h>
 #endif
 
+typedef enum 
+{
+  TARGET_SYNC_FSM_STATE_INIT,
+  TARGET_SYNC_FSM_STATE_WAIT_INIT,
+  TARGET_SYNC_FSM_STATE_WAIT_AVAILABLE,
+  TARGET_SYNC_FSM_STATE_WAIT_REQUEST,
+  TARGET_SYNC_FSM_STATE_WAIT_ACK
+} target_sync_fsm_state_e;
+
 class Target_req
 {
 public:
@@ -49,7 +58,7 @@ public:
   Reqloop(Cable *cable, unsigned int debug_struct_addr);
   void reqloop_routine();
   int stop(bool kill);
-  hal_debug_struct_t *activate();
+  void activate();
 
   void efuse_access(bool write, int id, uint32_t value, uint32_t mask);
   int eeprom_access(uint32_t itf, uint32_t cs, bool write, uint32_t addr, uint32_t buffer, uint32_t size);
@@ -79,6 +88,11 @@ private:
   void handle_target_req(hal_debug_struct_t *debug_struct, Target_req *target_req);
   void handle_bridge_to_target_reqs(hal_debug_struct_t *debug_struct);
 
+  bool wait_target_request();
+  unsigned int get_target_state();
+  void send_target_ack();
+  void clear_target_ack();
+
   Log *log;
   std::thread *thread;
   Cable *cable;
@@ -86,6 +100,7 @@ private:
   unsigned int debug_struct_addr;
   int status = 0;
   bool connected = false;   // Set to true once the applicatoin has sent the connect request
+  bool target_connected;
 
   hal_target_state_t target;
 
@@ -93,6 +108,13 @@ private:
 
   std::mutex mutex;
   std::condition_variable cond;
+
+  target_sync_fsm_state_e target_sync_fsm_state;
+  unsigned int jtag_val;
+
+  hal_debug_struct_t *debug_struct = NULL;
+
+  bool target_jtag_sync;
 };
 
 class Framebuffer
@@ -289,36 +311,35 @@ int Reqloop::stop(bool kill)
   return status;
 }
 
-hal_debug_struct_t *Reqloop::activate()
+void Reqloop::activate()
 {
-  hal_debug_struct_t *debug_struct = NULL;
-
-  cable->access(false, debug_struct_addr, 4, (char*)&debug_struct);
-
-  if (debug_struct != NULL)
+  if (this->debug_struct == NULL)
   {
-    uint32_t protocol_version;
-    cable->access(false, (unsigned int)(long)&debug_struct->protocol_version, 4, (char*)&protocol_version);
-    
-    if (protocol_version != PROTOCOL_VERSION_4)
+    cable->access(false, debug_struct_addr, 4, (char*)&this->debug_struct);
+
+    if (this->debug_struct != NULL)
     {
-      this->log->error("Protocol version mismatch between bridge and runtime (bridge: %d, runtime: %d)\n", PROTOCOL_VERSION_4, protocol_version);
-      throw std::logic_error("Unable to connect to runtime");
+      uint32_t protocol_version;
+      cable->access(false, (unsigned int)(long)&this->debug_struct->protocol_version, 4, (char*)&protocol_version);
+      
+      if (protocol_version != PROTOCOL_VERSION_4)
+      {
+        this->log->error("Protocol version mismatch between bridge and runtime (bridge: %d, runtime: %d)\n", PROTOCOL_VERSION_4, protocol_version);
+        throw std::logic_error("Unable to connect to runtime");
+      }
+
+      int32_t is_connected;
+      this->cable->access(false, (unsigned int)(long)&this->debug_struct->target.connected, 4, (char*)&is_connected);
+      this->connected = is_connected;
+
+      // The binary has just started, we need to tell him we want to watch for requests
+      unsigned int value = 0;
+
+      uint32_t connected = 1;
+      cable->access(true, (unsigned int)(long)&this->debug_struct->bridge.connected, 4, (char*)&connected);
+      cable->access(true, (unsigned int)(long)&this->debug_struct->use_internal_printf, 4, (char*)&value);
     }
-
-    int32_t is_connected;
-    this->cable->access(false, (unsigned int)(long)&debug_struct->target.connected, 4, (char*)&is_connected);
-    this->connected = is_connected;
-
-    // The binary has just started, we need to tell him we want to watch for requests
-    unsigned int value = 0;
-
-    uint32_t connected = 1;
-    cable->access(true, (unsigned int)(long)&debug_struct->bridge.connected, 4, (char*)&connected);
-    cable->access(true, (unsigned int)(long)&debug_struct->use_internal_printf, 4, (char*)&value);
   }
-
-  return debug_struct;
 }
 
 
@@ -546,18 +567,117 @@ bool Reqloop::handle_req(hal_debug_struct_t *debug_struct, hal_bridge_req_t *req
 }
 
 
-void Reqloop::wait_target_available(hal_debug_struct_t *debug_struct)
+unsigned int Reqloop::get_target_state()
 {
-  if (!this->target.available)
+  unsigned int value;
+  this->cable->jtag_get_reg(7, 4, &value, this->jtag_val);
+  value &= 0xf;
+  //printf("READ JTAG %x\n", value >> 1);
+  return value >> 1;
+}
+
+void Reqloop::send_target_ack()
+{
+  unsigned int value;
+  this->jtag_val = 0x7 << 1;
+  this->cable->jtag_set_reg(7, 4, 0x7 << 1);
+}
+
+void Reqloop::clear_target_ack()
+{
+  unsigned int value;
+  this->jtag_val = 0x0 << 1;
+  this->cable->jtag_set_reg(7, 4, 0x0 << 1);
+}
+
+bool Reqloop::wait_target_request()
+{
+  // In case the target does not support synchronization through the JTAG
+  // register, just consider that the target is always available.
+  if (!this->target_jtag_sync)
+    return true;
+
+  switch (this->target_sync_fsm_state)
   {
-    while(1)
-    {
-      unsigned int value;
-      this->cable->jtag_get_reg(7, 4, &value, 0);
-      if (value & 2) break;
-      usleep(10);
+    case TARGET_SYNC_FSM_STATE_INIT: {
+      // This state is used in case the bridge is not yet connected to the
+      // target (e.g. if it boots from flash).
+      // Wait until the target becomes available and ask for the connection.
+      unsigned int state = this->get_target_state();
+      if (state == 4)
+      {
+        // Target is asking for connection, acknowledge it and go to next step
+        this->send_target_ack();
+        this->target_sync_fsm_state = TARGET_SYNC_FSM_STATE_WAIT_INIT;
+      }
+      return false;
     }
-    this->update_target_status(debug_struct);
+
+    case TARGET_SYNC_FSM_STATE_WAIT_INIT: {
+      // This state is used to wait for the target acknoledgment, after
+      // it asked for connection
+      unsigned int state = this->get_target_state();
+      if (state != 4)
+      {
+        // Once the target acknowledged the connection, activate the bridge
+        // clear the acknowledge and wait for target availability
+        this->activate();
+        this->clear_target_ack();
+        this->target_sync_fsm_state = TARGET_SYNC_FSM_STATE_WAIT_REQUEST;
+      }
+      return true;
+    }
+
+    case TARGET_SYNC_FSM_STATE_WAIT_AVAILABLE: {
+      // We are in the state when the target cannot be accessed.
+      // Wait until we see something different from 0.
+      // We also need to clear the request acknowledgement to let the target
+      // know that we got it, in case we come from state
+      // TARGET_SYNC_FSM_STATE_WAIT_ACK.
+      this->clear_target_ack();
+      unsigned int state = this->get_target_state();
+      if (state == 0)
+        return false;
+
+      this->target_sync_fsm_state = TARGET_SYNC_FSM_STATE_WAIT_REQUEST;
+      return false;
+    }
+
+    case TARGET_SYNC_FSM_STATE_WAIT_REQUEST: {
+      // The target became available, now wait for a request
+      unsigned int state = this->get_target_state();
+
+      if (state == 1)
+      {
+        // The target is still available with no request, stay in this state
+        return false;
+      }
+
+      if (state == 2)
+      {
+        // The target is requesting a shutdown, acknowledge it and stop
+        // accessing the target
+        this->send_target_ack();
+        this->target_sync_fsm_state = TARGET_SYNC_FSM_STATE_WAIT_ACK;
+        return false;
+      }
+
+      // The target is requesting something else, just report true so that
+      // the caller now checks what is requested through JTAG and stay in
+      // this state.
+      return true;
+    }
+
+    case TARGET_SYNC_FSM_STATE_WAIT_ACK: {
+      // The chip is not accessible, just wait until it becomes available
+      // again
+      unsigned int state = this->get_target_state();
+      if (state != 0)
+        return false;
+
+      this->target_sync_fsm_state = TARGET_SYNC_FSM_STATE_WAIT_AVAILABLE;
+      return false;
+    }
   }
 }
 
@@ -613,29 +733,27 @@ void Reqloop::handle_bridge_to_target_reqs(hal_debug_struct_t *debug_struct)
 
 void Reqloop::reqloop_routine()
 {
+  // In case the birdge is not yet connected, do extra init steps to
+  // connect once the target becomes available
+  this->target_sync_fsm_state = this->debug_struct ? TARGET_SYNC_FSM_STATE_WAIT_AVAILABLE : TARGET_SYNC_FSM_STATE_INIT;
+
+  this->jtag_val = 0;
+
   if (debug_struct_addr) {
 
     // In case the debug struct pointer is found, iterate to receive IO requests
     // from runtime
     while(!end)
     {
-
-      hal_debug_struct_t *debug_struct = NULL;
-
       uint32_t value;
 
-      this->wait_target_available(debug_struct);
-
-      // debugStruct_ptr is used to synchronize with the runtime at the first start or 
-      // when we switch from one binary to another
-      // Each binary will initialize when it boots will wait until we set it to zero before stopping
-      while(1) {
-        if ((debug_struct = activate()) != NULL) break;
-
-        // We use a fast loop to miss as few printf as possible as the binary will
-        // start without waiting for any acknolegment in case
-        // no host loader is connected
-        usleep(1);
+      // Wait until the target is available and has a request.
+      // This will poll the target through the JTAG register.
+      if (!this->wait_target_request())
+      {
+        // If not, just wait a bit and retry
+        usleep(100);
+        continue;
       }
 
       // First check if the application has exited
@@ -678,15 +796,10 @@ void Reqloop::reqloop_routine()
 
         if (this->handle_req(debug_struct, &req, first_bridge_req))
           return;
-
-        this->wait_target_available(debug_struct);
       }
 
       // Handle bridge to target requests
       this->handle_bridge_to_target_reqs(debug_struct);
-
-      // Small sleep to not poll too often
-      usleep(500);
     }
   }
   else
@@ -886,11 +999,19 @@ uint32_t Reqloop::buffer_alloc(uint32_t size)
   return addr;
 }
 
-Reqloop::Reqloop(Cable *cable, unsigned int debug_struct_addr) : cable(cable), debug_struct_addr(debug_struct_addr)
+Reqloop::Reqloop(Cable *cable, unsigned int debug_struct_addr) : cable(cable), debug_struct_addr(debug_struct_addr), target_connected(false)
 {
   log = new Log();
-  activate();
-  this->target.available = 1;
+
+  js::config *config = cable->get_config();
+
+  this->target_jtag_sync = config->get_child_bool("**/debug_bridge/target_jtag_sync");
+
+  // Try to connect the bridge now before the execution is started so
+  // that the target sees the bridge as soon as it starts.
+  // Otherwise, the bridge will get connected later on when the target
+  // becomes available
+  this->activate();
   thread = new std::thread(&Reqloop::reqloop_routine, this);
 }
 

@@ -62,7 +62,7 @@
 
 //-----------------------------------------------------------------------------
 
-Ftdi::Ftdi(js::config *config, Log* log, FTDIDeviceID id) : log (log), m_id (id), config(config)
+Ftdi::Ftdi(js::config *config, Log* log, FTDIDeviceID id) : Cable(config), log (log), m_id (id)
 {
   // add all our known devices to the map
   m_descriptors[Olimex].push_back((struct device_desc){0x15ba, 0x002a});

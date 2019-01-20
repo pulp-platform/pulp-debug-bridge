@@ -76,8 +76,6 @@ class Adv_dbg_itf : public Cable  {
     Cable* m_dev;
     Log* log;
 
-    js::config *config;
-
     pthread_mutex_t mutex;
     unsigned int debug_ir;
     int retry_count;

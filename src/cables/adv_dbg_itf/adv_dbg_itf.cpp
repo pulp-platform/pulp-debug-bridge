@@ -31,7 +31,7 @@
 #define JTAG_SOC_AXIREG  4
 
 
-Adv_dbg_itf::Adv_dbg_itf(js::config *system_config, Log* log, Cable *m_dev) : config(system_config), log(log), m_dev(m_dev)
+Adv_dbg_itf::Adv_dbg_itf(js::config *system_config, Log* log, Cable *m_dev) : Cable(system_config), log(log), m_dev(m_dev)
 {
   pthread_mutexattr_t attr;
   pthread_mutexattr_init(&attr);
