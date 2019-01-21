@@ -800,6 +800,12 @@ void Reqloop::reqloop_routine()
 
       // Handle bridge to target requests
       this->handle_bridge_to_target_reqs(debug_struct);
+
+      if (!this->target_jtag_sync)
+      {
+        // Small sleep to not poll too often
+        usleep(500);
+      }
     }
   }
   else
