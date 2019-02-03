@@ -74,8 +74,6 @@ class Adv_dbg_itf : public Cable  {
     std::shared_ptr<Cable> m_dev;
     Log log;
 
-    js::config *config;
-
     unsigned int debug_ir;
     int retry_count;
     int check_errors;

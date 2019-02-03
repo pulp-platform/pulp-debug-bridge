@@ -20,7 +20,7 @@
 
 #include "jtag-proxy/jtag-proxy.hpp"
 
-Jtag_proxy::Jtag_proxy(EventLoop::SpEventLoop event_loop, cable_cb_t cable_state_cb) : log("JTAG"), cable_state_cb(cable_state_cb)
+Jtag_proxy::Jtag_proxy(EventLoop::SpEventLoop event_loop, cable_cb_t cable_state_cb) : Cable(NULL), log("JTAG"), cable_state_cb(cable_state_cb)
 {
   using namespace std::placeholders;
   m_tcp_client = std::make_shared<Tcp_client>(&log, event_loop);

@@ -77,7 +77,7 @@
 
 //-----------------------------------------------------------------------------
 
-Ftdi::Ftdi(js::config *config, FTDIDeviceID id, cable_cb_t cable_state_cb) : log ("FDTI"), m_id (id), config(config), cable_state_cb(cable_state_cb)
+Ftdi::Ftdi(js::config *config, FTDIDeviceID id, cable_cb_t cable_state_cb) : Cable(config), log ("FDTI"), m_id (id), cable_state_cb(cable_state_cb)
 {
   // add all our known devices to the map
   m_descriptors[Olimex].push_back(device_desc(0x15ba, 0x002a));

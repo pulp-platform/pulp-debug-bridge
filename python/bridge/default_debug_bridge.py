@@ -200,15 +200,13 @@ class debug_bridge(object):
         self.module.bridge_start.argtypes = []
         self.module.bridge_start.restype = ctypes.c_int
 
-        self.module.bridge_loopmanager_init.argtypes = [ctypes.c_uint]
+        self.module.bridge_reqloop_init.argtypes = [ctypes.c_uint, [ctypes.c_int]
 
-        self.module.bridge_loopmanager_set_poll_delay.argtypes = [ctypes.c_int]
+        self.module.bridge_target_stopped.argtypes = [ctypes.c_int]
 
-        self.module.bridge_loopmanager_start.argtypes = []
+        self.module.bridge_reqloop_start.argtypes = []
 
-        self.module.bridge_loopmanager_add_reqloop.argtypes = []
-
-        self.module.bridge_loopmanager_add_ioloop.argtypes = []
+        self.module.bridge_reqloop_stop.argtypes = []
 
         self.module.bridge_set_log_level.argtypes = [ctypes.c_int]
 
@@ -415,26 +413,24 @@ class debug_bridge(object):
     def reset(self):
         return self.get_cable().jtag_reset(True) and self.get_cable().jtag_reset(False) and self.get_cable().chip_reset(True) and self.get_cable().chip_reset(False)
 
-    def init_loopmanager(self):
+    def init_reqloop(self):
         # First get address of the structure used to communicate between
         # the bridge and the runtime
         addr = self._get_binary_symbol_addr('__rt_debug_struct_ptr')
         if addr == 0:
             addr = self._get_binary_symbol_addr('debugStruct_ptr')
         self.log(1, "debug address 0x{:08x} contents 0x{:08x}".format(addr, self.read_32(addr)))
-        self.module.bridge_loopmanager_init(addr)
+        self.module.bridge_reqloop_init(addr, 1)
         self.has_loopers = True
 
     def ioloop(self):
-        self.init_loopmanager()
-        self.module.bridge_loopmanager_add_ioloop()
-        self.module.bridge_loopmanager_start()
+        self.init_reqloop()
+        self.module.bridge_reqloop_start()
         return True
 
     def reqloop(self):
-        self.init_loopmanager()
-        self.module.bridge_loopmanager_add_reqloop()
-        self.module.bridge_loopmanager_start()
+        self.init_reqloop()
+        self.module.bridge_reqloop_start()
         return True
 
     def flash(self):
@@ -457,12 +453,12 @@ class debug_bridge(object):
 
     def doreset(self, run):
         if self.has_loopers:
-            self.module.bridge_loopmanager_stop()
+            self.module.bridge_reqloop_stop()
         self.stop()
         self.load()
         self.module.gdb_server_refresh_target()
         if self.has_loopers:
-            self.module.bridge_loopmanager_start()
+            self.module.bridge_reqloop_start()
         if run:
             self.start()
         return True
@@ -592,13 +588,13 @@ class debug_bridge(object):
         elif cmd.startswith("__gdb_tgt_res"):
             ret = 0
             if self.has_loopers:
-                self.module.bridge_loopmanager_set_poll_delay(True)
+                self.module.bridge_target_stopped(False)
                 ret = 1
             return ret
         elif cmd.startswith("__gdb_tgt_hlt"):
             ret = 0
             if self.has_loopers:
-                self.module.bridge_loopmanager_set_poll_delay(False)
+                self.module.bridge_target_stopped(True)
                 ret = 1
             return ret
         elif cmd.startswith("__is_started"):
@@ -628,12 +624,12 @@ class debug_bridge(object):
 
     def abort(self):
         self.has_loopers = False
-        self.module.bridge_loopmanager_clear()
+        self.module.bridge_reqloop_stop()
         self.module.gdb_server_abort()
 
     def close(self):
         self.has_loopers = False
-        self.module.bridge_loopmanager_clear()
+        self.module.bridge_reqloop_stop()
         self.module.gdb_server_close()
 
     def run_loop(self):

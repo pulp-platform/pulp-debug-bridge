@@ -1,3 +1,4 @@
+
 /*
  * Copyright (C) 2018 ETH Zurich and University of Bologna
  *
@@ -16,566 +17,303 @@
 
 /* 
  * Authors: Germain Haugou, ETH (germain.haugou@iis.ee.ethz.ch)
+ *          Martin Croome, (martin.croome@greenwaves-technologues.com)
  */
 
-#include <stdio.h>
-#include <unistd.h>
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <fcntl.h>
-#include <string>
-#include <algorithm>
+#include "reqloop.hpp"
 
-#include "loops.hpp"
+#define PTR_2_INT(__addr) ((unsigned int)(reinterpret_cast<std::uintptr_t>(__addr)&0xffffffff))
+#define INT_2_PTR(__addr) (reinterpret_cast<std::uintptr_t>((size_t)__addr))
 
-#if defined(__USE_SDL__)
-void Framebuffer::Window::destroy()
-{
-  if (m_destroyed) return;
-  SDL_DestroyTexture(m_texture);
-  SDL_DestroyRenderer(m_renderer);
-  SDL_DestroyWindow(m_window);
+void ReqLoop::set_debug_struct_addr(unsigned int debug_struct_addr) {
+    m_debug_struct_addr = debug_struct_addr;
 }
 
-void Framebuffer::Window::handle_display()
-{
-  m_pixels = new uint32_t[m_width*m_height];
-  m_window = SDL_CreateWindow(m_name.c_str(),
-      SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, m_width, m_height, 0);
-
-  m_renderer = SDL_CreateRenderer(m_window, -1, SDL_RENDERER_ACCELERATED);
-
-  m_texture = SDL_CreateTexture(m_renderer,
-      SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STATIC, m_width, m_height);
-
-  memset(m_pixels, 255, m_width * m_height * sizeof(Uint32));
-
-  SDL_UpdateTexture(m_texture, NULL, m_pixels, m_width * sizeof(Uint32));
-  SDL_RenderClear(m_renderer);
-  SDL_RenderCopy(m_renderer, m_texture, NULL, NULL);
-  SDL_RenderPresent(m_renderer);
-  m_destroyed = false;
+void ReqLoop::target_stopped(bool target_stopped) {
+    if (m_stopped) return;
+    m_target_stopped = target_stopped;
+    if (!target_stopped) {
+      m_loop_te->setTimeout(0);
+    }
 }
 
-void Framebuffer::Window::handle_update(Framebuffer::UpdateMessage * msg)
+void ReqLoop::start(bool target_stopped) {
+  m_stopped = false;
+  m_target_stopped = target_stopped;
+  log.debug("ReqLoop started\n");
+  m_loop_te->setTimeout(0);
+}
+
+void ReqLoop::stop() {
+  if (m_stopped) return;
+  log.debug("ReqLoop stopped\n");
+  m_stopped = true;
+  m_state = REQLOOP_INIT;
+  m_loop_te->setTimeout(kEventLoopTimerDone);
+}
+
+void ReqLoop::access(bool write, unsigned int addr, int len, char * buf)
 {
-  if (m_destroyed) return;
-  for (int j=0; j<msg->m_height; j++)
+  if (!m_cable->access(write, addr, len, buf))
+    throw LoopCableException();
+}
+
+void ReqLoop::activate()
+{
+  if (this->m_debug_struct == NULL)
   {
-    for (int i=0; i<msg->m_width; i++)
+    access(false, this->m_debug_struct_addr, 4, (char*)&this->m_debug_struct);
+
+    if (this->m_debug_struct != NULL)
     {
-      unsigned int value = msg->m_buffer[j*msg->m_width+i];
-      m_pixels[(j+msg->m_posy)*m_width + i + msg->m_posx] = (0xff << 24) | (value << 16) | (value << 8) | value;
-    }
-  }
-
-  SDL_UpdateTexture(m_texture, NULL, m_pixels, m_width * sizeof(Uint32));
-  SDL_RenderClear(m_renderer);
-  SDL_RenderCopy(m_renderer, m_texture, NULL, NULL);
-  SDL_RenderPresent(m_renderer);
-}
-
-Framebuffer::Framebuffer(Reqloop *reqloop)
-: m_top(reqloop)
-{
-}
-
-void Framebuffer::start()
-{
-  m_thread = new std::thread(&Framebuffer::fb_routine, this);
-}
-
-void Framebuffer::destroy()
-{
-  if (m_destroyed) return;
-  m_destroyed = true;
-  m_running = false;
-  if (m_thread->joinable())
-    m_thread->join();
-  m_thread = NULL;
-}
-
-void Framebuffer::fb_routine()
-{
-  SDL_Init(SDL_INIT_VIDEO);
-  m_display_window = SDL_RegisterEvents(1);
-  m_update_window = SDL_RegisterEvents(1);
-  m_running = true;
-  emit_start();
-  SDL_Event event;
-
-  while (m_running)
-  {
-    SDL_WaitEventTimeout(&event, 250);
-    if (!m_running) break;
-    if (event.type == SDL_QUIT) {
-      m_running = false;
-      break;
-    } else if (event.type == SDL_WINDOWEVENT) {
-      if (event.window.event == SDL_WINDOWEVENT_CLOSE) {
-        m_running = false;
-        break;
+      uint32_t protocol_version;
+      access(false, PTR_2_INT(&this->m_debug_struct->protocol_version), 4, (char*)&protocol_version);
+      
+      if (protocol_version != PROTOCOL_VERSION_4)
+      {
+        log.error("Protocol version mismatch between bridge and runtime (bridge: %d, runtime: %d)\n", PROTOCOL_VERSION_4, protocol_version);
+        throw std::logic_error("Unable to connect to runtime");
       }
-    } else if (event.type == m_display_window) {
-      handle_display(event.user.code);
-    } else if (event.type == m_update_window) {
-      handle_update(event.user.code, event.user.data1);
+
+      int32_t is_connected;
+      access(false, PTR_2_INT(&this->m_debug_struct->target.connected), 4, (char*)&is_connected);
+      this->m_target_connected = is_connected;
+
+      // The binary has just started, we need to tell him we want to watch for requests
+      unsigned int value = 0;
+
+      uint32_t connected = 1;
+      access(true, PTR_2_INT(&this->m_debug_struct->bridge.connected), 4, (char*)&connected);
+      if (m_do_printf)
+        access(true, PTR_2_INT(&this->m_debug_struct->use_internal_printf), 4, (char*)&value);
     }
   }
+}
+
+unsigned int ReqLoop::get_target_state()
+{
+  unsigned int value;
+  this->m_cable->jtag_get_reg(7, 4, &value, this->m_jtag_val);
+  value &= 0xf;
+  //printf("READ JTAG %x\n", value >> 1);
+  return value >> 1;
+}
+
+void ReqLoop::send_target_ack()
+{
+  this->m_jtag_val = 0x7 << 1;
+  this->m_cable->jtag_set_reg(7, 4, this->m_jtag_val);
+}
+
+void ReqLoop::clear_target_ack()
+{
+  this->m_jtag_val = 0x0 << 1;
+  this->m_cable->jtag_set_reg(7, 4, this->m_jtag_val);
+}
+
+bool ReqLoop::wait_target_request()
+{
+  // In case the target does not support synchronization through the JTAG
+  // register, just consider that the target is always available.
+  if (!this->m_target_jtag_sync)
+    return true;
+
+  switch (this->m_target_sync_fsm_state)
   {
-    std::lock_guard<std::mutex> guard(m_mut_windows);
-    m_windows.clear();
-  }
-  SDL_Quit();
- }
-
-void Framebuffer::open(std::string name, int width, int height, int format)
-{
-  uint32_t window_id;
-  if (format == HAL_BRIDGE_REQ_FB_FORMAT_GRAY)
-  {
-
-  }
-  else
-  {
-    m_top->m_top->log.error("reqloop framebuffer - unsupported format: %d\n", format);
-  }
-  {
-    std::lock_guard<std::mutex> guard(m_mut_windows);
-    window_id = m_next_window_id++;
-    m_windows[window_id] = std::make_shared<Framebuffer::Window>(name, width, height, format);
-  }
-  SDL_Event ev;
-  SDL_memset(&ev, 0, sizeof(ev));
-  ev.type = m_display_window;
-  ev.user.code = window_id;
-  SDL_PushEvent(&ev);
-}
-
-std::shared_ptr<Framebuffer::Window> Framebuffer::find_window(uint32_t window_id)
-{
-  std::lock_guard<std::mutex> guard(m_mut_windows);
-  auto iwindow = m_windows.find(window_id);
-  if (iwindow == m_windows.end()) {
-    m_top->m_top->log.error("window id %x not found.\n", window_id);
-    return nullptr;
-  }
-  return iwindow->second;
-}
-
-void Framebuffer::handle_display(uint32_t window_id)
-{
-  auto window = find_window(window_id);
-  if (window) {
-    window->handle_display();
-    emit_window_open(window_id);
-  }
-}
-
-void Framebuffer::handle_update(uint32_t window_id, void * vmsg)
-{
-  auto window = find_window(window_id);
-  auto msg = reinterpret_cast<Framebuffer::UpdateMessage *>(vmsg);
-  if (window) {
-    window->handle_update(msg);
-  }
-  delete msg;
-}
-
-bool Framebuffer::update(uint32_t window_id, uint32_t addr, int posx, int posy, int width, int height)
-{
-  auto window = find_window(window_id);
-  if (!window) return false;
-
-  if (posx == -1)
-  {
-    posx = posy = 0;
-    width = window->get_width();
-    height = window->get_height();
-  }
-  auto msg = new Framebuffer::UpdateMessage(posx, posy, width, height, window->get_pixel_size());
-
-  m_top->m_top->access(false, addr, msg->get_buffer_size(), static_cast<char *>(msg->get_buffer()));
-  SDL_Event ev;
-  SDL_memset(&ev, 0, sizeof(ev));
-  ev.type = m_update_window;
-  ev.user.code = window_id;
-  ev.user.data1 = reinterpret_cast<void *>(msg);
-  SDL_PushEvent(&ev);
-  return true;
-}
-#endif
-
-void Reqloop::reply_req(hal_debug_struct_t *debug_struct, hal_bridge_req_t *target_req, hal_bridge_req_t *)
-{
-  uint32_t value = 1;
-  m_top->access(true, PTR_2_INT(&target_req->done), sizeof(target_req->done), (char*)&value);
-
-  uint32_t notif_req_addr;
-  uint32_t notif_req_value;
-  m_top->access(false, PTR_2_INT(&debug_struct->notif_req_addr), 4, (char*)&notif_req_addr);
-  m_top->access(false, PTR_2_INT(&debug_struct->notif_req_value), 4, (char*)&notif_req_value);
-
-  m_top->access(true, notif_req_addr, 4, (char*)&notif_req_value);
-}
-
-#if 0
-static int transpose_code(int code)
-{
-  int alt = 0;
-
-  if ((code & 0x0) == 0x0) alt |= O_RDONLY;
-  if ((code & 0x1) == 0x1) alt |= O_WRONLY;
-  if ((code & 0x2) == 0x2) alt |= O_RDWR;
-  if ((code & 0x8) == 0x8) alt |= O_APPEND;
-  if ((code & 0x200) == 0x200) alt |= O_CREAT;
-  if ((code & 0x400) == 0x400) alt |= O_TRUNC;
-  if ((code & 0x800) == 0x800) alt |= O_EXCL;
-  if ((code & 0x2000) == 0x2000) alt |= O_SYNC;
-  if ((code & 0x4000) == 0x4000) alt |= O_NONBLOCK;
-  if ((code & 0x8000) == 0x8000) alt |= O_NOCTTY;
-
-  return alt;
-}
-#endif
-
-Reqloop::ReqloopFinishedStatus Reqloop::handle_req_connect(hal_debug_struct_t *debug_struct, hal_bridge_req_t *req, hal_bridge_req_t *target_req)
-{
-  m_top->log.detail("reqloop connect\n");
-  reply_req(debug_struct, target_req, req);
-  return ReqloopFinishedMoreReqs;
-}
-
-Reqloop::ReqloopFinishedStatus Reqloop::handle_req_disconnect(hal_debug_struct_t *debug_struct, hal_bridge_req_t *req, hal_bridge_req_t *target_req)
-{
-  m_top->log.detail("reqloop disconnect\n");
-  reply_req(debug_struct, target_req, req);
-  return ReqloopFinishedStop;
-}
-
-Reqloop::ReqloopFinishedStatus Reqloop::handle_req_open(hal_debug_struct_t *debug_struct, hal_bridge_req_t *req, hal_bridge_req_t *target_req)
-{
-  std::vector<char> name(req->open.name_len+1);
-
-  m_top->access(false, (unsigned int)req->open.name, req->open.name_len+1, &(name[0]));
-  int res = open(&(name[0]), req->open.flags, req->open.mode);
-
-  m_top->log.detail("reqloop open %s fd %d\n", &(name[0]), res);
-
-  m_top->access(true, PTR_2_INT(&target_req->open.retval), 4, (char*)&res);
-
-  reply_req(debug_struct, target_req, req);
-
-  return ReqloopFinishedMoreReqs;
-}
-
-
-Reqloop::FileReqState::FileReqState(uint32_t fd, uint32_t size, uint32_t ptr) :
-  m_fd(fd), m_size(size), m_ptr(ptr) {
-  m_iter_size = m_size;
-  m_res = 0;
-  if (m_iter_size > 4096)
-    m_iter_size = 4096;
-}
-
-bool Reqloop::FileReqState::do_write(LoopManager * top)
-{
-  char buffer[4096];
-  int len = std::min(m_size, m_iter_size);
-
-  top->access(false, m_ptr, len, (char*)buffer);
-
-  len = write(m_fd, (void *)buffer, len);
-
-  if (len <= 0) {
-    m_res = -1;
-    return false;
-  }
-
-  m_res += len;
-  m_ptr += len;
-  m_size -= len;
-  return m_size>0;
-}
-
-bool Reqloop::FileReqState::do_read(LoopManager * top)
-{
-  char buffer[4096];
-  int len = std::min(m_size, m_iter_size);
-
-  len = read(m_fd, (void *)buffer, len);
-
-  if (len <= 0) {
-    if (len == -1 && m_res == 0) m_res = -1;
-    return false;
-  }
-
-  top->access(true, m_ptr, len, (char*)buffer);
-
-  m_res += len;
-  m_ptr += len;
-  m_size -= len;
-  return m_size>0;
-}
-
-int64_t Reqloop::handle_req_read_one(hal_debug_struct_t *debug_struct, hal_bridge_req_t *req, hal_bridge_req_t *target_req)
-{
-  if (m_destroyed) return kEventLoopTimerDone;
-  try {
-    if (m_fstate.do_read(m_top)) {
-      return m_req_pause;
-    } else {
-      this->m_top->access(true, PTR_2_INT(&target_req->read.retval), 4, (char*)&m_fstate.m_res);
-      reply_req(debug_struct, target_req, req);
-      set_paused(false);
-      return kEventLoopTimerDone;
+    case TARGET_SYNC_FSM_STATE_INIT: {
+      // This state is used in case the bridge is not yet connected to the
+      // target (e.g. if it boots from flash).
+      // Wait until the target becomes available and ask for the connection.
+      unsigned int state = this->get_target_state();
+      if (state == 4)
+      {
+        // Target is asking for connection, acknowledge it and go to next step
+        this->send_target_ack();
+        this->m_target_sync_fsm_state = TARGET_SYNC_FSM_STATE_WAIT_INIT;
+      }
+      return false;
     }
-  } catch (LoopCableException e) {
-    log.error("Reqloop loop cable error: exiting\n");
-    return kEventLoopTimerDone;
-  }
-}
 
-Reqloop::ReqloopFinishedStatus Reqloop::handle_req_read(hal_debug_struct_t *debug_struct, hal_bridge_req_t *req, hal_bridge_req_t *target_req)
-{
-  m_fstate = FileReqState(req->read.file, req->read.len, req->read.ptr);
-  m_top->log.detail("reqloop read fd %u %u\n", m_fstate.m_fd, m_fstate.m_size);
-  if (handle_req_read_one(debug_struct, req, target_req) == m_req_pause) {
-    m_active_timer = m_event_loop->getTimerEvent(std::bind(&Reqloop::handle_req_read_one, this->shared_from_this(), debug_struct, req, target_req), m_req_pause);
-    return ReqloopFinishedCompletingReq;
-  }
-  return ReqloopFinishedMoreReqs;
-}
-
-int64_t Reqloop::handle_req_write_one(hal_debug_struct_t *debug_struct, hal_bridge_req_t *req, hal_bridge_req_t *target_req)
-{
-  if (m_destroyed) return kEventLoopTimerDone;
-  try {
-    if (m_fstate.do_write(m_top)) {
-      return m_req_pause;
-    } else {
-      this->m_top->access(true, PTR_2_INT(&target_req->write.retval), 4, (char*)&m_fstate.m_res);
-      reply_req(debug_struct, target_req, req);
-      set_paused(false);
-      return kEventLoopTimerDone;
+    case TARGET_SYNC_FSM_STATE_WAIT_INIT: {
+      // This state is used to wait for the target acknoledgment, after
+      // it asked for connection
+      unsigned int state = this->get_target_state();
+      if (state != 4)
+      {
+        // Once the target acknowledged the connection, activate the bridge
+        // clear the acknowledge and wait for target availability
+        this->activate();
+        this->clear_target_ack();
+        this->m_target_sync_fsm_state = TARGET_SYNC_FSM_STATE_WAIT_REQUEST;
+      }
+      return true;
     }
-  } catch (LoopCableException e) {
-    log.error("Reqloop loop cable error: exiting\n");
-    return kEventLoopTimerDone;
-  }
-}
 
-Reqloop::ReqloopFinishedStatus Reqloop::handle_req_write(hal_debug_struct_t *debug_struct, hal_bridge_req_t *req, hal_bridge_req_t *target_req)
-{
-  m_fstate = FileReqState(req->write.file, req->write.len, req->write.ptr);
-  m_top->log.detail("reqloop write fd %u %u\n", m_fstate.m_fd, m_fstate.m_size);
-  if (handle_req_write_one(debug_struct, req, target_req) == m_req_pause) {
-    m_active_timer = m_event_loop->getTimerEvent(std::bind(&Reqloop::handle_req_write_one, this->shared_from_this(), debug_struct, req, target_req), m_req_pause);
-    return ReqloopFinishedCompletingReq;
-  }
-  return ReqloopFinishedMoreReqs;
-}
+    case TARGET_SYNC_FSM_STATE_WAIT_AVAILABLE: {
+      // We are in the state when the target cannot be accessed.
+      // Wait until we see something different from 0.
+      // We also need to clear the request acknowledgement to let the target
+      // know that we got it, in case we come from state
+      // TARGET_SYNC_FSM_STATE_WAIT_ACK.
+      this->clear_target_ack();
+      unsigned int state = this->get_target_state();
+      if (state == 0)
+        return false;
 
-Reqloop::ReqloopFinishedStatus Reqloop::handle_req_close(hal_debug_struct_t *debug_struct, hal_bridge_req_t *req, hal_bridge_req_t *target_req)
-{
-  int res = close(req->close.file);
-  m_top->log.detail("reqloop close fd %x\n", req->close.file);
-  m_top->access(true, PTR_2_INT(&target_req->write.retval), 4, (char*)&res);
-  reply_req(debug_struct, target_req, req);
-  return ReqloopFinishedMoreReqs;
-}
+      this->m_target_sync_fsm_state = TARGET_SYNC_FSM_STATE_WAIT_REQUEST;
+      emit_available(true);
+      return false;
+    }
 
-#if defined(__USE_SDL__)
-// The window open function is split into 2 stages. Firstly intialize the framebuffer thread. Then open the window.
-// All calls are marshalled onto the framebuffer thread and then marshalled back onto the main loop
-Reqloop::ReqloopFinishedStatus Reqloop::handle_req_fb_open(hal_debug_struct_t *debug_struct, hal_bridge_req_t *req, hal_bridge_req_t *target_req)
-{
-  if (!m_frame_buffer) {
-    m_top->log.detail("reqloop start framebuffer\n");
-    m_frame_buffer = new Framebuffer(this);
-    // get an async event that will be triggered on the SDL thread
-    // need a copy of the request since the event will execute after this function returns
-    hal_bridge_req_t * req_copy = new hal_bridge_req_t(*req);
-    auto sp_this = this->shared_from_this();
-    auto ae = m_event_loop->getAsyncEvent<bool>([sp_this, debug_struct, req_copy, target_req](bool UNUSED(b)){
-      // Move to the next step - executed on main loop
-      if (sp_this->m_destroyed) return;
-      sp_this->complete_req_fb_open(debug_struct, req_copy, target_req);
-      delete req_copy;
-    });
-    m_frame_buffer->on_start([this, ae](){
-      // executed on SDL thread
-      m_top->log.detail("reqloop trigger start framebuffer finished\n");
-      ae->trigger(true);
-    });
-    m_frame_buffer->start();
-  } else {
-    complete_req_fb_open(debug_struct, req, target_req);
-  }
-  return ReqloopFinishedCompletingReq;
-}
+    case TARGET_SYNC_FSM_STATE_WAIT_REQUEST: {
+      // The target became available, now wait for a request
+      unsigned int state = this->get_target_state();
 
-void Reqloop::complete_req_fb_open(hal_debug_struct_t *debug_struct, hal_bridge_req_t *req, hal_bridge_req_t *target_req)
-{
-  if (m_destroyed) return;
-  char name[req->fb_open.name_len+1];
-  m_top->access(false, req->fb_open.name, req->fb_open.name_len+1, (char*)name);
+      if (state == 1)
+      {
+        // The target is still available with no request, stay in this state
+        return false;
+      }
 
-  m_top->log.detail("reqloop open window %s\n", &(name[0]));
-  // don't get destroyed until the event loop is or the callback is executed
-  auto sp_this = this->shared_from_this();
-  auto ae = m_event_loop->getAsyncEvent<uint32_t>([sp_this, debug_struct, req, target_req](uint32_t window_id){
-    if (sp_this->m_destroyed) return;
-    sp_this->complete_req_fb_window_open(debug_struct, req, target_req, window_id);
-  });
-  m_frame_buffer->once_window_open([ae](uint32_t window_id){
-    ae->trigger(window_id);
-  });
-  // req is valid up to this point
-  m_frame_buffer->open(&name[0], req->fb_open.width, req->fb_open.height, req->fb_open.format);
-}
+      if (state == 2)
+      {
+        // The target is requesting a shutdown, acknowledge it and stop
+        // accessing the target
+        emit_available(false);
+        this->send_target_ack();
+        this->m_target_sync_fsm_state = TARGET_SYNC_FSM_STATE_WAIT_ACK;
+        return false;
+      }
 
-void Reqloop::complete_req_fb_window_open(hal_debug_struct_t *debug_struct, hal_bridge_req_t *req, hal_bridge_req_t *target_req, uint32_t window_id)
-{
-  m_top->access(true, PTR_2_INT(&target_req->fb_open.screen), 8, (char*)&window_id);
-  // BEWARE! req is actually invalid here since it was either deleted or went out of scope however reply_req doesn't use it.
-  reply_req(debug_struct, target_req, req);
-  set_paused(false);
-}
+      // The target is requesting something else, just report true so that
+      // the caller now checks what is requested through JTAG and stay in
+      // this state.
+      return true;
+    }
 
-Reqloop::ReqloopFinishedStatus Reqloop::handle_req_fb_update(hal_debug_struct_t *debug_struct, hal_bridge_req_t *req, hal_bridge_req_t *target_req)
-{
-  if  (!m_frame_buffer)
-    return ReqloopFinishedStop;
-  if (!m_frame_buffer->update((uint32_t) (req->fb_update.screen&0xffffffff), req->fb_update.addr, 
-          req->fb_update.posx, req->fb_update.posy, req->fb_update.width, req->fb_update.height)
-      )
-  {
-    m_frame_buffer->destroy();
-    delete m_frame_buffer;
-    return ReqloopFinishedStopAll;
-  }
-  reply_req(debug_struct, target_req, req);
-  return ReqloopFinishedMoreReqs;
-}
-#else
-Reqloop::ReqloopFinishedStatus Reqloop::handle_req_fb_update(hal_debug_struct_t *, hal_bridge_req_t *, hal_bridge_req_t *)
-{
-  log.error("attempt to update framebuffer but bridge is not compiled with SDL");
-  return ReqloopFinishedStop;
-}
-Reqloop::ReqloopFinishedStatus Reqloop::handle_req_fb_open(hal_debug_struct_t *, hal_bridge_req_t *, hal_bridge_req_t *)
-{
-  log.error("attempt to open framebuffer but bridge is not compiled with SDL");
-  return ReqloopFinishedStop;
-}
-#endif
+    case TARGET_SYNC_FSM_STATE_WAIT_ACK: {
+      // The chip is not accessible, just wait until it becomes available
+      // again
+      unsigned int state = this->get_target_state();
+      if (state != 0)
+        return false;
 
-#ifdef __NEW_REQLOOP__
-Reqloop::ReqloopFinishedStatus Reqloop::handle_req_target_status_sync(hal_debug_struct_t *debug_struct, hal_bridge_req_t *req, hal_bridge_req_t *target_req)
-{
-  hal_target_state_t target;
+      this->m_target_sync_fsm_state = TARGET_SYNC_FSM_STATE_WAIT_AVAILABLE;
+      return false;
+    }
 
-  m_top->access(false, PTR_2_INT(&debug_struct->target), sizeof(hal_target_state_t), (char *)&target);
-  m_top->target_state_sync(&target);
-  log.detail("New target state %d\n", target);
-
-  this->reply_req(debug_struct, target_req, req);
-  return ReqloopFinishedMoreReqs;
-}
-#endif
-
-
-Reqloop::ReqloopFinishedStatus Reqloop::handle_req(hal_debug_struct_t *debug_struct, hal_bridge_req_t *req, hal_bridge_req_t *target_req)
-{
-  switch (req->type)
-  {
-    case HAL_BRIDGE_REQ_CONNECT:    return handle_req_connect(debug_struct, req, target_req);
-    case HAL_BRIDGE_REQ_DISCONNECT: return handle_req_disconnect(debug_struct, req, target_req);
-    case HAL_BRIDGE_REQ_OPEN:       return handle_req_open(debug_struct, req, target_req);
-    case HAL_BRIDGE_REQ_READ:       return handle_req_read(debug_struct, req, target_req);
-    case HAL_BRIDGE_REQ_WRITE:      return handle_req_write(debug_struct, req, target_req);
-    case HAL_BRIDGE_REQ_CLOSE:      return handle_req_close(debug_struct, req, target_req);
-    case HAL_BRIDGE_REQ_FB_OPEN:    return handle_req_fb_open(debug_struct, req, target_req);
-    case HAL_BRIDGE_REQ_FB_UPDATE:  return handle_req_fb_update(debug_struct, req, target_req);
-#ifdef __NEW_REQLOOP__
-    case HAL_BRIDGE_REQ_TARGET_STATUS_SYNC:
-                                    return handle_req_target_status_sync(debug_struct, req, target_req);
-#endif
     default:
-      log.print(LOG_ERROR, "Received unknown request from target (type: %d)\n", req->type);
-  }
-  return ReqloopFinishedStop;
-}
-
-LooperFinishedStatus Reqloop::register_proc(hal_debug_struct_t *debug_struct) {
-  try {
-    // notify that we are connected
-    uint32_t connected = 1;
-#ifdef __NEW_REQLOOP__
-    m_top->access(true, PTR_2_INT(&debug_struct->bridge.connected), 4, (char*)&connected);
-#else
-    m_top->access(true, PTR_2_INT(&debug_struct->bridge_connected), 4, (char*)&connected);
-#endif
-    return LooperFinishedContinue;
-  } catch (LoopCableException e) {
-    log.error("Reqloop loop cable error: exiting\n");
-    return LooperFinishedStopAll;
+      return false;
   }
 }
 
-Reqloop::ReqloopFinishedStatus Reqloop::handle_one_req(hal_debug_struct_t *debug_struct) {
-  try {
-#if defined(__NEW_REQLOOP__) && defined(__CHECK_AVAILABILITY__)
-    if (!m_top->get_target_available()) return ReqloopFinishedContinue;
-#endif
-    uint32_t value;
-    hal_bridge_req_t *first_bridge_req = NULL;
-
-    m_top->access(false, PTR_2_INT(&debug_struct->first_bridge_req), 4, (char*)&first_bridge_req);
-
-    if (first_bridge_req == NULL) return ReqloopFinishedContinue;
-
-    hal_bridge_req_t req;
-    m_top->access(false, PTR_2_INT(first_bridge_req), sizeof(hal_bridge_req_t), (char*)&req);
-
-    value = 1;
-    m_top->access(true, PTR_2_INT(&first_bridge_req->popped), sizeof(first_bridge_req->popped), (char*)&value);
-    m_top->access(true, PTR_2_INT(&debug_struct->first_bridge_req), 4, (char*)&req.next);
-
-    auto status = handle_req(debug_struct, &req, first_bridge_req);
-    return status;
-  } catch (LoopCableException e) {
-    return ReqloopFinishedStopAll;
-  }
-}
-
-LooperFinishedStatus Reqloop::loop_proc(hal_debug_struct_t *debug_struct)
+int64_t ReqLoop::reqloop_routine()
 {
-  while (1) {
-    if (m_has_error) return LooperFinishedStop;
+  if (m_stopped) return kEventLoopTimerDone;
 
-    ReqloopFinishedStatus status = handle_one_req(debug_struct);
-    switch(status) {
-      case ReqloopFinishedCompletingReq:
-        return LooperFinishedPause;
-      case ReqloopFinishedContinue:
-        return LooperFinishedContinue;
-      case ReqloopFinishedMoreReqs:
-        continue;
-      case ReqloopFinishedStop:
-        if (m_active_timer)
-          m_active_timer->setTimeout(-1);
-        return LooperFinishedStop;
-      default:
-        if (m_active_timer)
-          m_active_timer->setTimeout(-1);
-        return LooperFinishedStopAll;
+  switch (this->m_state) {
+
+    case REQLOOP_INIT: {
+      this->activate();
+      // In case the birdge is not yet connected, do extra init steps to
+      // connect once the target becomes available
+      this->m_target_sync_fsm_state = this->m_debug_struct ? TARGET_SYNC_FSM_STATE_WAIT_AVAILABLE : TARGET_SYNC_FSM_STATE_INIT;
+
+      this->m_jtag_val = 0;
+      this->m_state = REQLOOP_IDLE;
+      return 0;
+    }
+
+    case REQLOOP_IDLE: {
+      if (!this->m_debug_struct_addr) {
+        log.warning("Trying to launch request loop (command reqloop) while no binary is provided");
+        return kEventLoopTimerDone;
+      }
+
+
+      // Wait until the target is available and has a request.
+      // This will poll the target through the JTAG register.
+      if (!this->wait_target_request())
+      {
+        return 100;
+      }
+
+      if (m_check_exit) {
+        uint32_t value;
+        access(false, PTR_2_INT(&this->m_debug_struct->exit_status), 4, (char*)&value);
+        if (value >> 31) {
+          int32_t status = ((int32_t)value << 1) >> 1;
+          log.user("Detected end of application, exiting with status: %d\n", status);
+          emit_exit(status);
+          return kEventLoopTimerDone;
+        }
+      }
+    }
+
+    // Fallthrough.
+    case REQLOOP_PRINTF: {
+      if (m_do_printf) {
+        uint32_t value;
+        access(false, PTR_2_INT(&this->m_debug_struct->pending_putchar), 4, (char*)&value);
+        int cnt = 0;
+        while(value > 0) {
+          if (cnt++ > m_printf_loops) {
+            this->m_state = REQLOOP_PRINTF;
+            return 0;
+          }
+          char buff[value+1];
+          access(false, PTR_2_INT(&this->m_debug_struct->putc_buffer), value, &(buff[0]));
+          buff[value] = 0;
+          unsigned int zero = 0;
+          access(true, PTR_2_INT(&this->m_debug_struct->pending_putchar), 4, (char*)&zero);
+          fputs(buff, stdout);
+          fflush(NULL);
+          access(false, PTR_2_INT(&this->m_debug_struct->pending_putchar), 4, (char*)&value);
+        }
+        this->m_state = REQLOOP_IDLE;
+      }
+      emit_req_event(true);
+      if (m_target_stopped) {
+        // If target has stopped we have now flushed printfs so slow down
+        return 1000000;
+      } else {
+        // If we cannot sync then slow the loop down
+        return (this->m_target_jtag_sync ? 0 : 500);
+      }
+    }
+
+    default: {
+      log.error("unexpected reqloop state");
+      return kEventLoopTimerDone;
     }
   }
 }
 
-Reqloop::Reqloop(LoopManager * top, const EventLoop::SpEventLoop &event_loop, int64_t req_pause) : Looper(top), log("REQLOOP"), m_event_loop(event_loop), m_req_pause(req_pause)
-{
+// ReqLoop::ReqLoop(Cable *cable, unsigned int debug_struct_addr) : cable(cable), debug_struct_addr(debug_struct_addr), target_connected(false)
+// {
+//   log = new Log();
+
+//   js::config *config = cable->get_config();
+
+//   this->target_jtag_sync = config->get_child_bool("**/debug_bridge/target_jtag_sync");
+
+//   // Try to connect the bridge now before the execution is started so
+//   // that the target sees the bridge as soon as it starts.
+//   // Otherwise, the bridge will get connected later on when the target
+//   // becomes available
+//   this->activate();
+//   thread = new std::thread(&ReqLoop::reqloop_routine, this);
+// }
+
+ReqLoop::ReqLoop(
+    const EventLoop::SpEventLoop &event_loop, std::shared_ptr<Cable> cable, unsigned int debug_struct_addr, bool do_printf, bool check_exit) : 
+      log("REQLOOP"), m_cable(std::move(cable)), m_debug_struct_addr(debug_struct_addr), m_do_printf(do_printf), m_check_exit(check_exit) {
+
+  js::config *config = cable->get_config();  
+  this->m_target_jtag_sync = (config?config->get_child_bool("**/debug_bridge/target_jtag_sync"):false);
+  m_loop_te = event_loop->getTimerEvent(std::bind(&ReqLoop::reqloop_routine, this));
+}
+
+ReqLoop::~ReqLoop() {
 }
 

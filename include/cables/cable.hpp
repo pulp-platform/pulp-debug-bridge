@@ -80,12 +80,17 @@ public:
 class Cable : public Cable_io_itf, public Cable_jtag_itf, public Cable_ctrl_itf
 {
 public:
+  Cable(js::config *config) : config(config) {}
   virtual bool connect(js::config *) { return true; }
 
   virtual void lock() { }
 
   virtual void unlock() { }
   virtual ~Cable() {};
+  js::config *get_config() { return this->config; }
+
+protected:  
+  js::config *config;
 };
 
 #endif

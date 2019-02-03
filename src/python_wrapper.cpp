@@ -28,7 +28,7 @@
 #include "log/log.hpp"
 #include "cables/adv_dbg_itf/adv_dbg_itf.hpp"
 #include "cables/jtag-proxy/jtag-proxy.hpp"
-#include "loops.hpp"
+#include "reqloop.hpp"
 #ifdef __USE_FTDI__
 #include "cables/ftdi/ftdi.hpp"
 #endif
@@ -228,59 +228,33 @@ extern "C" void bridge_stop()
   bridge->m_bridge_commands->stop_bridge();
 }
 
-extern "C" void bridge_loopmanager_set_poll_delay(int high_rate)
+extern "C" void bridge_target_stopped(int stopped)
 {
-  if (bridge->m_loop_manager)
-    bridge->m_loop_manager->set_loop_speed(high_rate);
+  if (bridge->m_req_loop)
+    bridge->m_req_loop->target_stopped(stopped);
 }
 
-extern "C" void bridge_loopmanager_init(unsigned int debug_struct_addr)
+extern "C" void bridge_reqloop_init(unsigned int debug_struct_addr, int do_printf)
 {
-  if (!bridge->m_loop_manager) {
-    bridge->m_loop_manager = std::make_shared<LoopManager>(bridge->m_event_loop, std::static_pointer_cast<Cable>(bridge->m_adu), debug_struct_addr);
-    bridge->m_loop_manager->on_exit([](int){
-      // Program exited - remove loopers and trigger wait_exit command
-      bridge->m_loop_manager->stop();
+  if (!bridge->m_req_loop) {
+    bridge->m_req_loop = std::make_shared<ReqLoop>(bridge->m_event_loop, std::static_pointer_cast<Cable>(bridge->m_adu), debug_struct_addr, do_printf);
+    bridge->m_req_loop->on_exit([](int){
       bridge->m_bridge_commands->trigger_exit();
     });
   } else
-    bridge->m_loop_manager->set_debug_struct_addr(debug_struct_addr);
+    bridge->m_req_loop->set_debug_struct_addr(debug_struct_addr);
 }
 
-extern "C" void bridge_loopmanager_add_reqloop()
+extern "C" void bridge_reqloop_start()
 {
-  if (!bridge->m_reqloop) {
-    bridge->m_reqloop = std::make_shared<Reqloop>(bridge->m_loop_manager.get(), bridge->m_event_loop);
-    bridge->m_loop_manager->add_looper(bridge->m_reqloop);
-  }
+  if (bridge->m_req_loop)
+    bridge->m_req_loop->start(true);
 }
 
-extern "C" void bridge_loopmanager_add_ioloop()
+extern "C" void bridge_reqloop_stop()
 {
-  if (!bridge->m_ioloop) {
-    bridge->m_ioloop = std::make_shared<Ioloop>(bridge->m_loop_manager.get());
-    bridge->m_loop_manager->add_looper(bridge->m_ioloop);
-  }
-}
-
-extern "C" void bridge_loopmanager_start()
-{
-  if (bridge->m_loop_manager)
-    bridge->m_loop_manager->start(true);
-}
-
-extern "C" void bridge_loopmanager_stop()
-{
-  if (bridge->m_loop_manager)
-    bridge->m_loop_manager->stop();
-}
-
-extern "C" void bridge_loopmanager_clear()
-{
-  if (bridge->m_loop_manager) {
-    bridge->m_loop_manager->clear_loopers();
-    bridge->m_loop_manager = nullptr;
-  }
+  if (bridge->m_req_loop)
+    bridge->m_req_loop->stop();
 }
 
 extern "C" void bridge_deinit()
@@ -294,11 +268,11 @@ extern "C" void bridge_deinit()
 extern "C" bool gdb_server_open(int socket_port, cmd_cb_t cmd_cb, const char * capabilities)
 {
   // slow down printf if gdb is working so as not to starve it
-  if (bridge->m_ioloop) bridge->m_ioloop->set_max_loops(2);
+  if (bridge->m_req_loop) bridge->m_req_loop->set_printf_loops(2);
   try {
     bridge->m_gdb_server = std::make_shared<Gdb_server>(bridge->m_event_loop, bridge->m_adu, bridge->m_system_config, socket_port, capabilities);
-    if (bridge->m_loop_manager) {
-      bridge->m_loop_manager->once_exit([](int32_t status){
+    if (bridge->m_req_loop) {
+      bridge->m_req_loop->once_exit([](int32_t status){
         bridge->m_gdb_server->signal_exit(status);
       });
     }

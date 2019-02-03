@@ -87,8 +87,6 @@ add_library(libplpbridge MODULE
   src/gdb-server/target.cpp
   src/gdb-server/breakpoints.cpp
   src/reqloop.cpp
-  src/ioloop.cpp
-  src/loops.cpp
   src/bridge-commands.cpp
 )
 

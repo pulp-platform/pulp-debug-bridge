@@ -18,6 +18,9 @@
  * Authors: Martin Croome, GWT (martin.croome@greenwaves.technologies.com)
  */
 
+#ifndef __BRIDGE_COMMANDS_H
+#define __BRIDGE_COMMANDS_H
+
 #include <memory>
 #include <queue>
 #include <stack>
@@ -26,7 +29,7 @@
 #include <list>
 #include "events/emitter.hpp"
 #include "events/events.hpp"
-#include "loops.hpp"
+#include "reqloop.hpp"
 #include "bridge-state.hpp"
 
 class BridgeCommandsException : public std::exception {
@@ -136,10 +139,12 @@ class BridgeCommands : public std::enable_shared_from_this<BridgeCommands>, publ
     void trigger_exit() { emit_exit(); }
 
     EventLoop::SpEventLoop get_loop() { return m_state->m_event_loop; }
-    std::shared_ptr<LoopManager> get_loop_manager() { return m_state->m_loop_manager; }
+    std::shared_ptr<ReqLoop> get_req_loop() { return m_state->m_req_loop; }
 
   private:
     BridgeState * m_state;
     std::stack<std::shared_ptr<BridgeCommandCollection>> m_command_stack;
     int m_return_value;
 };
+
+#endif

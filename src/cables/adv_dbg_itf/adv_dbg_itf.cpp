@@ -32,7 +32,7 @@
 #define JTAG_SOC_AXIREG  4
 
 
-Adv_dbg_itf::Adv_dbg_itf(js::config *system_config, const std::shared_ptr<Cable> &m_dev) : m_dev(std::move(m_dev)), log("ADVDBG"), config(system_config)
+Adv_dbg_itf::Adv_dbg_itf(js::config *system_config, const std::shared_ptr<Cable> &m_dev) : Cable(system_config), m_dev(std::move(m_dev)), log("ADVDBG")
 {
   js::config *conf = system_config->get("**/adv_dbg_unit/debug_ir");
 

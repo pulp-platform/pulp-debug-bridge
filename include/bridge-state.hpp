@@ -1,6 +1,29 @@
+/*
+ * Copyright (C) 2018 ETH Zurich, University of Bologna and GreenWaves Technologies SA
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+/* 
+ * Authors: Martin Croome, GWT (martin.croome@greenwaves.technologies.com)
+ */
+
+#ifndef __BRIDGE_STATE_H
+#define __BRIDGE_STATE_H
+
 #include "json.hpp"
 #include "events/events.hpp"
-#include "loops.hpp"
+#include "reqloop.hpp"
 #include "gdb-server/gdb-server.hpp"
 #include "cables/cable.hpp"
 #include "cables/adv_dbg_itf/adv_dbg_itf.hpp"
@@ -19,9 +42,9 @@ class BridgeState {
         EventLoop::SpEventLoop m_event_loop;
         std::shared_ptr<Adv_dbg_itf> m_adu = nullptr;
         std::shared_ptr<Gdb_server> m_gdb_server = nullptr;
-        std::shared_ptr<LoopManager> m_loop_manager = nullptr;
+        std::shared_ptr<ReqLoop> m_req_loop = nullptr;
         std::shared_ptr<BridgeCommands> m_bridge_commands;
-        std::shared_ptr<Ioloop> m_ioloop = nullptr;
-        std::shared_ptr<Reqloop> m_reqloop = nullptr;
         js::config * m_system_config;
 };
+
+#endif
