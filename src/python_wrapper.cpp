@@ -248,7 +248,7 @@ extern "C" void bridge_reqloop_init(unsigned int debug_struct_addr, int do_print
 extern "C" void bridge_reqloop_start()
 {
   if (bridge->m_req_loop)
-    bridge->m_req_loop->start(true);
+    bridge->m_req_loop->start(false);
 }
 
 extern "C" void bridge_reqloop_stop()

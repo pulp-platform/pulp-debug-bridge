@@ -289,22 +289,6 @@ int64_t ReqLoop::reqloop_routine()
   }
 }
 
-// ReqLoop::ReqLoop(Cable *cable, unsigned int debug_struct_addr) : cable(cable), debug_struct_addr(debug_struct_addr), target_connected(false)
-// {
-//   log = new Log();
-
-//   js::config *config = cable->get_config();
-
-//   this->target_jtag_sync = config->get_child_bool("**/debug_bridge/target_jtag_sync");
-
-//   // Try to connect the bridge now before the execution is started so
-//   // that the target sees the bridge as soon as it starts.
-//   // Otherwise, the bridge will get connected later on when the target
-//   // becomes available
-//   this->activate();
-//   thread = new std::thread(&ReqLoop::reqloop_routine, this);
-// }
-
 ReqLoop::ReqLoop(
     const EventLoop::SpEventLoop &event_loop, std::shared_ptr<Cable> cable, unsigned int debug_struct_addr, bool do_printf, bool check_exit) : 
       log("REQLOOP"), m_cable(std::move(cable)), m_debug_struct_addr(debug_struct_addr), m_do_printf(do_printf), m_check_exit(check_exit) {

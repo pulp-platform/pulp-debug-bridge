@@ -75,7 +75,6 @@ public:
   void set_debug_struct_addr(unsigned int debug_struct_addr);
   void start(bool target_stopped);
   void target_stopped(bool target_stopped);
-  void flush();
   void stop();
   void access(bool write, unsigned int addr, int len, char * buf);
   void set_printf_loops(int loops) { m_printf_loops = loops; }
