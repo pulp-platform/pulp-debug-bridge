@@ -157,6 +157,7 @@ bool ReqLoop::wait_target_request()
       // TARGET_SYNC_FSM_STATE_WAIT_ACK.
       this->clear_target_ack();
       unsigned int state = this->get_target_state();
+
       if (state == 0)
         return false;
 
@@ -293,7 +294,7 @@ ReqLoop::ReqLoop(
     const EventLoop::SpEventLoop &event_loop, std::shared_ptr<Cable> cable, unsigned int debug_struct_addr, bool do_printf, bool check_exit) : 
       log("REQLOOP"), m_cable(std::move(cable)), m_debug_struct_addr(debug_struct_addr), m_do_printf(do_printf), m_check_exit(check_exit) {
 
-  js::config *config = cable->get_config();  
+  js::config *config = m_cable->get_config();  
   this->m_target_jtag_sync = (config?config->get_child_bool("**/debug_bridge/target_jtag_sync"):false);
   m_loop_te = event_loop->getTimerEvent(std::bind(&ReqLoop::reqloop_routine, this));
 }

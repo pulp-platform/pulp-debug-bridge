@@ -200,7 +200,7 @@ class debug_bridge(object):
         self.module.bridge_start.argtypes = []
         self.module.bridge_start.restype = ctypes.c_int
 
-        self.module.bridge_reqloop_init.argtypes = [ctypes.c_uint, [ctypes.c_int]
+        self.module.bridge_reqloop_init.argtypes = [ctypes.c_uint, ctypes.c_int]
 
         self.module.bridge_target_stopped.argtypes = [ctypes.c_int]
 
