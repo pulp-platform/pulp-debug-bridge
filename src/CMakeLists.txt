@@ -31,12 +31,10 @@ if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
     "Debug" "Release" "MinSizeRel" "RelWithDebInfo")
 endif()
 
-enable_testing()
-
 set(PROJECT_LIBS)
 set(PROJECT_INCLUDE_DIRS)
 
 add_subdirectory(log)
 add_subdirectory(events)
 # add_subdirectory(cables)
-add_subdirectory(tests)
+

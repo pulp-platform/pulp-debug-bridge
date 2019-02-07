@@ -280,9 +280,9 @@ void Tcp_listener::start() {
   }
   struct sockaddr_in addr;
 
-#ifndef _WIN32
+// #ifndef _WIN32
   int yes = 1;
-#endif
+// #endif
 
   log->debug("Tcp_listener started (running %d)\n", this->is_running);
 
@@ -304,6 +304,11 @@ void Tcp_listener::start() {
     throw TcpException("unable to setsockopt on the socket");
   }
 #endif
+
+  if(setsockopt(socket_in, IPPROTO_TCP, TCP_NODELAY, (const char*) &yes, sizeof(int)) == -1) {
+    print_error("Unable to setsockopt on the socket: %d\n");
+    throw TcpException("unable to setsockopt on the socket");
+  }
 
   if(bind(socket_in, (struct sockaddr *)&addr, sizeof(addr)) == -1) {
     print_error("Unable to bind the socket: %d\n");
@@ -560,7 +565,7 @@ bool Tcp_socket::after_write()
     redo = true;
     write_flowing = true;
   }
-  // printf("after write ..... %d\n", socket_events);
+  printf("after write ..... %d\n", socket_events);
   return redo;
 }
 

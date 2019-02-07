@@ -324,7 +324,7 @@ private:
 class Rsp : public std::enable_shared_from_this<Rsp> {
   public:
     Rsp(Gdb_server * top, int port, const EventLoop::SpEventLoop &event_loop, int64_t wait_time_usecs = 50000);
-    ~Rsp() { printf("RSP disposing\n"); }
+    ~Rsp() {}
     void start();
     void stop();
     void abort();

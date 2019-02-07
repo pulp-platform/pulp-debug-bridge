@@ -70,13 +70,16 @@ else()
   set(INSTALL_CMD install)
 endif()
 
+enable_testing()
+
 add_subdirectory(src)
+add_subdirectory(tests)
+
 
 add_custom_target(plpbridge ALL)
 
 # +++++ plpbridge library
-
-add_library(libplpbridge MODULE
+add_library(libplpbridge MODULE 
   src/cables/adv_dbg_itf/adv_dbg_itf.cpp
   src/cables/jtag-proxy/jtag-proxy.cpp
   src/cables/jtag.cpp
@@ -88,6 +91,7 @@ add_library(libplpbridge MODULE
   src/gdb-server/breakpoints.cpp
   src/reqloop.cpp
   src/bridge-commands.cpp
+  src/reqserver.cpp
 )
 
 # Enable all warnings as errors
@@ -201,7 +205,6 @@ set_target_properties(libplpbridge PROPERTIES
 )
 
 add_dependencies(plpbridge libplpbridge)
-
 
 # PULP bridge library
 

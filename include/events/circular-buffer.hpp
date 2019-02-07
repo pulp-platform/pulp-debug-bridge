@@ -43,6 +43,8 @@ public:
     bool is_empty();
     bool is_full();
     size_t size();
+    size_t capacity() { return max_size; }
+    size_t available() { return max_size - size(); }
 
 private:
     std::unique_ptr<char[]> buf;

@@ -5,7 +5,7 @@
 #include <string.h>
 
 char Log::last_error[MAX_LOG_LINE] = "unknown error";
-int Log::log_level = LOG_ERROR;
+int Log::log_level = LOG_DEBUG;
 std::mutex Log::m_last_error;
 
 bool Log::is_lvl(int level)

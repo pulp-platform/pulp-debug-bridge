@@ -1,6 +1,10 @@
 set(EXECUTABLE_OUTPUT_PATH ${PROJECT_BINARY_DIR}/tests)
 set(CTEST_BINARY_DIRECTORY ${PROJECT_BINARY_DIR}/tests)
 
+
+set(THREADS_PREFER_PTHREAD_FLAG ON)
+find_package(Threads REQUIRED)
+
 file(GLOB files "*_test*.c" "*_test*.cpp")
 
 message(STATUS "Adding tests")
@@ -22,14 +26,14 @@ function(set_memcheck_test_properties name)
   set_tests_properties(memcheck_${name} ${ARGN})
 endfunction(set_memcheck_test_properties)
 
-set(EXTRA_CPP ../gdb-server/rsp-packet-codec.cpp)
+set(EXTRA_CPP ../src/gdb-server/rsp-packet-codec.cpp)
 
 foreach(file ${files})
 	string(REGEX REPLACE "(^.*/|\\.[^.]*$)" "" file_without_ext ${file})
 	add_executable(${file_without_ext} ${file} ${EXTRA_CPP})
-    target_link_libraries(${file_without_ext} events)
+    target_link_libraries(${file_without_ext} PRIVATE libplpbridge Threads::Threads)
 	target_compile_options(${file_without_ext} PRIVATE -Wall -Werror)
-	target_include_directories(${file_without_ext} PRIVATE ../../include)
+	target_include_directories(${file_without_ext} PRIVATE ../include ../../json-tools/include)
 	if(${WithValgrind})
 		add_test(${file_without_ext} ${CTEST_MEMORYCHECK_COMMAND} ${CTEST_MEMORYCHECK_COMMAND_OPTIONS} ./${file_without_ext})
 	else()
