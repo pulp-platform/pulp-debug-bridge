@@ -16,14 +16,14 @@
 
 # Authors: Germain Haugou, ETH (germain.haugou@iis.ee.ethz.ch)
 
-from bridge.default_debug_bridge import *
-import bridge.chips.gap as gap
-import bridge.chips.gap_rev1 as gap_rev1
-import bridge.chips.wolfe as wolfe
-import bridge.chips.usoc_v1 as usoc_v1
-import bridge.chips.vega as vega
-import bridge.chips.arnold as arnold
-import bridge.chips.fulmine as fulmine
+from bridge_old.default_debug_bridge import *
+import bridge_old.chips.gap as gap
+import bridge_old.chips.gap_rev1 as gap_rev1
+import bridge_old.chips.wolfe as wolfe
+import bridge_old.chips.usoc_v1 as usoc_v1
+import bridge_old.chips.vega as vega
+import bridge_old.chips.arnold as arnold
+import bridge_old.chips.fulmine as fulmine
 
 
 def get_bridge(config, binaries=[], verbose=False):

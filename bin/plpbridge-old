@@ -19,7 +19,7 @@
 # Authors: Germain Haugou, ETH (germain.haugou@iis.ee.ethz.ch)
 
 
-import bridge.debug_bridge as db
+import bridge_old.debug_bridge as db
 import argparse
 import code
 import imp
