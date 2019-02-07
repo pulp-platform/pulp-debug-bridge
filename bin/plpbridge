@@ -26,6 +26,7 @@ import imp
 import os.path
 import sys
 from time import sleep
+import pulp_config as plpconf
 
 from bridge.misc.portable import to_bytes
 
@@ -411,23 +412,17 @@ config_path = args.config
 if args.chip is not None:
     config_path = os.path.join(
         os.path.dirname(os.path.dirname(sys.argv[0])),
-        'configs', 'systems', '%s.json' % args.chip
+        'configs', 'chips', args.chip, '%s.json' % args.chip
     )
 
     if not os.path.exists(config_path):
         print ("ERROR, didn't find any configuration for specified chip (chip: %s, config: %s)" % (args.chip, config_path))
         exit(-1)
 
-elif config_path is not None:
-    if not os.path.exists(config_path):
-        print ("ERROR, specified configuration does not exist (config: %s)" % (config_path))
-        exit(-1)
-else:
+elif config_path is None:
     raise Exception('A chip or a config file must be specified')
 
-
-
-config = js.import_config_from_file(config_path)
+config = plpconf.get_config(config_path, interpret=True)
 
 
 # And overloads it with the specified options
