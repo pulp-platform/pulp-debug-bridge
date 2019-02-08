@@ -83,6 +83,8 @@ $(foreach file, $(TARGET_HEADER_FILES), $(eval $(call declareTargetInstallFile,$
 
 all: build
 
+install:
+
 -include $(OBJS:.o=.d)
 
 $(BUILD_DIR)/%.o: %.cpp
