@@ -115,52 +115,57 @@ ReqServer::Client::Client(const std::shared_ptr<ReqServer> reqserver, tcp_socket
   m_pkt_to_te = m_reqserver->m_event_loop->getTimerEvent(std::bind(&ReqServer::Client::packet_timeout, this));
 
   // socket -> packet codec
-  m_client->on_read([this](const tcp_socket_ptr_t& UNUSED(sock), circular_buffer_ptr_t buf){
-    bool clear_timer;
-    if (this->m_cur_req.receive(buf, &clear_timer)) {
-      if (this->m_cur_req.is_in_error_state()) {
-        this->m_completed_reqs.push(this->m_cur_req);
-        this->m_cur_req.reset();
-        m_client->set_events(Both);
-      } else {
-        this->m_pending_reqs.push(this->m_cur_req);
-        this->m_cur_req.reset();
-        this->m_trans_te->setTimeout(0);
-      }
-    }
-    if (this->m_reqserver->soc_is_powered())
-      this->m_pkt_to_te->setTimeout((clear_timer?kEventLoopTimerDone:1000000));
-  });
-  m_client->on_write([this](const tcp_socket_ptr_t& UNUSED(sock), circular_buffer_ptr_t buf){
-    if (this->m_completed_reqs.size() == 0) {
-      this->m_client->set_events(Readable);
-    } else if (this->m_completed_reqs.front().send(buf)) {
-      this->m_completed_reqs.pop();
-    }
-    // if we need to send an alert or reset do it here where we have finished a req
-    if (
-      // need to send an alert or reset
-      (this->m_send_alert||this->m_send_reset) && 
-      // pending queue is empty or no transaction in progress
-      (this->m_completed_reqs.size() == 0 || !this->m_completed_reqs.front().is_in_progress()) && 
-      // have room to send
-      (buf->available() >= sizeof(reqserver_rsp_t)))
-    {
-      reqserver_rsp_t rsp;
-      rsp.trans_id = 0;
-      if (this->m_send_alert) {
-        rsp.type = REQSERVER_ALERT_RSP;
-        // alert clears all unsent transactions
-        while (!this->m_completed_reqs.empty()) this->m_completed_reqs.pop();
-      } else {
-        rsp.type = REQSERVER_ERROR_RSP;
-      }
-      this->m_send_alert = false;
-      this->m_send_reset = false;
-      buf->write_copy((void *)&rsp, sizeof(reqserver_rsp_t));
-    }
-  });
+  using namespace std::placeholders;
+  m_client->on_read(std::bind(&ReqServer::Client::on_read, this, _2));
+  m_client->on_write(std::bind(&ReqServer::Client::on_write, this, _2));
   m_client->set_events(Readable);
+}
+
+void ReqServer::Client::on_read(circular_buffer_ptr_t buf) {
+  bool clear_timer;
+  if (this->m_cur_req.receive(buf, &clear_timer)) {
+    if (this->m_cur_req.is_in_error_state()) {
+      this->m_completed_reqs.push(this->m_cur_req);
+      this->m_cur_req.reset();
+      m_client->set_events(Both);
+    } else {
+      this->m_pending_reqs.push(this->m_cur_req);
+      this->m_cur_req.reset();
+      this->m_trans_te->setTimeout(0);
+    }
+  }
+  if (this->m_reqserver->soc_is_powered())
+    this->m_pkt_to_te->setTimeout((clear_timer?kEventLoopTimerDone:1000000));
+}
+
+void ReqServer::Client::on_write(circular_buffer_ptr_t buf) {
+  if (this->m_completed_reqs.size() == 0) {
+    this->m_client->set_events(Readable);
+  } else if (this->m_completed_reqs.front().send(buf)) {
+    this->m_completed_reqs.pop();
+  }
+  // if we need to send an alert or reset do it here where we have finished a req
+  if (
+    // need to send an alert or reset
+    (this->m_send_alert||this->m_send_reset) && 
+    // pending queue is empty or no transaction in progress
+    (this->m_completed_reqs.size() == 0 || !this->m_completed_reqs.front().is_in_progress()) && 
+    // have room to send
+    (buf->available() >= sizeof(reqserver_rsp_t)))
+  {
+    reqserver_rsp_t rsp;
+    rsp.trans_id = 0;
+    if (this->m_send_alert) {
+      rsp.type = REQSERVER_ALERT_RSP;
+      // alert clears all unsent transactions
+      while (!this->m_completed_reqs.empty()) this->m_completed_reqs.pop();
+    } else {
+      rsp.type = REQSERVER_ERROR_RSP;
+    }
+    this->m_send_alert = false;
+    this->m_send_reset = false;
+    buf->write_copy((void *)&rsp, sizeof(reqserver_rsp_t));
+  }
 }
 
 ReqServer::Client::~Client() {

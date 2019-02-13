@@ -92,7 +92,9 @@ class ReqServer : public std::enable_shared_from_this<ReqServer>, public ClientE
         bool decode(char* data, size_t len);
         int64_t process_transaction();
         int64_t packet_timeout();
-
+        void on_read(circular_buffer_ptr_t buf);
+        void on_write(circular_buffer_ptr_t buf);
+        
         bool m_send_alert = false, m_send_reset = false;
 
         client_state_t m_state;
