@@ -131,11 +131,11 @@ void ReqServer::Client::on_read(circular_buffer_ptr_t buf) {
     } else {
       this->m_pending_reqs.push(this->m_cur_req);
       this->m_cur_req.reset();
-      this->m_trans_te->setTimeout(0);
+      if (this->m_reqserver->soc_is_powered())
+        this->m_trans_te->setTimeout(0);
     }
   }
-  if (this->m_reqserver->soc_is_powered())
-    this->m_pkt_to_te->setTimeout((clear_timer?kEventLoopTimerDone:1000000));
+  this->m_pkt_to_te->setTimeout((clear_timer?kEventLoopTimerDone:1000000));
 }
 
 void ReqServer::Client::on_write(circular_buffer_ptr_t buf) {
