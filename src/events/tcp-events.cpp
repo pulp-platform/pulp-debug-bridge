@@ -20,6 +20,13 @@
 
 #include "tcp-events.hpp"
 
+void dump(char *buf, int len) {
+  if (len > 16) len = 16;
+  for (int i=0; i<len; i++)
+    printf("%02hhx ", buf[i]);
+  printf("... \n");
+}
+
 int get_socket_error(socket_t fd)
 {
   int err;
@@ -478,12 +485,14 @@ void Tcp_socket::socket_shutdown()
 
 bool Tcp_socket::socket_writable()
 {
+  // printf("writable %lu\n", out_buffer->size());
   bool trigger_timer = false;
   // Drain the write buffer
   while (!out_buffer->is_empty()) {
     char * buf;
     size_t len;
     out_buffer->read_block((void**)&buf, &len);
+    // printf("writing\n");
     func_ret_t ret = ::send(socket, (const char *)buf, len, 0);
     if (ret == SOCKET_ERROR) {
       int plat_err_no;
@@ -536,6 +545,7 @@ bool Tcp_socket::socket_readable()
         break;
       }
     } else {
+      dump(buf, len);
       in_buffer->commit_write(ret);
     }
   }
@@ -565,7 +575,7 @@ bool Tcp_socket::after_write()
     redo = true;
     write_flowing = true;
   }
-  printf("after write ..... %d\n", socket_events);
+  // printf("after write ..... %d\n", socket_events);
   return redo;
 }
 
@@ -648,6 +658,7 @@ ssize_t Tcp_socket::write_immediate(const void * buf, size_t len, bool write_all
 
 bool Tcp_socket::socket_timeout()
 {
+  // printf("Socket timeout\n");
   bool redo = false;
 
   // record current socket events to spot changes
@@ -659,12 +670,16 @@ bool Tcp_socket::socket_timeout()
     if (state != SocketOpen) return true;
     redo = this->after_write() || redo;
   }
+  // printf("redo after write %d\n", redo);
   // If there is a read callback and reading is enabled and we have something to read
   if ((user_events&Readable) && !in_buffer->is_empty()) {
     emit_read(this->shared_from_this(), in_buffer);
     if (state != SocketOpen) return true;
     redo = this->after_read() || redo;
   }
+  // printf("redo after read %d\n", redo);
+  // try again since the read callback may have changed the socket to Writeable
+  redo = ((user_events&Writable) && out_buffer->is_empty()) || redo;
   if (current_socket_events != socket_events)
     ev_socket->setEvents(socket_events);
 
@@ -737,6 +752,7 @@ void Tcp_socket::close_immediate()
 }
 
 void Tcp_socket::set_events(FileEvents new_events) {
+  // printf("set events %d\n", new_events);
   if (user_events == new_events) return;
   FileEvents old_events = user_events;
   FileEvents saved_socket_events = socket_events;
@@ -744,6 +760,7 @@ void Tcp_socket::set_events(FileEvents new_events) {
   user_events = new_events;
   if ((user_events&Writable)&&!(old_events&Writable)) {
     if (!out_buffer->is_full()) {
+      // printf("trigger timer\n");
       write_flowing = true;
       trigger_timer = true;
     }
@@ -760,6 +777,8 @@ void Tcp_socket::set_events(FileEvents new_events) {
       trigger_timer = true;
     }
   }
+  // printf("set timer %d\n", trigger_timer);
   if (trigger_timer) ev_socket_timeout->setTimeout(0);
+  // printf("set socket events saved %d new %d\n", saved_socket_events, socket_events);
   if (saved_socket_events != socket_events) ev_socket->setEvents(socket_events);
 }

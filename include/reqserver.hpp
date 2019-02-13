@@ -30,11 +30,18 @@
 #include "events/tcp-events.hpp"
 #include "debug_bridge/reqserver.h"
 
-#define REQSERVER_MAX_REQ 1024
+#define REQSERVER_MAX_REQ 10
 
-class ReqServer : public std::enable_shared_from_this<ReqServer> {
+typedef enum {
+  REQSERVER_CLIENT_CONNECTED,
+  REQSERVER_CLIENT_DISCONNECTED
+} req_event_t;
+
+SMART_EMITTER(ClientEvent, req_event)
+
+class ReqServer : public std::enable_shared_from_this<ReqServer>, public ClientEventEmitter<req_event_t> {
   public:
-    ReqServer(const EventLoop::SpEventLoop &event_loop, std::shared_ptr<Cable> cable, int port);
+    ReqServer(const EventLoop::SpEventLoop &event_loop, std::shared_ptr<Cable> cable, int port, int max_access = REQSERVER_MAX_REQ);
     ~ReqServer() {}
     void start();
     void stop();
@@ -50,19 +57,21 @@ class ReqServer : public std::enable_shared_from_this<ReqServer> {
 
     class Request
     {
-        public:
-            bool receive(circular_buffer_ptr_t buf, bool * clear_timer);
-            bool execute(std::shared_ptr<Cable> cable); // returns true if request has completed
-            bool send(circular_buffer_ptr_t buf);
-            void reset();
-            bool is_in_progress() { return m_in_progress; }
+      public:
+        bool receive(circular_buffer_ptr_t buf, bool * clear_timer);
+        bool execute(std::shared_ptr<Cable> cable); // returns true if request has completed
+        bool send(circular_buffer_ptr_t buf);
+        void reset();
+        bool is_in_progress() { return m_in_progress; }
+        bool is_in_error_state() { return m_error; }
 
-        private:
-            reqserver_req_t m_req;
-            int m_pos = 0;
-            int m_start_buff;
-            std::vector<char> m_buf;
-            bool m_error = false, m_in_progress = false;
+      private:
+        reqserver_req_t m_req;
+        int m_pos = 0;
+        int m_start_buff;
+        std::vector<char> m_buf;
+        bool m_error = false, m_in_progress = false;
+        Log log;
     };
 
     class Client
@@ -111,7 +120,7 @@ class ReqServer : public std::enable_shared_from_this<ReqServer> {
     EventLoop::SpEventLoop m_event_loop;
 
     std::shared_ptr<Cable> m_cable;
-    int m_port;
+    int m_port, m_max_access;
     Log log;
 };
 

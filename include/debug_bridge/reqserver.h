@@ -31,7 +31,7 @@ extern "C" {
 typedef enum {
   REQSERVER_READMEM_REQ  = 0,
   REQSERVER_WRITEMEM_REQ  = 1,
-  REQSERVER_MAX_REQ = REQSERVER_WRITEMEM_REQ 
+  REQSERVER_MAX_REQ_NUM = REQSERVER_WRITEMEM_REQ 
 } reqserver_req_type_e;
 
 typedef enum {
