@@ -18,8 +18,8 @@
  * Authors: Martin Croome, GreenWaves Technologies (martin.croome@greenwaves-technologies.com)
  */
 
-#ifndef __DEBUG_BRIDGE_PROXY_HPP__
-#define __DEBUG_BRIDGE_PROXY_HPP__
+#ifndef __REQSERVER_H__
+#define __REQSERVER_H__
 
 #include <stdint.h>
 

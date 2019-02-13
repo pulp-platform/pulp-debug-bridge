@@ -24,6 +24,7 @@
 #include "json.hpp"
 #include "events/events.hpp"
 #include "reqloop.hpp"
+#include "reqserver.hpp"
 #include "gdb-server/gdb-server.hpp"
 #include "cables/cable.hpp"
 #include "cables/adv_dbg_itf/adv_dbg_itf.hpp"
@@ -44,6 +45,7 @@ class BridgeState {
         std::shared_ptr<Gdb_server> m_gdb_server = nullptr;
         std::shared_ptr<ReqLoop> m_req_loop = nullptr;
         std::shared_ptr<BridgeCommands> m_bridge_commands;
+        std::shared_ptr<ReqServer> m_req_server = nullptr;
         js::config * m_system_config;
 };
 

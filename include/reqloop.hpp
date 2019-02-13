@@ -18,8 +18,8 @@
  * Authors: Martin Croome, GWT (martin.croome@greenwaves.technologies.com)
  */
 
-#ifndef __NEWLOOPS_H
-#define __NEWLOOPS_H
+#ifndef __REQLOOP_HPP__
+#define __REQLOOP_HPP__
 
 #include <stdint.h>
 #include <list>

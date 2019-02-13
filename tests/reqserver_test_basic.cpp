@@ -99,6 +99,7 @@ int main( int argc, const char* argv[] )
             req_srv->stop();
         }
     });
+    req_srv->soc_power(true);
     req_srv->start();
     std::thread client_thread(client);
     el->start();

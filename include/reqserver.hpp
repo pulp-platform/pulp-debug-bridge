@@ -18,8 +18,8 @@
  * Authors: Martin Croome (martin.croome@greenwaves-technologies.com)
  */
 
-#ifndef __REQSERVER_H__
-#define __REQSERVER_H__
+#ifndef __REQSERVER_HPP__
+#define __REQSERVER_HPP__
 
 #include <queue>
 #include <vector>
@@ -48,6 +48,8 @@ class ReqServer : public std::enable_shared_from_this<ReqServer>, public ClientE
     void target_alert();
     void target_reset();
     void stop_listener();
+    void soc_power(bool enabled);
+    bool soc_is_powered() { return m_soc_power; }
 
     typedef enum {
       CLIENT_IDLE,
@@ -83,6 +85,7 @@ class ReqServer : public std::enable_shared_from_this<ReqServer>, public ClientE
         void stop();
         void target_alert();
         void target_reset();
+        void soc_power(bool enabled);
       private:
         bool send_data(const char* data, int len);
         bool send_alert();
@@ -112,7 +115,7 @@ class ReqServer : public std::enable_shared_from_this<ReqServer>, public ClientE
     void client_disconnected(const tcp_socket_ptr_t &client);
     int64_t process_transaction();
 
-    bool m_started = false, m_stopping = false;
+    bool m_started = false, m_stopping = false, m_soc_power = false;
 
     req_srv_client_ptr_t m_client = nullptr;
     std::shared_ptr<Tcp_listener> m_listener;

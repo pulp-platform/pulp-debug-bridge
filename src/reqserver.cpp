@@ -72,6 +72,7 @@ void ReqServer::stop_listener()
 }
 
 void ReqServer::start() {
+  if (m_started) return;
   m_started = true;
   m_listener = std::make_shared<Tcp_listener>(
     &log,
@@ -100,6 +101,11 @@ void ReqServer::target_alert() {
   m_client->target_alert();
 }
 
+void ReqServer::soc_power(bool enabled) {
+  m_soc_power = enabled;
+  if (m_client) m_client->soc_power(enabled);
+}
+
 
 // Rsp::Client
 
@@ -110,10 +116,8 @@ ReqServer::Client::Client(const std::shared_ptr<ReqServer> reqserver, tcp_socket
 
   // socket -> packet codec
   m_client->on_read([this](const tcp_socket_ptr_t& UNUSED(sock), circular_buffer_ptr_t buf){
-    printf("reqserver read\n");
     bool clear_timer;
     if (this->m_cur_req.receive(buf, &clear_timer)) {
-      printf("got req\n");
       if (this->m_cur_req.is_in_error_state()) {
         this->m_completed_reqs.push(this->m_cur_req);
         this->m_cur_req.reset();
@@ -124,10 +128,10 @@ ReqServer::Client::Client(const std::shared_ptr<ReqServer> reqserver, tcp_socket
         this->m_trans_te->setTimeout(0);
       }
     }
-    this->m_pkt_to_te->setTimeout((clear_timer?kEventLoopTimerDone:1000000));
+    if (this->m_reqserver->soc_is_powered())
+      this->m_pkt_to_te->setTimeout((clear_timer?kEventLoopTimerDone:1000000));
   });
   m_client->on_write([this](const tcp_socket_ptr_t& UNUSED(sock), circular_buffer_ptr_t buf){
-    printf("reqserver write\n");
     if (this->m_completed_reqs.size() == 0) {
       this->m_client->set_events(Readable);
     } else if (this->m_completed_reqs.front().send(buf)) {
@@ -156,7 +160,6 @@ ReqServer::Client::Client(const std::shared_ptr<ReqServer> reqserver, tcp_socket
       buf->write_copy((void *)&rsp, sizeof(reqserver_rsp_t));
     }
   });
-  printf("client is set readable\n");
   m_client->set_events(Readable);
 }
 
@@ -173,9 +176,18 @@ void ReqServer::Client::stop()
   m_client->close();
 }
 
+void ReqServer::Client::soc_power(bool enabled) {
+  if (enabled) {
+    if (m_pending_reqs.size() > 0)
+      this->m_trans_te->setTimeout(0);
+  } else {
+    this->m_trans_te->setTimeout(kEventLoopTimerDone);
+  }
+}
+
 int64_t ReqServer::Client::process_transaction() {
-  log.debug("Process transaction (size %d)\n", m_pending_reqs.size());
-  if (m_pending_reqs.size() == 0) return kEventLoopTimerDone;
+  log.debug("Process transaction (size %d) (power %d)\n", m_pending_reqs.size(), m_reqserver->soc_is_powered());
+  if (m_pending_reqs.size() == 0 || !m_reqserver->soc_is_powered()) return kEventLoopTimerDone;
   if (m_pending_reqs.front().execute(this->m_reqserver->m_cable)) {
     m_completed_reqs.push(m_pending_reqs.front());
     m_pending_reqs.pop();
@@ -235,7 +247,6 @@ bool ReqServer::Request::receive(circular_buffer_ptr_t buf, bool * clear_timer) 
         *clear_timer = true;
         this->m_in_progress = false;
         this->m_pos = 0;
-        printf("received write req addr 0x%x size %d\n", this->m_req.addr, this->m_req.len);
         return true;
       } else {
         *clear_timer = false;
@@ -244,12 +255,9 @@ bool ReqServer::Request::receive(circular_buffer_ptr_t buf, bool * clear_timer) 
     } else if (buf->size() >= sizeof(this->m_req)) {
       // valid size for a buffer
       if (buf->read_copy(((char *)&this->m_req), sizeof(this->m_req)) != sizeof(this->m_req)) {
-        printf("unexpected read length\n");
         return true;
       }
-      printf("received %d transid %d req addr 0x%x size %d\n", this->m_req.type, this->m_req.trans_id, this->m_req.addr, this->m_req.len);
       if (this->m_req.type > REQSERVER_MAX_REQ_NUM || this->m_req.type < 0 || this->m_req.len <= 0 || this->m_req.len > 5000000) {
-        printf("received bad req type %d addr 0x%x size %d\n", this->m_req.type, this->m_req.addr, this->m_req.len);
         buf->reset();
         this->m_error = true;
         *clear_timer = true;
@@ -262,7 +270,6 @@ bool ReqServer::Request::receive(circular_buffer_ptr_t buf, bool * clear_timer) 
       }
       this->m_buf.resize(static_cast<size_t>(this->m_req.len));
       *clear_timer = true;
-      printf("received read req addr 0x%x size %d\n", this->m_req.addr, this->m_req.len);
       return true;
     } else {
       *clear_timer = buf->size() == 0;
@@ -317,7 +324,6 @@ bool ReqServer::Request::send(circular_buffer_ptr_t buf) {
 bool ReqServer::Request::execute(std::shared_ptr<Cable> cable) {
   // split reads or writes up if they are too big
   int size = std::min(REQSERVER_MAX_REQ, this->m_req.len - m_pos);
-  printf("execute %s %d (pos %d)\n", (this->m_req.type == REQSERVER_WRITEMEM_REQ?"write":"read"), size, m_pos);
   bool err = cable->access(
     this->m_req.type == REQSERVER_WRITEMEM_REQ,
     this->m_req.addr + this->m_pos,
@@ -329,6 +335,5 @@ bool ReqServer::Request::execute(std::shared_ptr<Cable> cable) {
     return true;
   }
   this->m_pos += size;
-  printf("size %d pos %d len %d\n", size, this->m_pos, this->m_req.len);
   return this->m_pos >= this->m_req.len;
 }
