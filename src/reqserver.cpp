@@ -139,20 +139,17 @@ void ReqServer::Client::on_read(circular_buffer_ptr_t buf) {
 }
 
 void ReqServer::Client::on_write(circular_buffer_ptr_t buf) {
-  if (this->m_completed_reqs.size() == 0) {
-    this->m_client->set_events(Readable);
-  } else if (this->m_completed_reqs.front().send(buf)) {
-    this->m_completed_reqs.pop();
-  }
-  // if we need to send an alert or reset do it here where we have finished a req
+  // if we need to send an alert or reset - must check if send is in progress and complete it
   if (
     // need to send an alert or reset
     (this->m_send_alert||this->m_send_reset) && 
     // pending queue is empty or no transaction in progress
-    (this->m_completed_reqs.size() == 0 || !this->m_completed_reqs.front().is_in_progress()) && 
-    // have room to send
-    (buf->available() >= sizeof(reqserver_rsp_t)))
+    (this->m_completed_reqs.size() == 0 || !this->m_completed_reqs.front().is_in_progress()))
   {
+    // have room to send
+    if (buf->available() < sizeof(reqserver_rsp_t)) {
+      return;
+    }
     reqserver_rsp_t rsp;
     rsp.trans_id = 0;
     if (this->m_send_alert) {
@@ -165,6 +162,11 @@ void ReqServer::Client::on_write(circular_buffer_ptr_t buf) {
     this->m_send_alert = false;
     this->m_send_reset = false;
     buf->write_copy((void *)&rsp, sizeof(reqserver_rsp_t));
+  }
+  if (this->m_completed_reqs.size() == 0) {
+    this->m_client->set_events(Readable);
+  } else if (this->m_completed_reqs.front().send(buf)) {
+    this->m_completed_reqs.pop();
   }
 }
 
