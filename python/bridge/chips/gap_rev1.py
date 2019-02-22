@@ -61,7 +61,10 @@ class gap_debug_bridge(debug_bridge):
         # target is ready to accept bridge requests
         while True:
             reg_value = self.get_cable().jtag_get_reg(JTAG_SOC_CONFREG, JTAG_SOC_CONFREG_WIDTH, boot_mode)
-            if (reg_value & 2) != 0:
+
+            rt_req = (reg_value >> 1) & 0x7
+
+            if rt_req == 4 or rt_req == 1:
                 break
 
         if self.verbose:

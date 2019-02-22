@@ -207,6 +207,9 @@ class debug_bridge(object):
         raise Exception('JTAG boot is not supported on this target')
 
     def load_elf(self, binary):
+        if self.verbose:
+            print ('Loading %s' % binary)
+
         with open(binary, 'rb') as file:
             elffile = ELFFile(file)
 
@@ -372,7 +375,8 @@ class debug_bridge(object):
             chip = self.config.get('**/board/chip').get('name').get()
             flasher_name = 'flasher-%s' % chip
             flasher_path = os.path.join(os.environ.get('PULP_SDK_INSTALL'), 'bin', flasher_name)
-            self.binaries.append(flasher_path)
+            # TODO this breaks boot test using bridge, why this is needed ?
+            #self.binaries.append(flasher_path)
             self.load([flasher_path])
 
         self.reqloop()
