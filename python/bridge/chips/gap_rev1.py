@@ -55,7 +55,7 @@ class gap_debug_bridge(debug_bridge):
 
         boot_mode = 0
         if self.boot_mode is not None:
-            boot_mode = (boot_mode << 1) | 1
+            boot_mode = (self.boot_mode << 1) | 1
 
         # Loop until we see bit 0 becoming 1, this will indicate that the
         # target is ready to accept bridge requests
