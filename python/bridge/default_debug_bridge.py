@@ -204,7 +204,7 @@ class debug_bridge(object):
 
         self.module.bridge_reqserver_init.argtypes = [ctypes.c_int, ctypes.c_int]
 
-        self.module.bridge_reqserver_reset.argtypes = []
+        #self.module.bridge_reqserver_reset.argtypes = []
 
         self.module.bridge_target_stopped.argtypes = [ctypes.c_int]
 
@@ -664,4 +664,4 @@ class debug_bridge(object):
 
     def deinit(self):
         self.module.bridge_deinit()
-    
+
