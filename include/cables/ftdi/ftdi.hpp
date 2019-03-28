@@ -118,7 +118,6 @@ class Ftdi : public Cable {
     struct ftdi_context m_ftdic;
     unsigned int bits_value;
     unsigned int bits_direction;
-    js::config *config;
     cable_cb_t cable_state_cb;
     cable_state_t current_state = CABLE_DISCONNECTED;
 };
