@@ -202,11 +202,15 @@ class debug_bridge(object):
 
         self.module.bridge_reqloop_init.argtypes = [ctypes.c_uint, ctypes.c_int]
 
+        self.module.bridge_reqserver_init.argtypes = [ctypes.c_int, ctypes.c_int]
+
+        #self.module.bridge_reqserver_reset.argtypes = []
+
         self.module.bridge_target_stopped.argtypes = [ctypes.c_int]
 
-        self.module.bridge_reqloop_start.argtypes = []
+        self.module.bridge_reqloop_start.argtypes = [ctypes.c_bool]
 
-        self.module.bridge_reqloop_stop.argtypes = []
+        self.module.bridge_reqloop_stop.argtypes = [ctypes.c_bool]
 
         self.module.bridge_set_log_level.argtypes = [ctypes.c_int]
 
@@ -425,12 +429,15 @@ class debug_bridge(object):
 
     def ioloop(self):
         self.init_reqloop()
-        self.module.bridge_reqloop_start()
+        self.module.bridge_reqloop_start(True)
         return True
 
     def reqloop(self):
         self.init_reqloop()
-        self.module.bridge_reqloop_start()
+        port = self.config.get('**/debug_bridge/reqserver/port')
+        max_req = self.config.get('**/debug_bridge/reqserver/max')
+        self.module.bridge_reqserver_init(port, max_req)
+        self.module.bridge_reqloop_start(True)
         return True
 
     def flash(self):
@@ -453,12 +460,12 @@ class debug_bridge(object):
 
     def doreset(self, run):
         if self.has_loopers:
-            self.module.bridge_reqloop_stop()
+            self.module.bridge_reqloop_stop(False)
         self.stop()
         self.load()
         self.module.gdb_server_refresh_target()
         if self.has_loopers:
-            self.module.bridge_reqloop_start()
+            self.module.bridge_reqloop_start(False)
         if run:
             self.start()
         return True
@@ -624,12 +631,12 @@ class debug_bridge(object):
 
     def abort(self):
         self.has_loopers = False
-        self.module.bridge_reqloop_stop()
+        self.module.bridge_reqloop_stop(True)
         self.module.gdb_server_abort()
 
     def close(self):
         self.has_loopers = False
-        self.module.bridge_reqloop_stop()
+        self.module.bridge_reqloop_stop(True)
         self.module.gdb_server_close()
 
     def run_loop(self):
@@ -657,4 +664,4 @@ class debug_bridge(object):
 
     def deinit(self):
         self.module.bridge_deinit()
-    
+

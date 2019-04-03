@@ -18,8 +18,8 @@
  * Authors: Martin Croome, GreenWaves Technologies (martin.croome@greenwaves-technologies.com)
  */
 
-#ifndef __DEBUG_BRIDGE_PROXY_HPP__
-#define __DEBUG_BRIDGE_PROXY_HPP__
+#ifndef __REQSERVER_H__
+#define __REQSERVER_H__
 
 #include <stdint.h>
 
@@ -31,7 +31,7 @@ extern "C" {
 typedef enum {
   REQSERVER_READMEM_REQ  = 0,
   REQSERVER_WRITEMEM_REQ  = 1,
-  REQSERVER_MAX_REQ = REQSERVER_WRITEMEM_REQ 
+  REQSERVER_MAX_REQ_NUM = REQSERVER_WRITEMEM_REQ 
 } reqserver_req_type_e;
 
 typedef enum {

@@ -398,6 +398,10 @@ if 'flash' in args.command:
     parser.add_argument("--flash-image", dest="flash_image", default=None, help="Specify a flash image to be flashed")
     parser.add_argument("--flasher", dest="flasher", default=None, help="Specify absolute path of on chip flash program")
 
+if 'reqloop' in args.command:
+  parser.add_argument("--req-port", dest="req_port", default=9999, help="Specify the port number that the req server will listen to requests on")
+  parser.add_argument("--req-max", dest="req_max", default=128, help="Specify the maximum memory access size in bytes")
+
 args = parser.parse_args()
 
 if args.help:
@@ -452,6 +456,19 @@ if args.port is not None:
 
 if args.host is not None:
     config.get('**/debug_bridge/cable/jtag-proxy').set('host', args.host)
+
+if args.req_port is not None:
+    if config.get('**/debug_bridge') is None:
+        config.set('debug_bridge', {})
+
+    if config.get('**/debug_bridge/reqserver') is None:
+        config.get('**/debug_bridge').set('reqserver', {})
+
+    if config.get('**/debug_bridge/reqserver/port') is None:
+        config.get('**/debug_bridge/reqserver').set('port', args.req_port)
+
+    if config.get('**/debug_bridge/reqserver/max') is None:
+        config.get('**/debug_bridge/reqserver').set('max', args.req_max)
 
 for binary in args.binaries:
     if config.get('**/loader') is None:

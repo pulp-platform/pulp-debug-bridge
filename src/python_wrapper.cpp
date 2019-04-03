@@ -23,6 +23,7 @@
 #include <signal.h>
 #include <stdexcept>
 #include <string>
+#include <functional>
 
 #include "json.hpp"
 #include "log/log.hpp"
@@ -238,23 +239,45 @@ extern "C" void bridge_reqloop_init(unsigned int debug_struct_addr, int do_print
 {
   if (!bridge->m_req_loop) {
     bridge->m_req_loop = std::make_shared<ReqLoop>(bridge->m_event_loop, std::static_pointer_cast<Cable>(bridge->m_adu), debug_struct_addr, do_printf);
-    bridge->m_req_loop->on_exit([](int){
-      bridge->m_bridge_commands->trigger_exit();
-    });
+    bridge->m_req_loop->on_exit(std::bind(&BridgeCommands::trigger_exit, bridge->m_bridge_commands));
   } else
     bridge->m_req_loop->set_debug_struct_addr(debug_struct_addr);
 }
 
-extern "C" void bridge_reqloop_start()
+extern "C" void bridge_reqserver_init(int port, int max_access)
 {
-  if (bridge->m_req_loop)
-    bridge->m_req_loop->start(false);
+  if (!bridge->m_req_server) {
+    bridge->m_req_server = std::make_shared<ReqServer>(bridge->m_event_loop, std::static_pointer_cast<Cable>(bridge->m_adu), port, max_access);
+    using namespace std::placeholders;
+    bridge->m_req_loop->on_available(std::bind(&ReqServer::soc_power, bridge->m_req_server, _1));
+    bridge->m_req_loop->on_req_event(std::bind(&ReqServer::target_alert, bridge->m_req_server));
+  }
 }
 
-extern "C" void bridge_reqloop_stop()
+extern "C" void bridge_reqloop_start(bool start_reqserver)
 {
-  if (bridge->m_req_loop)
+  if (bridge->m_req_loop) {
+    if (start_reqserver && bridge->m_req_server)
+      bridge->m_req_server->start();
+    bridge->m_req_loop->start(false);
+  }
+}
+
+extern "C" void bridge_reqloop_stop(bool stop_reqserver)
+{
+  if (bridge->m_req_loop) {
+    if (bridge->m_req_server) {
+      if (stop_reqserver) {
+        bridge->m_req_server->stop();
+      }
+      else
+      {
+        bridge->m_req_server->soc_power(false);
+        bridge->m_req_server->target_reset();
+      }
+    }
     bridge->m_req_loop->stop();
+  }
 }
 
 extern "C" void bridge_deinit()

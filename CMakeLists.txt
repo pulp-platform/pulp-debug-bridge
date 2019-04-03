@@ -30,6 +30,8 @@ set(FTDI_DEVKIT_URL "https://sourceforge.net/projects/picusb/files/${FTDI_DEVKIT
 
 option(WithFrameBuffer "Build with framebuffer support" ON)
 option(WithFTDI "Build with FTDI support" ON)
+option(WithTests "Build tests" OFF)
+
 set(LibFTDIVersion v1.4 CACHE STRING "LibFTDI version/git tag to build")
 
 if(NOT CMAKE_BUILD_TYPE)
@@ -73,7 +75,9 @@ endif()
 enable_testing()
 
 add_subdirectory(src)
-#add_subdirectory(tests)
+if(WithTests)
+  add_subdirectory(tests)
+endif()
 
 
 add_custom_target(plpbridge ALL)
