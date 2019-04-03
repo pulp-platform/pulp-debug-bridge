@@ -304,6 +304,34 @@ commands = {
   'endloop'    : ['end previous loop'],
 }
 
+def get_config_and_commands(args):
+    config_path = args.config
+
+
+    if args.chip is not None:
+        config_path = os.path.join(
+            os.path.dirname(os.path.dirname(sys.argv[0])),
+            'configs', 'chips', args.chip, '%s.json' % args.chip
+        )
+
+        if not os.path.exists(config_path):
+            print ("ERROR, didn't find any configuration for specified chip (chip: %s, config: %s)" % (args.chip, config_path))
+            exit(-1)
+
+    elif config_path is None:
+        raise Exception('A chip or a config file must be specified')
+
+    config = plpconf.get_config(config_path, interpret=True)
+
+
+    if len(args.command) == 0:
+        json_commands = config.get('**/debug_bridge/commands')
+        if json_commands is not None:
+            args.command = json_commands.get().split()
+
+    return config
+
+
 
 command_help = """Available commands:
 """
@@ -367,6 +395,10 @@ parser.add_argument("--boot-mode", dest="boot_mode", default=None, help="Specify
 
 [args, otherArgs] = parser.parse_known_args()
 
+config = get_config_and_commands(args)
+
+
+
 if 'read' in args.command or 'write' in args.command:
   parser.add_argument("--addr", dest="addr", default=None, help="Specify the address of the access for read and write commands")
   parser.add_argument("--size", dest="size", default="4", help="Specify the size of the access for read and write commands")
@@ -404,29 +436,13 @@ if 'reqloop' in args.command:
 
 args = parser.parse_args()
 
+config = get_config_and_commands(args)
+
 if args.help:
     parser.print_help()
     exit(0)
 
 
-
-config_path = args.config
-
-
-if args.chip is not None:
-    config_path = os.path.join(
-        os.path.dirname(os.path.dirname(sys.argv[0])),
-        'configs', 'chips', args.chip, '%s.json' % args.chip
-    )
-
-    if not os.path.exists(config_path):
-        print ("ERROR, didn't find any configuration for specified chip (chip: %s, config: %s)" % (args.chip, config_path))
-        exit(-1)
-
-elif config_path is None:
-    raise Exception('A chip or a config file must be specified')
-
-config = plpconf.get_config(config_path, interpret=True)
 
 
 # And overloads it with the specified options
@@ -479,11 +495,6 @@ for binary in args.binaries:
 
     config.get('**/loader').set('binaries', binary)
 
-
-if len(args.command) == 0:
-    json_commands = config.get('**/debug_bridge/commands')
-    if json_commands is not None:
-        args.command = json_commands.get().split()
 
 binaries = []
 binaries_conf = config.get('**/loader/binaries')

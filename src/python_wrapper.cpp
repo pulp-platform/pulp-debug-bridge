@@ -239,7 +239,7 @@ extern "C" void bridge_reqloop_init(unsigned int debug_struct_addr, int do_print
 {
   if (!bridge->m_req_loop) {
     bridge->m_req_loop = std::make_shared<ReqLoop>(bridge->m_event_loop, std::static_pointer_cast<Cable>(bridge->m_adu), debug_struct_addr, do_printf);
-    bridge->m_req_loop->on_exit(std::bind(&BridgeCommands::trigger_exit, bridge->m_bridge_commands));
+    bridge->m_req_loop->on_exit(std::bind(&BridgeCommands::stop_bridge, bridge->m_bridge_commands));
   } else
     bridge->m_req_loop->set_debug_struct_addr(debug_struct_addr);
 }

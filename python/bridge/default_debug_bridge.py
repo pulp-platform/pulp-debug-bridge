@@ -434,8 +434,8 @@ class debug_bridge(object):
 
     def reqloop(self):
         self.init_reqloop()
-        port = self.config.get('**/debug_bridge/reqserver/port')
-        max_req = self.config.get('**/debug_bridge/reqserver/max')
+        port = self.config.get_int('**/debug_bridge/reqserver/port')
+        max_req = self.config.get_int('**/debug_bridge/reqserver/max')
         self.module.bridge_reqserver_init(port, max_req)
         self.module.bridge_reqloop_start(True)
         return True
