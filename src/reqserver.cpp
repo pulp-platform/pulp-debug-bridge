@@ -155,7 +155,7 @@ void ReqServer::Client::on_write(circular_buffer_ptr_t buf) {
     if (this->m_send_alert) {
       rsp.type = REQSERVER_ALERT_RSP;
       // alert clears all unsent transactions
-      while (!this->m_completed_reqs.empty()) this->m_completed_reqs.pop();
+      //while (!this->m_completed_reqs.empty()) this->m_completed_reqs.pop();
     } else {
       rsp.type = REQSERVER_ERROR_RSP;
     }
@@ -264,6 +264,7 @@ bool ReqServer::Request::receive(circular_buffer_ptr_t buf, bool * clear_timer) 
       if (buf->read_copy(((char *)&this->m_req), sizeof(this->m_req)) != sizeof(this->m_req)) {
         return true;
       }
+
       if (this->m_req.type > REQSERVER_MAX_REQ_NUM || this->m_req.type < 0 || this->m_req.len <= 0 || this->m_req.len > 5000000) {
         buf->reset();
         this->m_error = true;
@@ -312,6 +313,7 @@ bool ReqServer::Request::send(circular_buffer_ptr_t buf) {
           rsp.len = this->m_buf.size();
           buf->write_copy((void *)&rsp, sizeof(reqserver_rsp_payload_t));
           this->m_in_progress = true;
+          this->m_pos = 0;
           continue; // loop to start sending data
         }
         case REQSERVER_WRITEMEM_RSP: {
@@ -331,12 +333,14 @@ bool ReqServer::Request::send(circular_buffer_ptr_t buf) {
 bool ReqServer::Request::execute(std::shared_ptr<Cable> cable) {
   // split reads or writes up if they are too big
   int size = std::min(REQSERVER_MAX_REQ, this->m_req.len - m_pos);
-  bool err = cable->access(
+
+  bool err = !cable->access(
     this->m_req.type == REQSERVER_WRITEMEM_REQ,
     this->m_req.addr + this->m_pos,
     size,
     &this->m_buf[this->m_pos]
   );
+
   if (err) {
     this->m_error = true;
     return true;

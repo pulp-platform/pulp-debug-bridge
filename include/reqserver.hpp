@@ -30,7 +30,7 @@
 #include "events/tcp-events.hpp"
 #include "debug_bridge/reqserver.h"
 
-#define REQSERVER_MAX_REQ 10
+#define REQSERVER_MAX_REQ 2048
 
 typedef enum {
   REQSERVER_CLIENT_CONNECTED,

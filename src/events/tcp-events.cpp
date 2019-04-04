@@ -545,7 +545,7 @@ bool Tcp_socket::socket_readable()
         break;
       }
     } else {
-      dump(buf, len);
+      //dump(buf, len);
       in_buffer->commit_write(ret);
     }
   }
