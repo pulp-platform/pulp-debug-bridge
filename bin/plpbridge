@@ -473,18 +473,19 @@ if args.port is not None:
 if args.host is not None:
     config.get('**/debug_bridge/cable/jtag-proxy').set('host', args.host)
 
-if args.req_port is not None:
-    if config.get('**/debug_bridge') is None:
-        config.set('debug_bridge', {})
+if 'reqloop' in args.command:
+    if args.req_port is not None:
+        if config.get('**/debug_bridge') is None:
+            config.set('debug_bridge', {})
 
-    if config.get('**/debug_bridge/reqserver') is None:
-        config.get('**/debug_bridge').set('reqserver', {})
+        if config.get('**/debug_bridge/reqserver') is None:
+            config.get('**/debug_bridge').set('reqserver', {})
 
-    if config.get('**/debug_bridge/reqserver/port') is None:
-        config.get('**/debug_bridge/reqserver').set('port', args.req_port)
+        if config.get('**/debug_bridge/reqserver/port') is None:
+            config.get('**/debug_bridge/reqserver').set('port', args.req_port)
 
-    if config.get('**/debug_bridge/reqserver/max') is None:
-        config.get('**/debug_bridge/reqserver').set('max', args.req_max)
+        if config.get('**/debug_bridge/reqserver/max') is None:
+            config.get('**/debug_bridge/reqserver').set('max', args.req_max)
 
 for binary in args.binaries:
     if config.get('**/loader') is None:
