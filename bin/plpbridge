@@ -118,27 +118,36 @@ def eeprom_write(bridge):
     return bridge.eeprom_access(args.flasher_init, 0, 0, True, addr, args.file)
 
 
+def get_flash_id():
+    if args.flash_type == 'hyperflash':
+        return 1
+    elif args.flash_type == 'mram':
+        return 2
+    else:
+        return 0
+
+
 def flash_write(bridge):
     addr = int(args.addr, 0)
 
-    return bridge.flash_access(args.flasher_init, 1, 0, 0, True, addr, 0, args.file)
+    return bridge.flash_access(args.flasher_init, get_flash_id(), 0, 0, True, addr, 0, args.file)
 
 
 def flash_read(bridge):
     addr = int(args.addr, 0)
     size = int(args.size, 0)
 
-    return bridge.flash_access(args.flasher_init, 1, 0, 0, False, addr, size, args.file)
+    return bridge.flash_access(args.flasher_init, get_flash_id(), 0, 0, False, addr, size, args.file)
 
 
 def flash_erase_sector(bridge):
     addr = int(args.addr, 0)
 
-    return bridge.flash_erase_sector(args.flasher_init, 1, 0, 0, addr)
+    return bridge.flash_erase_sector(args.flasher_init, get_flash_id(), 0, 0, addr)
 
 
 def flash_erase_chip(bridge):
-    return bridge.flash_erase_chip(args.flasher_init, 1, 0, 0)
+    return bridge.flash_erase_chip(args.flasher_init, get_flash_id(), 0, 0)
 
 
 def load(bridge):
@@ -281,6 +290,7 @@ parser.add_argument("--cable", dest="cable", default=None, help="Specify cable")
 parser.add_argument("--chip", dest="chip", default=None, help="Specify target chip")
 parser.add_argument("--binary", dest="binaries", default=[], action="append", help="Specify a binary to be loaded by the load command")
 parser.add_argument("--flash-image", dest="fimages", default=[], action="append", help="Specify a flash image to be flashed")
+parser.add_argument("--flash-type", dest="flash_type", default="hyperflash", help="Specify flash type")
 
 [args, otherArgs] = parser.parse_known_args()
 
