@@ -29,7 +29,8 @@ extern "C" {
 
 typedef enum {
   DEBUG_BRIDGE_JTAG_REQ  = 0,
-  DEBUG_BRIDGE_RESET_REQ = 1
+  DEBUG_BRIDGE_RESET_REQ = 1,
+  DEBUG_BRIDGE_CONFIG_REQ = 2
 } proxy_req_type_e;
 
 typedef enum {
@@ -49,7 +50,11 @@ typedef struct {
     struct {
       int32_t active;
     } reset;
+    struct {
+      int32_t value;
+    } config;
   };
+
 } proxy_req_t;
 
 
