@@ -60,6 +60,29 @@ class vega_debug_bridge(debug_bridge):
 
         return 0
 
+    def clear(self):
+        self.get_cable().chip_config(0)
+
+    def wait_available(self):
+        
+        boot_mode = 0
+        if self.boot_mode is not None:
+            boot_mode = (self.boot_mode << 1) | 1
+
+        # Loop until we see bit 0 becoming 1, this will indicate that the
+        # target is ready to accept bridge requests
+        while True:
+            reg_value = self.get_cable().jtag_get_reg(JTAG_SOC_CONFREG, JTAG_SOC_CONFREG_WIDTH, boot_mode)
+
+            rt_req = (reg_value >> 1) & 0x7
+
+            if rt_req == 4 or rt_req == 1:
+                break
+
+        if self.verbose:
+            print ("Target is available")
+
+
     def stop(self):
 
         # Reset the chip and tell him we want to load via jtag
@@ -68,6 +91,10 @@ class vega_debug_bridge(debug_bridge):
         if self.verbose:
             print ("Stalling the FC")
 
+        # Use bootsel pad to tell boot code to stop
+        self.get_cable().chip_config(1)
+
+        # Do full reset to force him to take into account bootsel
         self.get_cable().chip_reset(True)
         self.get_cable().chip_reset(False)
 

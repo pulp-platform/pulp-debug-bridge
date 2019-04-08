@@ -42,6 +42,7 @@ class Jtag_proxy : public Cable {
 
 
     bool chip_reset(bool active);
+    bool chip_config(uint32_t config);
 
   private:
 

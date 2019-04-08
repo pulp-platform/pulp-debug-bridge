@@ -63,6 +63,7 @@ class Cable_ctrl_itf
 {
 public:
   virtual bool chip_reset(bool active) { return false; }
+  virtual bool chip_config(uint32_t config) { return false; }
 };
 
 

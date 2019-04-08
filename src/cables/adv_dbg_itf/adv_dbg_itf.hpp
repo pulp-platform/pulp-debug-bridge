@@ -51,6 +51,7 @@ class Adv_dbg_itf : public Cable  {
 
 
     bool chip_reset(bool active);
+    bool chip_config(uint32_t config);
     bool jtag_reset(bool active);
     bool jtag_soft_reset();
 

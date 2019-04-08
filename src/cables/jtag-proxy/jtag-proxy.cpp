@@ -155,3 +155,11 @@ bool Jtag_proxy::chip_reset(bool active)
   ::send(m_socket, (void *)&req, sizeof(req), 0);
   return true;
 }
+
+bool Jtag_proxy::chip_config(uint32_t config)
+{
+  proxy_req_t req = { .type=DEBUG_BRIDGE_CONFIG_REQ };
+  req.config.value = config;
+  ::send(m_socket, (void *)&req, sizeof(req), 0);
+  return true;
+}

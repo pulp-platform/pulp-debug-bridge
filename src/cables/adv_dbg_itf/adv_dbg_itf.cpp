@@ -132,6 +132,23 @@ end:
 }
 
 
+
+bool Adv_dbg_itf::chip_config(uint32_t value)
+{
+  bool result = true;
+
+  pthread_mutex_lock(&mutex);
+
+  if (!m_dev->chip_config(value)) { result = false; goto end; };
+
+end:
+  pthread_mutex_unlock(&mutex);
+
+  return result;
+}
+
+
+
 void Adv_dbg_itf::device_select(unsigned int i)
 {
   pthread_mutex_lock(&mutex);

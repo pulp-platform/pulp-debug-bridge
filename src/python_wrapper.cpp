@@ -166,6 +166,12 @@ extern "C" void chip_reset(void *handler, bool active)
   cable->chip_reset(active);
 }
 
+extern "C" void chip_config(void *handler, uint32_t value)
+{
+  Adv_dbg_itf *cable = (Adv_dbg_itf *)handler;
+  cable->chip_config(value);
+}
+
 extern "C" void jtag_reset(void *handler, bool active)
 {
   Adv_dbg_itf *cable = (Adv_dbg_itf *)handler;

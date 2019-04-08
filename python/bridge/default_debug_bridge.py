@@ -43,6 +43,9 @@ class Ctype_cable(object):
 
         self.module.chip_reset.argtypes = \
             [ctypes.c_void_p, ctypes.c_bool]
+
+        self.module.chip_config.argtypes = \
+            [ctypes.c_void_p, ctypes.c_int]
             
         self.module.jtag_reset.argtypes = \
             [ctypes.c_void_p, ctypes.c_bool]
@@ -103,6 +106,9 @@ class Ctype_cable(object):
 
     def chip_reset(self, value):
         self.module.chip_reset(self.instance, value)
+
+    def chip_config(self, value):
+        self.module.chip_config(self.instance, value)
 
     def jtag_reset(self, value):
         self.module.jtag_reset(self.instance, value)
