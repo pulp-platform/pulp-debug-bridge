@@ -321,7 +321,7 @@ def get_config_and_commands(args):
     elif config_path is None:
         raise Exception('A chip or a config file must be specified')
 
-    config = plpconf.get_config(config_path, interpret=True)
+    config = plpconf.get_config(config_path, config_opts=args.configOpt, interpret=True)
 
 
     if len(args.command) == 0:
@@ -392,6 +392,7 @@ parser.add_argument("--cable", dest="cable", default=None, help="Specify cable")
 parser.add_argument("--chip", dest="chip", default=None, help="Specify target chip")
 parser.add_argument("--binary", dest="binaries", default=[], action="append", help="Specify a binary to be loaded by the load command")
 parser.add_argument("--boot-mode", dest="boot_mode", default=None, help="Specify the boot mode")
+parser.add_argument("--config-opt", dest="configOpt", default=[], action="append", help='specify configuration option')
 
 [args, otherArgs] = parser.parse_known_args()
 
