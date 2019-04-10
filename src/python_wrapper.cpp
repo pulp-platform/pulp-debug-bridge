@@ -118,11 +118,7 @@ extern "C" void *cable_new(const char *config_string, const char *system_config_
     Log *log = new Log();
     Ftdi::FTDIDeviceID id = Ftdi::Olimex;
     if (strcmp(cable_name, "ftdi@digilent") == 0) id = Ftdi::Digilent;
-    Adv_dbg_itf *adu = new Adv_dbg_itf(system_config, log, new Ftdi(system_config, log, id));
-    if (!adu->connect(config)) return NULL;
-    int tap = 0;
-    if (config->get("tap")) tap = config->get("tap")->get_int();
-    adu->device_select(tap);
+    Adv_dbg_itf *adu = new Adv_dbg_itf(system_config, config, log, new Ftdi(system_config, log, id));
     return (void *)static_cast<Cable *>(adu);
 #else
     fprintf(stderr, "Debug bridge has not been compiled with FTDI support\n");
@@ -132,11 +128,7 @@ extern "C" void *cable_new(const char *config_string, const char *system_config_
   else if (strcmp(cable_name, "jtag-proxy") == 0)
   {
     Log *log = new Log();
-    Adv_dbg_itf *adu = new Adv_dbg_itf(system_config, log, new Jtag_proxy(log));
-    if (!adu->connect(config)) return NULL;
-    int tap = 0;
-    if (config->get("tap")) tap = config->get("tap")->get_int();
-    adu->device_select(tap);
+    Adv_dbg_itf *adu = new Adv_dbg_itf(system_config, config, log, new Jtag_proxy(log));
     return (void *)static_cast<Cable *>(adu);
   }
   else
@@ -160,10 +152,10 @@ extern "C" void cable_read(void *cable, unsigned int addr, int size, const char 
   adu->access(false, addr, size, (char *)data);
 }
 
-extern "C" void chip_reset(void *handler, bool active)
+extern "C" void chip_reset(void *handler, bool active, int duration)
 {
   Adv_dbg_itf *cable = (Adv_dbg_itf *)handler;
-  cable->chip_reset(active);
+  cable->chip_reset(active, duration);
 }
 
 extern "C" void chip_config(void *handler, uint32_t value)

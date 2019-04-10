@@ -36,10 +36,10 @@ struct jtag_device {
 
 class Adv_dbg_itf : public Cable  {
   public:
-    Adv_dbg_itf(js::config *system_config, Log* log, Cable *itf);
+    Adv_dbg_itf(js::config *system_config, js::config *config, Log* log, Cable *itf);
     virtual ~Adv_dbg_itf();
 
-    bool connect(js::config *config);
+    bool connect();
     void lock();
     void unlock();
 
@@ -48,9 +48,10 @@ class Adv_dbg_itf : public Cable  {
 
     void device_select(unsigned int i);
 
+    void add_device(int ir_len);
 
 
-    bool chip_reset(bool active);
+    bool chip_reset(bool active, int duration);
     bool chip_config(uint32_t config);
     bool jtag_reset(bool active);
     bool jtag_soft_reset();
@@ -77,6 +78,9 @@ class Adv_dbg_itf : public Cable  {
     Cable* m_dev;
     Log* log;
 
+    bool cable_connected = false;
+    bool connected = false;
+
     pthread_mutex_t mutex;
     unsigned int debug_ir;
     int retry_count;
@@ -88,6 +92,8 @@ class Adv_dbg_itf : public Cable  {
     unsigned int             m_jtag_device_sel = 0;
 
     bool m_tms_on_last;
+
+    js::config *bridge_config;
 
     bool write(unsigned int addr, int size, char* buffer);
     bool write_internal(ADBG_OPCODES opcode, unsigned int addr, int size, char* buffer);
@@ -110,6 +116,9 @@ class Adv_dbg_itf : public Cable  {
     bool jtag_auto_discovery();
     bool jtag_idle();
     bool jtag_set_selected_ir(char ir);
+
+    bool check_connection();
+    bool check_cable();
 
 
     uint32_t crc_compute(uint32_t crc, char* data_in, int length_bits);

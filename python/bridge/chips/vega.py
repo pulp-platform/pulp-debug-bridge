@@ -28,6 +28,16 @@ class vega_debug_bridge(debug_bridge):
         self.start_cores = False
 
 
+
+    def reset(self):
+        self.get_cable().chip_reset(True, 200000000)
+        self.get_cable().chip_reset(False, 2000000)
+        self.get_cable().jtag_reset(True)
+        self.get_cable().jtag_reset(False)
+        return 0
+
+
+
     def load_jtag(self, binaries):
 
         if self.verbose:
@@ -97,6 +107,13 @@ class vega_debug_bridge(debug_bridge):
         # Do full reset to force him to take into account bootsel
         self.get_cable().chip_reset(True)
         self.get_cable().chip_reset(False)
+
+        # TODO the FC should be stopped through the new debug unit once
+        # the new tap is supported
+
+        return 0
+
+
 
         # Stall the FC as when the reset is released it just tries to load from flash
         while True:

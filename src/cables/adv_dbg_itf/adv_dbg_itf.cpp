@@ -31,7 +31,7 @@
 #define JTAG_SOC_AXIREG  4
 
 
-Adv_dbg_itf::Adv_dbg_itf(js::config *system_config, Log* log, Cable *m_dev) : Cable(system_config), log(log), m_dev(m_dev)
+Adv_dbg_itf::Adv_dbg_itf(js::config *system_config, js::config *config, Log* log, Cable *m_dev) : Cable(system_config), log(log), m_dev(m_dev), bridge_config(config)
 {
   pthread_mutexattr_t attr;
   pthread_mutexattr_init(&attr);
@@ -66,31 +66,40 @@ Adv_dbg_itf::~Adv_dbg_itf()
 
 
 
-bool Adv_dbg_itf::connect(js::config *config)
+bool Adv_dbg_itf::connect()
 {
   js::config *jtag_cable_config = NULL;
 
-  access_timeout = config->get_int("**/access_timeout_us");
+  access_timeout = bridge_config->get_int("**/access_timeout_us");
   if (access_timeout == 0)
     access_timeout = 1000000;
 
   log->debug ("Using access timeout: %d us\n", access_timeout);
 
-  if (!m_dev->connect(config)) {
-    log->error("Could not connect to JTAG device\n");
-    return false;
-  }
+  this->check_cable();
 
   m_dev->jtag_reset(true);
   m_dev->jtag_reset(false);
 
   this->jtag_soft_reset();
 
+  // TODO once the bridge is working on Vega, changed that into a generic
+  // feature which reads the devices from json file
+  if (this->config->get("**/chip/name")->get_str() == "vega")
+  {
+    this->add_device(5);
+    this->add_device(4);
+  }
+
   // now we can work with the chain
   if (!jtag_auto_discovery()) {
     log->error("Did not find an adv debug unit in the chain, exiting\n");
     return false;
   }
+
+  int tap = 0;
+  if (bridge_config->get("tap")) tap = bridge_config->get("tap")->get_int();
+  this->device_select(tap);
 
   return true;
 }
@@ -99,6 +108,8 @@ bool Adv_dbg_itf::connect(js::config *config)
 
 bool Adv_dbg_itf::jtag_reset(bool active)
 {
+  this->check_connection();
+
   pthread_mutex_lock(&mutex);
 
   for (int i=0; i < m_jtag_devices.size(); i++)
@@ -112,15 +123,42 @@ bool Adv_dbg_itf::jtag_reset(bool active)
   return result;
 }
 
+bool Adv_dbg_itf::check_connection()
+{
+  if (!this->connected)
+  {
+    this->connected = true;
 
+    if (!this->connect())
+      return false;
+  }
 
-bool Adv_dbg_itf::chip_reset(bool active)
+  return true;
+}
+
+bool Adv_dbg_itf::check_cable()
+{
+  if (!this->cable_connected)
+  {
+    if (!this->m_dev->connect(this->bridge_config))
+      return false;
+
+    this->cable_connected = true;
+  }
+
+  return true;
+}
+
+bool Adv_dbg_itf::chip_reset(bool active, int duration)
 {
   bool result = true;
 
+  if (!this->check_cable())
+    return false;
+
   pthread_mutex_lock(&mutex);
 
-  if (!m_dev->chip_reset(active)) { result = false; goto end; };
+  if (!m_dev->chip_reset(active, duration)) { result = false; goto end; };
   // Wait some time so that we don't do any IO access after that while the chip
   // has not finished booting
   if (!active) usleep(10000);
@@ -168,6 +206,8 @@ void Adv_dbg_itf::device_select(unsigned int i)
 bool Adv_dbg_itf::access(bool wr, unsigned int addr, int size, char* buffer)
 {
   bool result;
+
+  this->check_connection();
 
   pthread_mutex_lock(&mutex);
 
@@ -486,7 +526,7 @@ bool Adv_dbg_itf::write_internal(ADBG_OPCODES opcode, unsigned int addr, int siz
   m_dev->jtag_write_tms(1); // update DR
   m_dev->jtag_write_tms(0); // run test idle
 
-  if ((recv[0] & 0x1) != 0x1) {
+  if (((recv[0] >> m_jtag_device_sel) & 0x1) != 0x1) {
     // TODO some pulp targets like fulmine does not support CRC.
     log->warning("ft2232: Match bit was not set. Transfer has probably failed; addr %08X, size %d\n", addr, size);
     return false;
@@ -828,6 +868,14 @@ bool Adv_dbg_itf::jtag_axi_select()
 
 #define MAX_CHAIN_LEN 128
 
+void Adv_dbg_itf::add_device(int ir_len)
+{
+  jtag_device device;
+  device.index  = m_jtag_devices.size();
+  device.is_in_debug = false;
+  device.ir_len = ir_len;
+  m_jtag_devices.push_back(device);
+}
 
 bool Adv_dbg_itf::jtag_auto_discovery()
 {
@@ -836,56 +884,87 @@ bool Adv_dbg_itf::jtag_auto_discovery()
   int ir_len;
   int dr_len;
 
-  ir_len = ir_len_detect();
-  jtag_soft_reset();
-  dr_len = dr_len_detect();
-
-  log->debug("JTAG IR len is %d, DR len is %d\n", ir_len, dr_len);
-
-  std::string chip = this->config->get("**/chip/name")->get_str();
-
-  if (chip != "wolfe" && chip != "usoc_v1")
+  if (m_jtag_devices.size() == 0)
   {
-    if (dr_len <= 0 || ir_len <= 0) {
-      log->error("JTAG sanity check failed\n");
-      return false;
+    ir_len = ir_len_detect();
+
+    jtag_soft_reset();
+    dr_len = dr_len_detect();
+
+    log->debug("JTAG IR len is %d, DR len is %d\n", ir_len, dr_len);
+
+    std::string chip = this->config->get("**/chip/name")->get_str();
+
+    if (chip != "wolfe" && chip != "usoc_v1")
+    {
+      if (dr_len <= 0 || ir_len <= 0) {
+        log->error("JTAG sanity check failed\n");
+        return false;
+      }
     }
+    else
+    {
+      // On wolfe, due to a HW bug, it is not possible to guess the dr len
+      dr_len = 32;
+    }
+
+    // since we now know how long the chain is, we can shift out the IDs
+    jtag_soft_reset();
+    m_dev->jtag_write_tms(1); // select DR scan
+    m_dev->jtag_write_tms(0); // capture DR scan
+    m_dev->jtag_write_tms(0); // shift DR scan
+
+    m_dev->stream_inout(recv_buf, send_buf, dr_len, true);
+
+    m_jtag_devices.clear();
+
+    // build 32-bit chunks for the IDs
+    for(int i = 0; i < dr_len/32; i++) {
+      jtag_device device;
+      device.id  = (recv_buf[i*4 + 3] & 0xFF) << 24;
+      device.id |= (recv_buf[i*4 + 2] & 0xFF) << 16;
+      device.id |= (recv_buf[i*4 + 1] & 0xFF) <<  8;
+      device.id |= (recv_buf[i*4 + 0] & 0xFF) <<  0;
+      device.index  = i;
+      device.is_in_debug = false;
+      // TODO the detacted IR length is wrong when there are several taps
+      device.ir_len = 4;
+
+      log->debug("Device %d ID: %08X\n", i, device.id);
+
+      m_jtag_devices.push_back(device);
+    }
+
+    m_dev->jtag_write_tms(1); // update DR
+    m_dev->jtag_write_tms(0); // run test idle
   }
   else
   {
-    // On wolfe, due to a HW bug, it is not possible to guess the dr len
-    dr_len = 32;
+    for(int i = 0; i < m_jtag_devices.size(); i++)
+    {
+      jtag_device &device = m_jtag_devices[i];
+
+      this->device_select(i);
+
+      dr_len = dr_len_detect();
+
+      jtag_soft_reset();
+      m_dev->jtag_write_tms(1); // select DR scan
+      m_dev->jtag_write_tms(0); // capture DR scan
+      m_dev->jtag_write_tms(0); // shift DR scan
+
+      m_dev->stream_inout(recv_buf, send_buf, dr_len, true);
+
+      device.id  = (recv_buf[i*4 + 3] & 0xFF) << 24;
+      device.id |= (recv_buf[i*4 + 2] & 0xFF) << 16;
+      device.id |= (recv_buf[i*4 + 1] & 0xFF) <<  8;
+      device.id |= (recv_buf[i*4 + 0] & 0xFF) <<  0;
+
+      log->debug("Device %d ID: %08X\n", i, device.id);
+
+    }
+
   }
-
-  // since we now know how long the chain is, we can shift out the IDs
-  jtag_soft_reset();
-  m_dev->jtag_write_tms(1); // select DR scan
-  m_dev->jtag_write_tms(0); // capture DR scan
-  m_dev->jtag_write_tms(0); // shift DR scan
-
-  m_dev->stream_inout(recv_buf, send_buf, dr_len, true);
-
-  m_jtag_devices.clear();
-
-  // build 32-bit chunks for the IDs
-  for(int i = 0; i < dr_len/32; i++) {
-    jtag_device device;
-    device.id  = (recv_buf[i*4 + 3] & 0xFF) << 24;
-    device.id |= (recv_buf[i*4 + 2] & 0xFF) << 16;
-    device.id |= (recv_buf[i*4 + 1] & 0xFF) <<  8;
-    device.id |= (recv_buf[i*4 + 0] & 0xFF) <<  0;
-    device.index  = i;
-    device.is_in_debug = false;
-    // TODO the detacted IR length is wrong when there are several taps
-    device.ir_len = 4;
-
-    log->debug("Device %d ID: %08X\n", i, device.id);
-
-    m_jtag_devices.push_back(device);
-  }
-
-  m_dev->jtag_write_tms(1); // update DR
-  m_dev->jtag_write_tms(0); // run test idle
 
   return true;
 }
@@ -1014,8 +1093,9 @@ bool Adv_dbg_itf::jtag_pad_before()
   }
 
   unsigned int pad_bits = m_jtag_device_sel;
-  char* buffer = (char*)malloc(pad_bits/8);
-  memset(buffer, 0, pad_bits/8);
+  unsigned int pad_bytes = (pad_bits + 7)/8;
+  char* buffer = (char*)malloc(pad_bytes);
+  memset(buffer, 0, pad_bytes);
 
   if (!m_dev->stream_inout(NULL, buffer, pad_bits, false)) {
     log->warning("ft2232: failed to pad chain before our selected device\n");
@@ -1036,8 +1116,9 @@ bool Adv_dbg_itf::jtag_pad_after(bool tms)
   }
 
   unsigned int pad_bits = m_jtag_devices.size() - m_jtag_device_sel - 1;
-  char* buffer = (char*)malloc(pad_bits/8);
-  memset(buffer, 0, pad_bits/8);
+  unsigned int pad_bytes = (pad_bits + 7)/8;
+  char* buffer = (char*)malloc(pad_bytes);
+  memset(buffer, 0, pad_bytes);
 
   if (!m_dev->stream_inout(NULL, buffer, pad_bits, tms)) {
     log->warning("ft2232: failed to pad chain before our selected device\n");

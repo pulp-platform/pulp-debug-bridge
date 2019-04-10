@@ -148,11 +148,13 @@ int Jtag_proxy::flush()
   return true;
 }
 
-bool Jtag_proxy::chip_reset(bool active)
+bool Jtag_proxy::chip_reset(bool active, int duration)
 {
   proxy_req_t req = { .type=DEBUG_BRIDGE_RESET_REQ };
   req.reset.active = active;
+  req.reset.duration = duration;
   ::send(m_socket, (void *)&req, sizeof(req), 0);
+
   return true;
 }
 
