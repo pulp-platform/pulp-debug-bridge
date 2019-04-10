@@ -70,7 +70,7 @@ class Ftdi : public Cable {
 
 
 
-    bool chip_reset(bool active);
+    bool chip_reset(bool active, int duration);
 
   private:
     struct device_desc {

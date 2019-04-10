@@ -236,7 +236,7 @@ fail:
 }
 
 
-bool Ftdi::chip_reset(bool active)
+bool Ftdi::chip_reset(bool active, int duration)
 {
   if (m_id == Olimex)
   {
