@@ -41,6 +41,12 @@ class Ctype_cable(object):
         self.module.cable_read.argtypes = \
             [ctypes.c_void_p, ctypes.c_int, ctypes.c_int, ctypes.c_char_p]
 
+        self.module.cable_reg_write.argtypes = \
+            [ctypes.c_void_p, ctypes.c_int, ctypes.c_char_p, ctypes.c_int]
+
+        self.module.cable_reg_read.argtypes = \
+            [ctypes.c_void_p, ctypes.c_int, ctypes.c_char_p]
+
         self.module.chip_reset.argtypes = \
             [ctypes.c_void_p, ctypes.c_bool, ctypes.c_int]
 
@@ -94,6 +100,10 @@ class Ctype_cable(object):
         data = (ctypes.c_char * size).from_buffer(bytearray(buffer))
         self.module.cable_write(self.instance, addr, size, data)
 
+    def reg_write(self, addr, size, buffer, device=-1):
+        data = (ctypes.c_char * size).from_buffer(bytearray(buffer))
+        self.module.cable_reg_write(self.instance, addr, data, device)
+
     def read(self, addr, size):
         data = (ctypes.c_char * size)()
         self.module.cable_read(self.instance, addr, size, data)
@@ -104,7 +114,17 @@ class Ctype_cable(object):
 
         return result
 
-    def chip_reset(self, value, duration=0):
+    def reg_read(self, addr, size, device=-1):
+        data = (ctypes.c_char * size)()
+        self.module.cable_reg_read(self.instance, addr, data, device)
+
+        result = []
+        for elem in data:
+            result.append(elem)
+
+        return result
+
+    def chip_reset(self, value, duration=1000000):
         self.module.chip_reset(self.instance, value, duration)
 
     def chip_config(self, value):
@@ -305,6 +325,9 @@ class debug_bridge(object):
     def write_int(self, addr, value, size):
         return self.write(addr, size, value.to_bytes(size, byteorder='little'))
 
+    def write_reg_int(self, addr, value, size, device=-1):
+        return self.get_cable().reg_write(addr, size, value.to_bytes(size, byteorder='little'), device)
+
     def write_32(self, addr, value):
         return self.write_int(addr, value, 4)
 
@@ -317,6 +340,15 @@ class debug_bridge(object):
     def read_int(self, addr, size):
         byte_array = None
         for byte in self.read(addr, size):
+            if byte_array == None:
+                byte_array = byte
+            else:
+                byte_array += byte
+        return int.from_bytes(byte_array, byteorder='little')
+
+    def read_reg_int(self, addr, size, device=-1):
+        byte_array = None
+        for byte in self.get_cable().reg_read(addr, size, device):
             if byte_array == None:
                 byte_array = byte
             else:

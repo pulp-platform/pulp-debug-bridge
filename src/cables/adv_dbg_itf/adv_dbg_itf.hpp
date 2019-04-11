@@ -27,11 +27,15 @@
 
 class FTDILL;
 
+#define DEV_PROTOCOL_PULP  0
+#define DEV_PROTOCOL_RISCV 1
+
 struct jtag_device {
   uint32_t     id;
   unsigned int index;
   unsigned int ir_len;
   bool is_in_debug;
+  int protocol;
 };
 
 class Adv_dbg_itf : public Cable  {
@@ -44,11 +48,12 @@ class Adv_dbg_itf : public Cable  {
     void unlock();
 
 
-    bool access(bool write, unsigned int addr, int size, char* buffer);
+    bool access(bool write, unsigned int addr, int size, char* buffer, int device=-1);
+    bool reg_access(bool write, unsigned int addr, char* buffer, int device=-1);
 
     void device_select(unsigned int i);
 
-    void add_device(int ir_len);
+    void add_device(int ir_len, int protocol=DEV_PROTOCOL_PULP);
 
 
     bool chip_reset(bool active, int duration);
@@ -90,16 +95,27 @@ class Adv_dbg_itf : public Cable  {
 
     std::vector<jtag_device> m_jtag_devices;
     unsigned int             m_jtag_device_sel = 0;
+    unsigned int             m_jtag_device_default = 0;
 
     bool m_tms_on_last;
 
     js::config *bridge_config;
 
+    bool reg_access_pulp(bool write, unsigned int addr, char* buffer);
+
+    bool reg_access_riscv(bool write, unsigned int addr, char* buffer);
+    bool reg_access_read_riscv(bool write, unsigned int addr, char* buffer);
+    bool reg_access_write_riscv(bool write, unsigned int addr, char* buffer);
+
     bool write(unsigned int addr, int size, char* buffer);
-    bool write_internal(ADBG_OPCODES opcode, unsigned int addr, int size, char* buffer);
+    bool write_internal(int bitwidth, unsigned int addr, int size, char* buffer);
+    bool write_internal_pulp(int bitwidth, unsigned int addr, int size, char* buffer);
+    bool write_internal_riscv(int bitwidth, unsigned int addr, int size, char* buffer);
 
     bool read(unsigned int addr, int size, char* buffer);
-    bool read_internal(ADBG_OPCODES opcode, unsigned int addr, int size, char* buffer);
+    bool read_internal(int bitwidth, unsigned int addr, int size, char* buffer);
+    bool read_internal_pulp(int bitwidth, unsigned int addr, int size, char* buffer);
+    bool read_internal_riscv(int bitwidth, unsigned int addr, int size, char* buffer);
 
     bool read_error_reg(uint32_t *addr, bool *error);
     bool clear_error_reg();
@@ -120,6 +136,7 @@ class Adv_dbg_itf : public Cable  {
     bool check_connection();
     bool check_cable();
 
+    bool jtag_dmi_select();
 
     uint32_t crc_compute(uint32_t crc, char* data_in, int length_bits);
 };

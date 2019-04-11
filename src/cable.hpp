@@ -54,7 +54,8 @@ public:
 class Cable_io_itf
 {
 public:
-  virtual bool access(bool write, unsigned int addr, int size, char* buffer) { return false; }
+  virtual bool access(bool write, unsigned int addr, int size, char* buffer, int device=-1) { return false; }
+  virtual bool reg_access(bool write, unsigned int addr, char* buffer, int device=-1) { return false; }
 };
 
 

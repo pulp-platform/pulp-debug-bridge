@@ -26,11 +26,27 @@ class vega_debug_bridge(debug_bridge):
         super(vega_debug_bridge, self).__init__(config=config, binaries=binaries, verbose=verbose)
 
         self.start_cores = False
-
+        self.first_reset = True
 
 
     def reset(self):
+        if self.first_reset:
+            # The first time, we need to wait enough time to let the voltage
+            # regulator converge
+            self.get_cable().chip_reset(True, 500000000)
+            self.first_reset = False
+
+        # Reset the chip and tell him we want to load via jtag
+        # We keep the reset active until the end so that it sees
+        # the boot mode as soon as it boots from rom
+
+        # Use bootsel pad to tell boot code to stop
+        self.get_cable().chip_config(1)
+
+        # Due to voltage convergence and so on we need to wait
+        # 200ms when the reset is low
         self.get_cable().chip_reset(True, 200000000)
+        # It also takes some time before the JTAG is ready
         self.get_cable().chip_reset(False, 2000000)
         self.get_cable().jtag_reset(True)
         self.get_cable().jtag_reset(False)
@@ -43,8 +59,8 @@ class vega_debug_bridge(debug_bridge):
         if self.verbose:
             print ('Loading binary through jtag')
 
-        if self.stop():
-            return -1
+        #if self.stop():
+        #    return -1
 
         # Load the binary through jtag
         if self.verbose:
@@ -53,25 +69,38 @@ class vega_debug_bridge(debug_bridge):
             if self.load_elf(binary=binary):
                 return 1
 
-        # Be careful to set the new PC only after the code is loaded as the prefetch
-        # buffer is immediately fetching instructions and would get wrong instructions
-        self.write(0x1A112000, 4, [0x80, 0x80, 0x00, 0x1c])
-
-        self.start_cores = True
-
         return 0
 
 
     def start(self):
 
-        if self.start_cores:
-            # Unstall the FC so that it starts fetching instructions from the loaded binary
-            self.write(0x1A110000, 4, [0, 0, 0, 0])
+        # First stall the core
+        self.write_dmi(0x10, 0x00000001) # DMACTIVE
+        self.write_dmi(0x10, 0x03E00001) # HART SEL
+        self.write_dmi(0x10, 0x83E00001) # HALT REQ
+
+        # Wait until it is halted
+        while True:
+            status = self.read_dmi(0x11)
+
+            if ((status >> 9) & 1) == 1:
+                break
+
+        # Set PC
+        self.write_dmi(0x04, 0x1c008080)         # PC into DATA0
+        self.write_dmi(0x17, 0x00230000 | 0x7b1) # Abstract cmd to set DPC
+
+        # Resume the core
+        self.write_dmi(0x10, 0x43E00001)
 
         return 0
 
+
+
     def clear(self):
         self.get_cable().chip_config(0)
+
+
 
     def wait_available(self):
         
@@ -93,42 +122,17 @@ class vega_debug_bridge(debug_bridge):
             print ("Target is available")
 
 
+
+    def write_dmi(self, reg, value):
+        self.write_reg_int(reg, value, 4, 0) # DMACTIVE
+
+
+
+    def read_dmi(self, reg):
+        return self.read_reg_int(reg, 4, 0) # DMACTIVE
+
+
+
     def stop(self):
-
-        # Reset the chip and tell him we want to load via jtag
-        # We keep the reset active until the end so that it sees
-        # the boot mode as soon as it boots from rom
-        if self.verbose:
-            print ("Stalling the FC")
-
-        # Use bootsel pad to tell boot code to stop
-        self.get_cable().chip_config(1)
-
-        # Do full reset to force him to take into account bootsel
-        self.get_cable().chip_reset(True)
-        self.get_cable().chip_reset(False)
-
-        # TODO the FC should be stopped through the new debug unit once
-        # the new tap is supported
-
-        return 0
-
-
-
-        # Stall the FC as when the reset is released it just tries to load from flash
-        while True:
-            # on vega, the core will start only after a while when the reset
-            # is released, so the first accesses we do may not have any effect.
-            # As a aworkaround we have to try stopping it several time.
-            # Another issue on RTL simulation is that the core is not
-            # functional anymore if we let him execute a branch with X
-            # which happens if we let it run too long before we stop it.
-            # Due to that we cannot read the stall status before we stop it.
-            for i in range(0, 10):
-                self.write(0x1A110000, 4, [0, 0, 1, 0])
-
-            value = self.read_32(0x1A110000)
-            if (value >> 16) & 1 == 1:
-                break
 
         return 0

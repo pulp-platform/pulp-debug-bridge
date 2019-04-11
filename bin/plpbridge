@@ -154,7 +154,7 @@ def load(bridge):
 
     if args.verbose >= 4:
         binaries = []
-        binaries_conf = bridge.config.get('**/loader/binaries')
+        binaries_conf = bridge.config.get('**/runner/binaries')
         if binaries_conf is not None:
             binaries = binaries_conf.get_dict()
         print ('Loading ELF binaries (path: %s)' % ' '.join(binaries))
@@ -384,13 +384,13 @@ if args.port is not None:
     config.get('**/debug_bridge/cable/jtag-proxy').set('port', args.port)
 
 for binary in args.binaries:
-    if config.get('**/loader') is None:
-        config.set('loader', {})
+    if config.get('**/runner') is None:
+        config.set('runner', {})
 
-    if config.get('**/loader/binaries') is None:
-        config.get('**/loader').set('binaries', [])
+    if config.get('**/runner/binaries') is None:
+        config.get('**/runner').set('binaries', [])
 
-    config.get('**/loader').set('binaries', binary)
+    config.get('**/runner').set('binaries', binary)
 
 
 
@@ -402,7 +402,7 @@ if len(args.command) == 0:
 
 
 binaries = []
-binaries_conf = config.get('**/loader/binaries')
+binaries_conf = config.get('**/runner/binaries')
 if binaries_conf is not None:
     binaries = binaries_conf.get_dict()
 

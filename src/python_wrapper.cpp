@@ -152,6 +152,18 @@ extern "C" void cable_read(void *cable, unsigned int addr, int size, const char 
   adu->access(false, addr, size, (char *)data);
 }
 
+extern "C" void cable_reg_write(void *cable, unsigned int addr, const char *data, int device)
+{
+  Adv_dbg_itf *adu = (Adv_dbg_itf *)cable;
+  adu->reg_access(true, addr, (char *)data, device);
+}
+
+extern "C" void cable_reg_read(void *cable, unsigned int addr, const char *data, int device)
+{
+  Adv_dbg_itf *adu = (Adv_dbg_itf *)cable;
+  adu->reg_access(false, addr, (char *)data, device);
+}
+
 extern "C" void chip_reset(void *handler, bool active, int duration)
 {
   Adv_dbg_itf *cable = (Adv_dbg_itf *)handler;

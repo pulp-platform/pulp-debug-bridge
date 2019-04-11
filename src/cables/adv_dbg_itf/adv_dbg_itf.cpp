@@ -87,8 +87,8 @@ bool Adv_dbg_itf::connect()
   // feature which reads the devices from json file
   if (this->config->get("**/chip/name")->get_str() == "vega")
   {
-    this->add_device(5);
-    this->add_device(4);
+    this->add_device(5, DEV_PROTOCOL_RISCV);
+    this->add_device(4, DEV_PROTOCOL_PULP);
   }
 
   // now we can work with the chain
@@ -99,6 +99,7 @@ bool Adv_dbg_itf::connect()
 
   int tap = 0;
   if (bridge_config->get("tap")) tap = bridge_config->get("tap")->get_int();
+  this->m_jtag_device_default = tap;
   this->device_select(tap);
 
   return true;
@@ -175,6 +176,9 @@ bool Adv_dbg_itf::chip_config(uint32_t value)
 {
   bool result = true;
 
+  if (!this->check_cable())
+    return false;
+
   pthread_mutex_lock(&mutex);
 
   if (!m_dev->chip_config(value)) { result = false; goto end; };
@@ -202,14 +206,168 @@ void Adv_dbg_itf::device_select(unsigned int i)
 }
 
 
-
-bool Adv_dbg_itf::access(bool wr, unsigned int addr, int size, char* buffer)
+bool Adv_dbg_itf::reg_access(bool write, unsigned int addr, char* buffer, int device)
 {
   bool result;
 
   this->check_connection();
 
   pthread_mutex_lock(&mutex);
+
+  if (device != -1)
+    this->device_select(device);
+  else if (m_jtag_device_default != m_jtag_device_sel)
+    this->device_select(m_jtag_device_default);
+
+  jtag_device &dev = m_jtag_devices[m_jtag_device_sel];
+
+  if (dev.protocol == DEV_PROTOCOL_RISCV)
+    result = this->reg_access_riscv(write, addr, buffer);
+  else
+    result = this->reg_access_pulp(write, addr, buffer);
+
+  pthread_mutex_unlock(&mutex);
+
+  return result;
+}
+
+
+bool Adv_dbg_itf::reg_access_riscv(bool write, unsigned int addr, char* buffer)
+{
+  if (write)
+    return this->reg_access_write_riscv(write, addr, buffer);
+  else
+    return this->reg_access_read_riscv(write, addr, buffer);
+}
+
+bool Adv_dbg_itf::reg_access_read_riscv(bool write, unsigned int addr, char* buffer)
+{
+  unsigned char buf[8];
+  unsigned char recv[8];
+
+  uint32_t data = *(uint32_t *)buffer;
+
+  jtag_soft_reset();
+  jtag_set_selected_ir(0x11);
+
+  buf[5] = (addr >> 6) & 0x1;
+  buf[4] = ((addr & 0x3f) << 2) | ((data >> 30) & 0x7);
+  buf[3] = (data >> 22) & 0xff;
+  buf[2] = (data >> 14) & 0xff;
+  buf[1] = (data >> 6) & 0xff;
+  buf[0] = ((data & 0x1f) << 2) | (0x1 << 0);
+
+  m_dev->jtag_write_tms(1);
+  m_dev->jtag_write_tms(0);
+  m_dev->jtag_write_tms(0);
+
+  jtag_pad_before();
+
+  if (!m_dev->stream_inout((char *)recv, (char *)buf, 41, m_tms_on_last)) {
+    log->warning("ft2232: failed to write opcode stream to device\n");
+    return false;
+  }
+
+  jtag_pad_after(!m_tms_on_last);
+
+  // Go to UPDATE DR
+  m_dev->jtag_write_tms(1);
+  for (int i=0; i<50; i++)
+    m_dev->jtag_write_tms(0);
+
+  // Go to CAPTURE DR
+  m_dev->jtag_write_tms(1);
+  m_dev->jtag_write_tms(0);
+
+  // Go to IDLE
+  m_dev->jtag_write_tms(1);
+  m_dev->jtag_write_tms(1);
+  m_dev->jtag_write_tms(0);
+
+  // SHIFT DR
+  m_dev->jtag_write_tms(1);
+  m_dev->jtag_write_tms(0);
+  m_dev->jtag_write_tms(0);
+
+  jtag_pad_before();
+
+  buf[0] = 0;
+
+  if (!m_dev->stream_inout((char *)recv, (char *)buf, 41, m_tms_on_last)) {
+    log->warning("ft2232: failed to write opcode stream to device\n");
+    return false;
+  }
+
+  jtag_pad_after(!m_tms_on_last);
+
+
+  // IDLE
+  m_dev->jtag_write_tms(1); // exit 1 DR
+  m_dev->jtag_write_tms(0); // run test idle
+  m_dev->jtag_write_tms(0); // run test idle
+
+  *(uint32_t *)buffer = (recv[0] >> 2) | (recv[1] << 6) | (recv[2] << 14) | (recv[3] << 22) | ((recv[4] & 0x3) << 30);
+
+  return false;
+}
+
+bool Adv_dbg_itf::reg_access_write_riscv(bool write, unsigned int addr, char* buffer)
+{
+  char buf[8];
+  char recv[8];
+
+  uint32_t data = *(uint32_t *)buffer;
+
+  jtag_soft_reset();
+  jtag_set_selected_ir(0x11);
+
+  buf[5] = (addr >> 5) & 0x3;
+  buf[4] = ((addr & 0x1f) << 3) | ((data >> 29) & 0x7);
+  buf[3] = (data >> 21) & 0xff;
+  buf[2] = (data >> 13) & 0xff;
+  buf[1] = (data >> 5) & 0xff;
+  buf[0] = ((data & 0x1f) << 3) | (0x2 << 1);
+
+  m_dev->jtag_write_tms(1);
+  m_dev->jtag_write_tms(0);
+  m_dev->jtag_write_tms(0);
+
+  jtag_pad_before();
+
+  if (!m_dev->stream_inout(recv, buf, 42, m_tms_on_last)) {
+    log->warning("ft2232: failed to write opcode stream to device\n");
+    return false;
+  }
+
+  jtag_pad_after(!m_tms_on_last);
+
+  m_dev->jtag_write_tms(1); // exit 1 DR
+  m_dev->jtag_write_tms(0); // run test idle
+  m_dev->jtag_write_tms(0); // run test idle
+
+  return false;
+}
+
+
+bool Adv_dbg_itf::reg_access_pulp(bool write, unsigned int addr, char* buffer)
+{
+  return false;
+}
+
+
+
+bool Adv_dbg_itf::access(bool wr, unsigned int addr, int size, char* buffer, int device)
+{
+  bool result;
+
+  this->check_connection();
+
+  pthread_mutex_lock(&mutex);
+
+  if (device != -1)
+    this->device_select(device);
+  else if (m_jtag_device_default != m_jtag_device_sel)
+    this->device_select(m_jtag_device_default);
 
   jtag_debug();
 
@@ -237,14 +395,14 @@ bool Adv_dbg_itf::write(unsigned int _addr, int _size, char* _buffer)
     bool retval = true;
 
     if (addr & 0x1 && size >= 1) {
-      retval = retval && write_internal(AXI_WRITE8, addr, 1, buffer);
+      retval = retval && write_internal(8, addr, 1, buffer);
       size   -= 1;
       buffer += 1;
       addr   += 1;
     }
 
     if (addr & 0x2 && size >= 2) {
-      retval = retval && write_internal(AXI_WRITE16, addr, 2, buffer);
+      retval = retval && write_internal(16, addr, 2, buffer);
       size   -= 2;
       buffer += 2;
       addr   += 2;
@@ -279,7 +437,7 @@ bool Adv_dbg_itf::write(unsigned int _addr, int _size, char* _buffer)
          int iter_size = local_size;
          if (iter_size > 1024) iter_size = 1024;
 
-         retval = retval && write_internal(AXI_WRITE32, addr, iter_size, buffer);
+         retval = retval && write_internal(32, addr, iter_size, buffer);
          local_size   -= iter_size;
          size   -= iter_size;
          buffer += iter_size;
@@ -289,14 +447,14 @@ bool Adv_dbg_itf::write(unsigned int _addr, int _size, char* _buffer)
   #endif
 
     if (size >= 2) {
-      retval = retval && write_internal(AXI_WRITE16, addr, 2, buffer);
+      retval = retval && write_internal(16, addr, 2, buffer);
       size   -= 2;
       buffer += 2;
       addr   += 2;
     }
 
     if (size >= 1) {
-      retval = retval && write_internal(AXI_WRITE8, addr, 1, buffer);
+      retval = retval && write_internal(8, addr, 1, buffer);
       size   -= 1;
       buffer += 1;
       addr   += 1;
@@ -335,14 +493,14 @@ bool Adv_dbg_itf::read(unsigned int _addr, int _size, char* _buffer)
     bool retval = true;
 
     if (addr & 0x1 && size >= 1) {
-      retval = retval && read_internal(AXI_READ8, addr, 1, buffer);
+      retval = retval && read_internal(8, addr, 1, buffer);
       size   -= 1;
       buffer += 1;
       addr   += 1;
     }
 
     if (addr & 0x2 && size >= 2) {
-      retval = retval && read_internal(AXI_READ16, addr, 2, buffer);
+      retval = retval && read_internal(16, addr, 2, buffer);
       size   -= 2;
       buffer += 2;
       addr   += 2;
@@ -377,7 +535,7 @@ bool Adv_dbg_itf::read(unsigned int _addr, int _size, char* _buffer)
         int iter_size = local_size;
         if (iter_size > 2048) iter_size = 2048  ;
 
-        retval = retval && read_internal(AXI_READ32, addr, iter_size, buffer);
+        retval = retval && read_internal(32, addr, iter_size, buffer);
         local_size   -= iter_size;
         size   -= iter_size;
         buffer += iter_size;
@@ -388,14 +546,14 @@ bool Adv_dbg_itf::read(unsigned int _addr, int _size, char* _buffer)
   #endif
 
     if (size >= 2) {
-      retval = retval && read_internal(AXI_READ16, addr, 2, buffer);
+      retval = retval && read_internal(16, addr, 2, buffer);
       size   -= 2;
       buffer += 2;
       addr   += 2;
     }
 
     if (size >= 1) {
-      retval = retval && read_internal(AXI_READ8, addr, 1, buffer);
+      retval = retval && read_internal(8, addr, 1, buffer);
       size   -= 1;
       buffer += 1;
       addr   += 1;
@@ -421,33 +579,47 @@ bool Adv_dbg_itf::read(unsigned int _addr, int _size, char* _buffer)
 }
 
 
+bool Adv_dbg_itf::write_internal(int bitwidth, unsigned int addr, int size, char* buffer)
+{
+  jtag_device &dev = m_jtag_devices[m_jtag_device_sel];
+  
+  if (dev.protocol == DEV_PROTOCOL_RISCV)
+    return this->write_internal_riscv(bitwidth, addr, size, buffer);
+  else
+    return this->write_internal_pulp(bitwidth, addr, size, buffer);
+}
 
-bool Adv_dbg_itf::write_internal(ADBG_OPCODES opcode, unsigned int addr, int size, char* buffer)
+bool Adv_dbg_itf::write_internal_riscv(int bitwidth, unsigned int addr, int size, char* buffer)
+{
+  return false;
+}
+
+bool Adv_dbg_itf::write_internal_pulp(int bitwidth, unsigned int addr, int size, char* buffer)
 {
   char buf[8];
   char recv[1];
-  int bitwidth;
   uint32_t crc;
+  ADBG_OPCODES opcode;
 
-  switch(opcode) {
-    case AXI_WRITE8:
-      bitwidth = 8;
+  switch(bitwidth) {
+    case 8:
+      opcode = AXI_WRITE8;
       break;
 
-    case AXI_WRITE16:
-      bitwidth = 16;
+    case 16:
+      opcode = AXI_WRITE16;
       break;
 
-    case AXI_WRITE32:
-      bitwidth = 32;
+    case 32:
+      opcode = AXI_WRITE32;
       break;
 
-    case AXI_WRITE64:
-      bitwidth = 64;
+    case 64:
+      opcode = AXI_WRITE64;
       break;
 
     default:
-      log->warning("Invalid opcode: %d\n", opcode);
+      log->warning("Invalid bitwidth: %d\n", bitwidth);
       return false;
   }
 
@@ -537,33 +709,49 @@ bool Adv_dbg_itf::write_internal(ADBG_OPCODES opcode, unsigned int addr, int siz
 
 
 
-bool Adv_dbg_itf::read_internal(ADBG_OPCODES opcode, unsigned int addr, int size, char* buffer)
+bool Adv_dbg_itf::read_internal(int bitwidth, unsigned int addr, int size, char* buffer)
+{
+  jtag_device &dev = m_jtag_devices[m_jtag_device_sel];
+  
+  if (dev.protocol == DEV_PROTOCOL_RISCV)
+    return this->read_internal_riscv(bitwidth, addr, size, buffer);
+  else
+    return this->read_internal_pulp(bitwidth, addr, size, buffer);
+}
+
+bool Adv_dbg_itf::read_internal_riscv(int bitwidth, unsigned int addr, int size, char* buffer)
+{
+  return false;
+}
+
+bool Adv_dbg_itf::read_internal_pulp(int bitwidth, unsigned int addr, int size, char* buffer)
 {
   char recv[size];
   char buf[size < 8 ? 8 : size];
-  int bytewidth;
   int nwords;
   uint32_t crc = 0xFFFFFFFF;
+  ADBG_OPCODES opcode;
+  int bytewidth = bitwidth / 8;
 
-  switch(opcode) {
-    case AXI_READ8:
-      bytewidth = 1;
+  switch(bitwidth) {
+    case 8:
+      opcode = AXI_READ8;
       break;
 
-    case AXI_READ16:
-      bytewidth = 2;
+    case 16:
+      opcode = AXI_READ16;
       break;
 
-    case AXI_READ32:
-      bytewidth = 4;
+    case 32:
+      opcode = AXI_READ32;
       break;
 
-    case AXI_READ64:
-      bytewidth = 8;
+    case 64:
+      opcode = AXI_READ64;
       break;
 
     default:
-      log->warning("Invalid opcode: %d\n", opcode);
+      log->warning("Invalid bitwidth: %d\n", bitwidth);
       return false;
   }
 
@@ -838,6 +1026,36 @@ bool Adv_dbg_itf::jtag_debug()
 
 
 
+bool Adv_dbg_itf::jtag_dmi_select()
+{
+  char buf[1];
+  buf[0] = 0x11;
+
+  m_dev->jtag_write_tms(1); // select DR scan
+  m_dev->jtag_write_tms(0); // capture DR scan
+  m_dev->jtag_write_tms(0); // shift DR
+
+  jtag_pad_before();
+
+  if (!m_dev->stream_inout(NULL, buf, 6, m_tms_on_last)) {
+    log->warning("ft2232: failed to write AXI select to device\n");
+    return false;
+  }
+
+  jtag_pad_after(!m_tms_on_last);
+
+  m_dev->jtag_write_tms(1); // update DR
+  m_dev->jtag_write_tms(1); // select DR scan
+  m_dev->jtag_write_tms(0); // capture DR scan
+  m_dev->jtag_write_tms(0); // shift DR
+
+  m_dev->flush();
+
+  return true;
+}
+
+
+
 bool Adv_dbg_itf::jtag_axi_select()
 {
   char buf[1];
@@ -868,12 +1086,13 @@ bool Adv_dbg_itf::jtag_axi_select()
 
 #define MAX_CHAIN_LEN 128
 
-void Adv_dbg_itf::add_device(int ir_len)
+void Adv_dbg_itf::add_device(int ir_len, int protocol)
 {
   jtag_device device;
   device.index  = m_jtag_devices.size();
   device.is_in_debug = false;
   device.ir_len = ir_len;
+  device.protocol = protocol;
   m_jtag_devices.push_back(device);
 }
 
