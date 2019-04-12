@@ -299,11 +299,13 @@ if 'read' in args.command or 'write' in args.command:
   parser.add_argument("--addr", dest="addr", default=None, help="Specify the address of the access for read and write commands")
   parser.add_argument("--size", dest="size", default="4", help="Specify the size of the access for read and write commands")
 
+opt_flasher_init = False
+
 if 'efuse_write' in args.command:
+  opt_flasher_init = True
   parser.add_argument("--addr", dest="addr", default=None, help="Specify the address of the access for read and write commands")
   parser.add_argument("--value", dest="value", default=None, help="Specify the value to be written for write command")
   parser.add_argument("--mask", dest="mask", default="0xffffffff", help="Specify the mask used to select which bit is written")
-  parser.add_argument("--flasher-init", dest="flasher_init", action="store_true", help="Initialize flasher")
 
 if 'read' in args.command:
   parser.add_argument("--width", dest="width", default=1, type=int, help="Specify the word size in bytes used to display numbers for read commands")
@@ -314,20 +316,25 @@ if 'write' in args.command:
 if 'eeprom_write' in args.command or 'flash_write' in args.command or 'flash_read' in args.command:
   parser.add_argument("--file", dest="file", default=None, help="The file to be written for eeprom_write command")
   parser.add_argument("--addr", dest="addr", default=None, help="Specify the address of the access for read and write commands")
-  parser.add_argument("--flasher-init", dest="flasher_init", action="store_true", help="Initialize flasher")
+  opt_flasher_init = True
 
 if 'flash_read' in args.command:
   parser.add_argument("--size", dest="size", default="4", help="Specify the size of the access for read and write commands")
 
 if 'flash_erase_sector' in args.command:
   parser.add_argument("--addr", dest="addr", default=None, help="Specify the address of the access for read and write commands")
-  parser.add_argument("--flasher-init", dest="flasher_init", action="store_true", help="Initialize flasher")
+  opt_flasher_init = True
 
 if 'flash_erase_chip' in args.command:
-  parser.add_argument("--flasher-init", dest="flasher_init", action="store_true", help="Initialize flasher")
+  opt_flasher_init = True
 
 if 'gdb' in args.command:
   parser.add_argument("--rsp-port", dest="rsp_port", default=1234, help="Specify the port number that the RSP will use to open a socket for GDB connection")
+
+if opt_flasher_init:
+  parser.add_argument("--flasher-init", dest="flasher_init", action="store_true", default=True, help="Initialize flasher")
+  parser.add_argument("--no-flasher-init", dest="flasher_init", action="store_false", default=True, help="Initialize flasher")
+
 
 parser.add_argument("--boot-mode", dest="boot_mode", default=None, help="Specify the boot mode")
 
@@ -364,6 +371,11 @@ if args.boot_mode is not None:
         config.set('debug_bridge', {})
 
     config.get('**/debug_bridge').set('boot-mode', args.boot_mode)
+
+cable = os.environ.get('PLPBRIDGE_CABLE')
+if cable is not None and args.cable is not None:
+  print ('Overwriting --cable option with PLPBRIDGE_CABLE: %s' % cable)
+  args.cable = cable
 
 if args.cable is not None:
     if config.get('**/debug_bridge') is None:
