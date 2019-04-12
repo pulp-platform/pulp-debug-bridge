@@ -19,6 +19,16 @@
 from bridge.default_debug_bridge import *
 import time
 
+JTAG_RISCV_IRLEN = 5
+JTAG_RISCV_BYPASS = 0x1f
+
+JTAG_SOC_CONFREG_ID = 6
+JTAG_SOC_CONFREG = (JTAG_SOC_CONFREG_ID << 5) | (JTAG_RISCV_BYPASS << 0)
+JTAG_SOC_CONFREG_WIDTH = 8 + 1
+JTAG_SOC_IRLEN = 4
+
+JTAG_IRLEN = JTAG_SOC_IRLEN + JTAG_RISCV_IRLEN
+
 class vega_debug_bridge(debug_bridge):
 
     def __init__(self, config, binaries=[], verbose=False):
@@ -27,13 +37,14 @@ class vega_debug_bridge(debug_bridge):
 
         self.start_cores = False
         self.first_reset = True
+        self.boot_mode = None
 
 
     def reset(self):
         if self.first_reset:
             # The first time, we need to wait enough time to let the voltage
             # regulator converge
-            self.get_cable().chip_reset(True, 500000000)
+            self.get_cable().chip_reset(True, 200000000)
             self.first_reset = False
 
         # Reset the chip and tell him we want to load via jtag
@@ -73,7 +84,6 @@ class vega_debug_bridge(debug_bridge):
 
 
     def start(self):
-
         # First stall the core
         self.write_dmi(0x10, 0x00000001) # DMACTIVE
         self.write_dmi(0x10, 0x03E00001) # HART SEL
@@ -111,7 +121,7 @@ class vega_debug_bridge(debug_bridge):
         # Loop until we see bit 0 becoming 1, this will indicate that the
         # target is ready to accept bridge requests
         while True:
-            reg_value = self.get_cable().jtag_get_reg(JTAG_SOC_CONFREG, JTAG_SOC_CONFREG_WIDTH, boot_mode)
+            reg_value = self.get_cable().jtag_get_reg(JTAG_SOC_CONFREG, JTAG_SOC_CONFREG_WIDTH, boot_mode, JTAG_IRLEN) >> 1
 
             rt_req = (reg_value >> 1) & 0x7
 

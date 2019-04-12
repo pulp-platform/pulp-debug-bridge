@@ -98,26 +98,29 @@ bool Cable_jtag_itf::jtag_shift(int width, char *bits)
   return stream_inout(NULL, bits, width, 1);  
 }
 
-bool Cable_jtag_itf::jtag_shift_ir(unsigned int ir)
+bool Cable_jtag_itf::jtag_shift_ir(unsigned int ir, int ir_len)
 {
+  if (ir_len == -1)
+    ir_len = JTAG_SOC_INSTR_WIDTH;
+
   if (!jtag_shift_ir()) return false;
-  if (!jtag_shift(JTAG_SOC_INSTR_WIDTH, (char *)&ir)) return false;
+  if (!jtag_shift(ir_len, (char *)&ir)) return false;
   if (!jtag_idle()) return false;
   return true;
 }
 
-bool Cable_jtag_itf::jtag_set_reg(unsigned int reg, int width, unsigned int value)
+bool Cable_jtag_itf::jtag_set_reg(unsigned int reg, int width, unsigned int value, int ir_len)
 {
-  if (!jtag_shift_ir(reg)) return false;
+  if (!jtag_shift_ir(reg, ir_len)) return false;
   if (!jtag_shift_dr()) return false;
   if (!jtag_shift(width, (char *)&value)) return false;
   if (!jtag_idle()) return false;
   return true;
 }
 
-bool Cable_jtag_itf::jtag_get_reg(unsigned int reg, int width, unsigned int *out_value, unsigned int value)
+bool Cable_jtag_itf::jtag_get_reg(unsigned int reg, int width, unsigned int *out_value, unsigned int value, int ir_len)
 {
-  if (!jtag_shift_ir(reg)) return false;
+  if (!jtag_shift_ir(reg, ir_len)) return false;
   if (!jtag_shift_dr()) return false;
   if (!stream_inout((char *)out_value, (char *)&value, width, 1)) return false;
   if (!jtag_idle()) return false;

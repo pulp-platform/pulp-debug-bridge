@@ -29,24 +29,24 @@ class Cable_jtag_itf
 {
 public:
 
-    virtual bool bit_inout(char* inbit, char outbit, bool last) { printf ("i am bit_inout virtual fct in cable class\n"); return false; }
+  virtual bool bit_inout(char* inbit, char outbit, bool last) { printf ("i am bit_inout virtual fct in cable class\n"); return false; }
 
-    virtual bool stream_inout(char* instream, char* outstream, unsigned int n_bits, bool last) { printf ("i am stream_inout virtual fct in cable class\n"); return false; }
+  virtual bool stream_inout(char* instream, char* outstream, unsigned int n_bits, bool last) { printf ("i am stream_inout virtual fct in cable class\n"); return false; }
 
-    virtual int flush() { return -1; }
-    virtual bool jtag_reset(bool active) { printf("JTAG\n"); return false; }
+  virtual int flush() { return -1; }
+  virtual bool jtag_reset(bool active) { printf("JTAG\n"); return false; }
 
-    virtual void device_select(unsigned int i) {}
+  virtual void device_select(unsigned int i) {}
 
-    bool jtag_soft_reset();
-    bool jtag_write_tms(int val);
-    bool jtag_shift_ir();
-    bool jtag_shift_dr();
-    bool jtag_idle();
-    bool jtag_shift(int width, char *bits);
-    bool jtag_shift_ir(unsigned int ir);
-    bool jtag_set_reg(unsigned int reg, int width, unsigned int value);
-    bool jtag_get_reg(unsigned int reg, int width, unsigned int *out_value, unsigned int value);
+  bool jtag_soft_reset();
+  bool jtag_write_tms(int val);
+  bool jtag_shift_ir();
+  bool jtag_shift_dr();
+  bool jtag_idle();
+  bool jtag_shift(int width, char *bits);
+  bool jtag_shift_ir(unsigned int ir, int ir_len=-1);
+  bool jtag_set_reg(unsigned int reg, int width, unsigned int value, int ir_len=-1);
+  bool jtag_get_reg(unsigned int reg, int width, unsigned int *out_value, unsigned int value, int ir_len=-1);
 };
 
 

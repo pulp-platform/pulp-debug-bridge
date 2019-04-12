@@ -60,11 +60,11 @@ class Ctype_cable(object):
             [ctypes.c_void_p]
             
         self.module.cable_jtag_set_reg.argtypes = \
-            [ctypes.c_void_p, ctypes.c_int, ctypes.c_int, ctypes.c_uint]
+            [ctypes.c_void_p, ctypes.c_int, ctypes.c_int, ctypes.c_uint, ctypes.c_int]
         self.module.cable_jtag_set_reg.restype = ctypes.c_bool
 
         self.module.cable_jtag_get_reg.argtypes = \
-            [ctypes.c_void_p, ctypes.c_int, ctypes.c_int, ctypes.POINTER(ctypes.c_int)]
+            [ctypes.c_void_p, ctypes.c_int, ctypes.c_int, ctypes.POINTER(ctypes.c_int), ctypes.c_int]
         self.module.cable_jtag_get_reg.restype = ctypes.c_bool
 
         self.module.cable_lock.argtypes = \
@@ -136,12 +136,12 @@ class Ctype_cable(object):
     def jtag_soft_reset(self):
         self.module.jtag_soft_reset(self.instance)
 
-    def jtag_set_reg(self, reg, width, value):
-        self.module.cable_jtag_set_reg(self.instance, reg, width, value)
+    def jtag_set_reg(self, reg, width, value, ir_len=-1):
+        self.module.cable_jtag_set_reg(self.instance, reg, width, value, ir_len)
 
-    def jtag_get_reg(self, reg, width, value):
+    def jtag_get_reg(self, reg, width, value, ir_len=-1):
         out_value = ctypes.c_int()
-        self.module.cable_jtag_get_reg(self.instance, reg, width, ctypes.byref(out_value), value)
+        self.module.cable_jtag_get_reg(self.instance, reg, width, ctypes.byref(out_value), value, ir_len)
         return out_value.value
 
     def lock(self):

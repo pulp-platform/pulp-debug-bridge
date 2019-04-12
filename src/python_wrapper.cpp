@@ -189,16 +189,16 @@ extern "C" void jtag_soft_reset(void *handler)
 }
 
 
-extern "C" bool cable_jtag_set_reg(void *handler, unsigned int reg, int width, unsigned int value)
+extern "C" bool cable_jtag_set_reg(void *handler, unsigned int reg, int width, unsigned int value, int ir_len)
 {
   Cable *cable = (Cable *)handler;
-  return cable->jtag_set_reg(reg, width, value);
+  return cable->jtag_set_reg(reg, width, value, ir_len);
 }
 
-extern "C" bool cable_jtag_get_reg(void *handler, unsigned int reg, int width, unsigned int *out_value, unsigned int value)
+extern "C" bool cable_jtag_get_reg(void *handler, unsigned int reg, int width, unsigned int *out_value, unsigned int value, int ir_len)
 {
   Cable *cable = (Cable *)handler;
-  return cable->jtag_get_reg(reg, width, out_value, value);
+  return cable->jtag_get_reg(reg, width, out_value, value, ir_len);
 }
 
 extern "C" void cable_lock(void *handler)
