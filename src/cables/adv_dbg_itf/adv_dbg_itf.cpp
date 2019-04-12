@@ -1146,6 +1146,7 @@ bool Adv_dbg_itf::jtag_auto_discovery()
       device.id |= (recv_buf[i*4 + 0] & 0xFF) <<  0;
       device.index  = i;
       device.is_in_debug = false;
+      device.protocol = DEV_PROTOCOL_PULP;
       // TODO the detacted IR length is wrong when there are several taps
       device.ir_len = 4;
 
@@ -1351,11 +1352,14 @@ bool Adv_dbg_itf::jtag_pad_after(bool tms)
 
 bool Adv_dbg_itf::bit_inout(char* inbit, char outbit, bool last)
 {
+  this->check_cable();
+
   pthread_mutex_lock(&mutex);
 
   // Invalidate debug mode in case the caller is sending raw bitstream as it might
   // change the IR
-  m_jtag_devices[m_jtag_device_sel].is_in_debug = false;
+  if (m_jtag_device_sel < m_jtag_devices.size())
+    m_jtag_devices[m_jtag_device_sel].is_in_debug = false;
   bool result = m_dev->bit_inout(inbit, outbit, last);
 
   pthread_mutex_unlock(&mutex);
@@ -1365,11 +1369,14 @@ bool Adv_dbg_itf::bit_inout(char* inbit, char outbit, bool last)
 
 bool Adv_dbg_itf::stream_inout(char* instream, char* outstream, unsigned int n_bits, bool last)
 {
+  this->check_cable();
+
   pthread_mutex_lock(&mutex);
 
   // Invalidate debug mode in case the caller is sending raw bitstream as it might
   // change the IR
-  m_jtag_devices[m_jtag_device_sel].is_in_debug = false;
+  if (m_jtag_device_sel < m_jtag_devices.size())
+    m_jtag_devices[m_jtag_device_sel].is_in_debug = false;
   bool result = m_dev->stream_inout(instream, outstream, n_bits, last);
 
   pthread_mutex_unlock(&mutex);

@@ -364,8 +364,11 @@ class debug_bridge(object):
     def read_8(self, addr):
         return self.read_int(addr, 1)
 
-    def _get_binary_symbol_addr(self, name):
-        for binary in self.binaries:
+    def _get_binary_symbol_addr(self, name, binaries=[]):
+
+        binaries = binaries + self.binaries
+
+        for binary in binaries:
             with open(binary, 'rb') as file:
                 elf = ELFFile(file)
                 for section in elf.iter_sections():
@@ -388,13 +391,13 @@ class debug_bridge(object):
 
         return 0
 
-    def reqloop(self):
+    def reqloop(self, binaries=[]):
 
         # First get address of the structure used to communicate between
         # the bridge and the runtime
-        addr = self._get_binary_symbol_addr('__rt_debug_struct_ptr')
+        addr = self._get_binary_symbol_addr('__rt_debug_struct_ptr', binaries)
         if addr == 0:
-            addr = self._get_binary_symbol_addr('debugStruct_ptr')
+            addr = self._get_binary_symbol_addr('debugStruct_ptr', binaries)
 
         self.reqloop_handle = self.module.bridge_reqloop_open(
             self.get_cable().get_instance(), addr)
@@ -408,16 +411,16 @@ class debug_bridge(object):
 
 
     def __flasher_init(self, flasher_init):
+        chip = self.config.get('**/board/chip').get('name').get()
+        flasher_name = 'flasher-%s' % chip
+        flasher_path = os.path.join(os.environ.get('PULP_SDK_INSTALL'), 'bin', flasher_name)
+
         if flasher_init:
             self.stop()
-            chip = self.config.get('**/board/chip').get('name').get()
-            flasher_name = 'flasher-%s' % chip
-            flasher_path = os.path.join(os.environ.get('PULP_SDK_INSTALL'), 'bin', flasher_name)
             # TODO this breaks boot test using bridge, why this is needed ?
-            #self.binaries.append(flasher_path)
             self.load([flasher_path])
 
-        self.reqloop()
+        self.reqloop([flasher_path])
 
         if flasher_init:
             self.start()

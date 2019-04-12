@@ -83,6 +83,7 @@ class gap_debug_bridge(debug_bridge):
             print ("Waiting for notification from boot code")
         while True:
             reg_value = self.get_cable().jtag_get_reg(JTAG_SOC_CONFREG, JTAG_SOC_CONFREG_WIDTH, (boot_mode << 1) | 1)
+
             if reg_value == CONFREG_BOOT_WAIT:
                 break
         print ("Received for notification from boot code")
