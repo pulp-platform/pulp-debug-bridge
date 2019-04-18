@@ -581,6 +581,9 @@ bool Adv_dbg_itf::read(unsigned int _addr, int _size, char* _buffer)
 
 bool Adv_dbg_itf::write_internal(int bitwidth, unsigned int addr, int size, char* buffer)
 {
+  if (m_jtag_device_sel >= m_jtag_devices.size())
+    return false;
+
   jtag_device &dev = m_jtag_devices[m_jtag_device_sel];
   
   if (dev.protocol == DEV_PROTOCOL_RISCV)
@@ -711,6 +714,9 @@ bool Adv_dbg_itf::write_internal_pulp(int bitwidth, unsigned int addr, int size,
 
 bool Adv_dbg_itf::read_internal(int bitwidth, unsigned int addr, int size, char* buffer)
 {
+  if (m_jtag_device_sel >= m_jtag_devices.size())
+    return false;
+
   jtag_device &dev = m_jtag_devices[m_jtag_device_sel];
   
   if (dev.protocol == DEV_PROTOCOL_RISCV)
@@ -1015,6 +1021,9 @@ bool Adv_dbg_itf::jtag_set_selected_ir(char ir)
 
 bool Adv_dbg_itf::jtag_debug()
 {
+  if (m_jtag_device_sel >= m_jtag_devices.size())
+    return false;
+
   jtag_device &dev = m_jtag_devices[m_jtag_device_sel];
   if (!dev.is_in_debug)
   {
