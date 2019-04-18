@@ -41,6 +41,7 @@ class vega_debug_bridge(debug_bridge):
 
 
     def reset(self):
+
         if self.first_reset:
             # The first time, we need to wait enough time to let the voltage
             # regulator converge
@@ -86,6 +87,7 @@ class vega_debug_bridge(debug_bridge):
     def start(self):
         # First stall the core
         self.write_dmi(0x10, 0x00000001) # DMACTIVE
+
         self.write_dmi(0x10, 0x03E00001) # HART SEL
         self.write_dmi(0x10, 0x83E00001) # HALT REQ
 

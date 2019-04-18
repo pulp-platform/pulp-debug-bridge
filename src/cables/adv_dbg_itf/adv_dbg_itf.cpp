@@ -1182,8 +1182,10 @@ bool Adv_dbg_itf::jtag_auto_discovery()
 
       log->debug("Device %d ID: %08X\n", i, device.id);
 
-    }
+      m_dev->jtag_write_tms(1); // update DR
+      m_dev->jtag_write_tms(0); // run test idle
 
+    }
   }
 
   return true;
