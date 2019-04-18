@@ -140,6 +140,13 @@ def flash_read(bridge):
     return bridge.flash_access(args.flasher_init, get_flash_id(), 0, 0, False, addr, size, args.file)
 
 
+def flash_erase(bridge):
+    addr = int(args.addr, 0)
+    size = int(args.size, 0)
+
+    return bridge.flash_erase(args.flasher_init, get_flash_id(), 0, 0, addr, size)
+
+
 def flash_erase_sector(bridge):
     addr = int(args.addr, 0)
 
@@ -261,6 +268,7 @@ commands = {
   'flash_write' : ['Write to flash',                    flash_write],
   'flash_read'  : ['Read from flash',                   flash_read],
   'flash_erase_sector'  : ['Erase flash sector',        flash_erase_sector],
+  'flash_erase'         : ['Erase flash area',          flash_erase],
   'flash_erase_chip'    : ['Erase flash',               flash_erase_chip],
 }
 
@@ -318,10 +326,10 @@ if 'eeprom_write' in args.command or 'flash_write' in args.command or 'flash_rea
   parser.add_argument("--addr", dest="addr", default=None, help="Specify the address of the access for read and write commands")
   opt_flasher_init = True
 
-if 'flash_read' in args.command:
+if 'flash_read' in args.command or 'flash_erase' in args.command:
   parser.add_argument("--size", dest="size", default="4", help="Specify the size of the access for read and write commands")
 
-if 'flash_erase_sector' in args.command:
+if 'flash_erase_sector' in args.command or 'flash_erase' in args.command:
   parser.add_argument("--addr", dest="addr", default=None, help="Specify the address of the access for read and write commands")
   opt_flasher_init = True
 

@@ -40,12 +40,11 @@ class vega_debug_bridge(debug_bridge):
         self.boot_mode = None
 
 
-    def reset(self):
-
+    def reset(self, stop=True):
         if self.first_reset:
             # The first time, we need to wait enough time to let the voltage
             # regulator converge
-            self.get_cable().chip_reset(True, 200000000)
+            self.get_cable().chip_reset(True, 5000000)
             self.first_reset = False
 
         # Reset the chip and tell him we want to load via jtag
@@ -53,11 +52,13 @@ class vega_debug_bridge(debug_bridge):
         # the boot mode as soon as it boots from rom
 
         # Use bootsel pad to tell boot code to stop
-        self.get_cable().chip_config(1)
+        if stop:
+            self.get_cable().chip_config(1)
 
         # Due to voltage convergence and so on we need to wait
         # 200ms when the reset is low
-        self.get_cable().chip_reset(True, 200000000)
+        #self.get_cable().chip_reset(True, 200000000)
+        self.get_cable().chip_reset(True, 100000000)
         # It also takes some time before the JTAG is ready
         self.get_cable().chip_reset(False, 2000000)
         self.get_cable().jtag_reset(True)

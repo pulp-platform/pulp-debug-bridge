@@ -38,6 +38,7 @@ class gap_debug_bridge(debug_bridge):
         self.fimages = fimages
         self.start_cores = False
         self.boot_mode = None
+        self.stopped = False
 
     def set_boot_mode(self, boot_mode, reset=True):
         if self.verbose:
@@ -102,6 +103,8 @@ class gap_debug_bridge(debug_bridge):
 
         # Stall the FC
         self.write(0x1B300000, 4, [0, 0, 1, 0])
+
+        self.stopped = True
 
         return 0
 

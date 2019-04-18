@@ -63,6 +63,7 @@ public:
   void efuse_access(bool write, int id, uint32_t value, uint32_t mask);
   int eeprom_access(uint32_t itf, uint32_t cs, bool write, uint32_t addr, uint32_t buffer, uint32_t size);
   int flash_access(int32_t type, uint32_t itf, uint32_t cs, bool write, uint32_t addr, uint32_t buffer, uint32_t size);
+  int flash_erase(int32_t type, uint32_t itf, uint32_t cs, uint32_t addr, int32_t size);
   int flash_erase_sector(int32_t type, uint32_t itf, uint32_t cs, uint32_t addr);
   int flash_erase_chip(int32_t type, uint32_t itf, uint32_t cs);
   void buffer_free(uint32_t addr, uint32_t size);
@@ -570,9 +571,8 @@ bool Reqloop::handle_req(hal_debug_struct_t *debug_struct, hal_bridge_req_t *req
 unsigned int Reqloop::get_target_state()
 {
   unsigned int value;
-  this->cable->jtag_get_reg(7, 4, &value, this->jtag_val);
-  value &= 0xf;
-  //printf("READ JTAG %x\n", value >> 1);
+  this->cable->jtag_get_reg((6<<5)|(0x1f), 9, &value, this->jtag_val, 9);
+  value = (value >> 1) & 0xf;
   return value >> 1;
 }
 
@@ -580,14 +580,14 @@ void Reqloop::send_target_ack()
 {
   unsigned int value;
   this->jtag_val = 0x7 << 1;
-  this->cable->jtag_set_reg(7, 4, 0x7 << 1);
+  this->cable->jtag_set_reg((6<<5)|(0x1f), 9, 0x7 << 2, 9);
 }
 
 void Reqloop::clear_target_ack()
 {
   unsigned int value;
   this->jtag_val = 0x0 << 1;
-  this->cable->jtag_set_reg(7, 4, 0x0 << 1);
+  this->cable->jtag_set_reg((6<<5)|(0x1f), 9, 0x0 << 2, 9);
 }
 
 bool Reqloop::wait_target_request()
@@ -600,12 +600,14 @@ bool Reqloop::wait_target_request()
   switch (this->target_sync_fsm_state)
   {
     case TARGET_SYNC_FSM_STATE_INIT: {
+      //printf("STATE INIT\n");
       // This state is used in case the bridge is not yet connected to the
       // target (e.g. if it boots from flash).
       // Wait until the target becomes available and ask for the connection.
       unsigned int state = this->get_target_state();
       if (state == 4)
       {
+        //printf("RECEIVED CONNECTION REQ\n");
         // Target is asking for connection, acknowledge it and go to next step
         this->send_target_ack();
         this->target_sync_fsm_state = TARGET_SYNC_FSM_STATE_WAIT_INIT;
@@ -614,6 +616,7 @@ bool Reqloop::wait_target_request()
     }
 
     case TARGET_SYNC_FSM_STATE_WAIT_INIT: {
+      //printf("STATE WAIT INIT\n");
       // This state is used to wait for the target acknoledgment, after
       // it asked for connection
       unsigned int state = this->get_target_state();
@@ -621,6 +624,7 @@ bool Reqloop::wait_target_request()
       {
         // Once the target acknowledged the connection, activate the bridge
         // clear the acknowledge and wait for target availability
+        //printf("RECEIVED CONNECTION ACK\n");
         this->activate();
         this->clear_target_ack();
         this->target_sync_fsm_state = TARGET_SYNC_FSM_STATE_WAIT_REQUEST;
@@ -629,6 +633,7 @@ bool Reqloop::wait_target_request()
     }
 
     case TARGET_SYNC_FSM_STATE_WAIT_AVAILABLE: {
+      //printf("STATE WAIT AVAILABLE\n");
       // We are in the state when the target cannot be accessed.
       // Wait until we see something different from 0.
       // We also need to clear the request acknowledgement to let the target
@@ -639,11 +644,13 @@ bool Reqloop::wait_target_request()
       if (state == 0)
         return false;
 
+      //printf("TARGET AVAILABLE\n");
       this->target_sync_fsm_state = TARGET_SYNC_FSM_STATE_WAIT_REQUEST;
       return false;
     }
 
     case TARGET_SYNC_FSM_STATE_WAIT_REQUEST: {
+      //printf("STATE WAIT REQUEST\n");
       // The target became available, now wait for a request
       unsigned int state = this->get_target_state();
 
@@ -655,6 +662,7 @@ bool Reqloop::wait_target_request()
 
       if (state == 2)
       {
+      //printf("SHUTDOWN REQ\n");
         // The target is requesting a shutdown, acknowledge it and stop
         // accessing the target
         this->send_target_ack();
@@ -662,6 +670,7 @@ bool Reqloop::wait_target_request()
         return false;
       }
 
+      //printf("OTHER REQ\n");
       // The target is requesting something else, just report true so that
       // the caller now checks what is requested through JTAG and stay in
       // this state.
@@ -669,12 +678,14 @@ bool Reqloop::wait_target_request()
     }
 
     case TARGET_SYNC_FSM_STATE_WAIT_ACK: {
+      //printf("STATE WAIT ACK\n");
       // The chip is not accessible, just wait until it becomes available
       // again
       unsigned int state = this->get_target_state();
       if (state != 0)
         return false;
 
+      //printf("AVAILABLE AFTER SHUTDOWN\n");
       this->target_sync_fsm_state = TARGET_SYNC_FSM_STATE_WAIT_AVAILABLE;
       return false;
     }
@@ -903,6 +914,35 @@ int Reqloop::flash_access(int type, uint32_t itf, uint32_t cs, bool write, uint3
   return retval;
 }
 
+int Reqloop::flash_erase(int type, uint32_t itf, uint32_t cs, uint32_t addr, int32_t size)
+{
+  Target_req *req = new Target_req();
+  req->done = false;
+
+  req->target_req.type = HAL_BRIDGE_TARGET_REQ_FLASH_ERASE;
+  req->target_req.flash_erase.type = type;
+  req->target_req.flash_erase.itf = itf;
+  req->target_req.flash_erase.cs = cs;
+  req->target_req.flash_erase.addr = addr;
+  req->target_req.flash_erase.size = size;
+
+  std::unique_lock<std::mutex> lock(this->mutex);
+  this->target_reqs.push(req);
+
+  while(!req->done)
+  {
+    this->cond.wait(lock);
+  }
+
+  int retval = req->target_req.flash_erase.retval;
+
+  delete req;
+
+  lock.unlock();
+
+  return retval;
+}
+
 int Reqloop::flash_erase_sector(int type, uint32_t itf, uint32_t cs, uint32_t addr)
 {
   Target_req *req = new Target_req();
@@ -1050,6 +1090,14 @@ extern "C" int bridge_reqloop_flash_access(void *arg, int type, uint32_t itf, ui
 {
   Reqloop *reqloop = (Reqloop *)arg;
   return reqloop->flash_access(type, itf, cs, write, addr, buffer, size);
+}
+
+
+
+extern "C" int bridge_reqloop_flash_erase(void *arg, int type, uint32_t itf, uint32_t cs, uint32_t addr, int size)
+{
+  Reqloop *reqloop = (Reqloop *)arg;
+  return reqloop->flash_erase(type, itf, cs, addr, size);
 }
 
 

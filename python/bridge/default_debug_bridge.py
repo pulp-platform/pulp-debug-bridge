@@ -190,6 +190,9 @@ class debug_bridge(object):
         self.module.bridge_reqloop_flash_access.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_uint, ctypes.c_uint, ctypes.c_int, ctypes.c_uint, ctypes.c_uint, ctypes.c_uint]
         self.module.bridge_reqloop_flash_access.restype = ctypes.c_int
         
+        self.module.bridge_reqloop_flash_erase.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_uint, ctypes.c_uint, ctypes.c_uint, ctypes.c_int]
+        self.module.bridge_reqloop_flash_erase.restype = ctypes.c_int
+        
         self.module.bridge_reqloop_flash_erase_sector.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_uint, ctypes.c_uint, ctypes.c_uint]
         self.module.bridge_reqloop_flash_erase_sector.restype = ctypes.c_int
         
@@ -526,6 +529,17 @@ class debug_bridge(object):
         self.__flasher_init(flasher_init)
 
         if self.module.bridge_reqloop_flash_erase_chip(self.reqloop_handle, type, itf, cs):
+            return -1
+
+        self.__flasher_deinit()
+
+        return 0
+
+
+    def flash_erase(self, flasher_init, type, itf, cs, flash_addr, size):
+        self.__flasher_init(flasher_init)
+
+        if self.module.bridge_reqloop_flash_erase(self.reqloop_handle, type, itf, cs, flash_addr, size):
             return -1
 
         self.__flasher_deinit()
