@@ -486,7 +486,11 @@ class debug_bridge(object):
                     buff = file.read(1024)
                     if buff:
                         self.write(addr, len(buff), buff)
-                        if self.module.bridge_reqloop_flash_access(self.reqloop_handle, type, itf, cs, True, flash_addr, addr, len(buff)):
+
+                        buff_size = len(buff)
+                        buff_size = (buff_size + 7) & ~0x7
+
+                        if self.module.bridge_reqloop_flash_access(self.reqloop_handle, type, itf, cs, True, flash_addr, addr, buff_size):
                             return -1
                         flash_addr += 1024
                     else:

@@ -116,6 +116,8 @@ private:
   hal_debug_struct_t *debug_struct = NULL;
 
   bool target_jtag_sync;
+
+  int confreg_instr;
 };
 
 class Framebuffer
@@ -571,8 +573,16 @@ bool Reqloop::handle_req(hal_debug_struct_t *debug_struct, hal_bridge_req_t *req
 unsigned int Reqloop::get_target_state()
 {
   unsigned int value;
-  this->cable->jtag_get_reg((6<<5)|(0x1f), 9, &value, this->jtag_val, 9);
-  value = (value >> 1) & 0xf;
+  if (this->confreg_instr == 6)
+  {
+    this->cable->jtag_get_reg((6<<5)|(0x1f), 9, &value, this->jtag_val, 9);
+    value = (value >> 1) & 0xf;
+  }
+  else
+  {
+    this->cable->jtag_get_reg(7, 4, &value, this->jtag_val);
+    value &= 0xf;
+  }
   return value >> 1;
 }
 
@@ -580,14 +590,30 @@ void Reqloop::send_target_ack()
 {
   unsigned int value;
   this->jtag_val = 0x7 << 1;
-  this->cable->jtag_set_reg((6<<5)|(0x1f), 9, 0x7 << 2, 9);
+
+  if (this->confreg_instr == 6)
+  {
+    this->cable->jtag_set_reg((6<<5)|(0x1f), 9, 0x7 << 2, 9);
+  }
+  else
+  {
+    this->cable->jtag_set_reg(7, 4, 0x7 << 1);
+  }
 }
 
 void Reqloop::clear_target_ack()
 {
   unsigned int value;
   this->jtag_val = 0x0 << 1;
-  this->cable->jtag_set_reg((6<<5)|(0x1f), 9, 0x0 << 2, 9);
+
+  if (this->confreg_instr == 6)
+  {
+    this->cable->jtag_set_reg((6<<5)|(0x1f), 9, 0x0 << 2, 9);
+  }
+  else
+  {
+    this->cable->jtag_set_reg(7, 4, 0x0 << 1);    
+  }
 }
 
 bool Reqloop::wait_target_request()
@@ -1052,6 +1078,17 @@ Reqloop::Reqloop(Cable *cable, unsigned int debug_struct_addr) : cable(cable), d
   js::config *config = cable->get_config();
 
   this->target_jtag_sync = config->get_child_bool("**/debug_bridge/target_jtag_sync");
+  
+  if (config->get("**/pulp_tap/confreg_instr") != NULL)
+  {
+    this->confreg_instr = config->get_int("**/pulp_tap/confreg_instr");
+  }
+  else
+  {
+    this->confreg_instr = 7;
+  }
+
+  std::string chip = config->get("**/chip/name")->get_str();
 
   // Try to connect the bridge now before the execution is started so
   // that the target sees the bridge as soon as it starts.
