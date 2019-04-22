@@ -244,7 +244,8 @@ def script(bridge):
         module = imp.load_source("user_script", script_name)
 
         entry = getattr(module, script_entry)
-        entry(bridge)
+        if entry(bridge):
+          return -1
 
     return 0
 

@@ -66,8 +66,8 @@ class gap_debug_bridge(debug_bridge):
         self.write(0x1B300000, 4, [0, 0, 1, 0])
 
         # Configure FLL with no lock to avoid the HW bug with fll
-        self.write_32(0x1a100004, 0x840005f5)
-        self.write_32(0x1a100008, 0x8100410b)
+        #self.write_32(0x1a100004, 0x840005f5)
+        #self.write_32(0x1a100008, 0x8100410b)
 
         return 0
 
