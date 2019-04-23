@@ -40,12 +40,21 @@ class gap_debug_bridge(debug_bridge):
         self.boot_mode = None
         self.stopped = False
 
+    def reset(self):
+        self.get_cable().jtag_reset(True)
+        self.get_cable().jtag_reset(False)
+        self.get_cable().chip_reset(True)
+        self.get_cable().jtag_set_reg(JTAG_SOC_CONFREG, JTAG_SOC_CONFREG_WIDTH, (BOOT_MODE_JTAG << 1) | 1)
+        self.get_cable().chip_reset(False)
+        return 0
+
     def set_boot_mode(self, boot_mode, reset=True):
         if self.verbose:
             print ("Notifying to boot code new boot mode (mode: %d)" % boot_mode)
         if reset:
             self.get_cable().chip_reset(True)
         self.get_cable().jtag_set_reg(JTAG_SOC_CONFREG, JTAG_SOC_CONFREG_WIDTH, (boot_mode << 1) | 1)
+
         if reset:
             self.get_cable().chip_reset(False)
         self.boot_mode = boot_mode
