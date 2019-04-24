@@ -147,6 +147,15 @@ typedef struct hal_bridge_req_s {
       uint32_t retval;
     } flash_erase_sector;
     struct {
+      uint8_t type;
+      uint8_t itf;
+      uint8_t cs;
+      uint8_t padding;
+      uint32_t addr;
+      uint32_t size;
+      uint32_t retval;
+    } flash_erase;
+    struct {
       uint32_t size;
       uint32_t buffer;
     } buffer_alloc;
