@@ -66,6 +66,31 @@ class vega_debug_bridge(debug_bridge):
         return 0
 
 
+    def wait_eoc(self):
+
+        while True:
+            value = self.read_32(0x1a1040a0)
+
+            if (value >> 31) == 1:
+                return value & 0x7fffffff
+
+            time.sleep(0.1)
+
+
+    def jtag_hyper_boot(self):
+
+        self.get_cable().jtag_set_reg(JTAG_SOC_CONFREG, JTAG_SOC_CONFREG_WIDTH, ((((2 << 0) | (1<<3)) << 1) | 1) << 1, JTAG_IRLEN)
+
+
+    def jtag_mram_boot(self):
+
+        self.get_cable().jtag_set_reg(JTAG_SOC_CONFREG, JTAG_SOC_CONFREG_WIDTH, ((((2 << 0) | (2<<3)) << 1) | 1) << 1, JTAG_IRLEN)
+
+
+    def jtag_spim_boot(self):
+
+        self.get_cable().jtag_set_reg(JTAG_SOC_CONFREG, JTAG_SOC_CONFREG_WIDTH, ((((2 << 0) | (0<<3)) << 1) | 1) << 1, JTAG_IRLEN)
+
 
     def load_jtag(self, binaries):
 
