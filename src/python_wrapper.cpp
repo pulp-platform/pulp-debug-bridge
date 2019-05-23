@@ -312,7 +312,7 @@ extern "C" bool gdb_server_open(int socket_port, cmd_cb_t cmd_cb, const char * c
         cmd_cb("__gdb_tgt_hlt", NULL, 0);
     });
     bridge->m_gdb_server->start();
-  } catch (CableException e) {
+  } catch (CableException &e) {
     s_log.error("error initializing GDB server %s\n", e.what());
     bridge->m_gdb_server = nullptr;
     return false;

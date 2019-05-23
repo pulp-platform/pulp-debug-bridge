@@ -71,7 +71,7 @@ void Rsp::client_connected(const tcp_socket_ptr_t &client)
     // Make sure target is halted
   try {
     halt_target();
-  } catch (CableException e) {
+  } catch (CableException &e) {
     log.user("RSP:cable exception haltimg target\n");
     m_aborted = true;
     stop();
@@ -244,11 +244,11 @@ bool Rsp::Client::try_decode(char * pkt, size_t pkt_len)
 {
   try {
     return decode(pkt, pkt_len);
-  } catch (CableException e) {
+  } catch (CableException &e) {
     log.error("Cable error - %s - terminating connection\n", e.what());
-  } catch (OffCoreAccessException e) {
+  } catch (OffCoreAccessException &e) {
     log.error("Debugger attempted to access an off core - terminating connection\n");
-  } catch (std::exception e) {
+  } catch (std::exception &e) {
     log.error("Unknown exception - %s - terminating connection\n", e.what());
   }
   return false;
@@ -860,7 +860,7 @@ int64_t Rsp::Client::wait_routine()
   std::shared_ptr<Target_core> stopped_core;
   try {
     stopped_core = m_top->target->check_stopped();
-  } catch (CableException e) {
+  } catch (CableException &e) {
     log.error("cable exception checking stop status %s\n", e.what());
     stop();
     return kEventLoopTimerDone;

@@ -185,7 +185,7 @@ tcp_socket_ptr_t Tcp_client::connect_blocking(const char * address, int port, in
 
   try {
     connecting_socket = prepare_socket(connecting_socket, address, port, &addr, true);
-  } catch (TcpException ex) {
+  } catch (TcpException &ex) {
     log->error("unable to connect - %s", ex.what());
     return nullptr;
   }
