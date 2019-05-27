@@ -90,6 +90,11 @@ bool Adv_dbg_itf::connect()
     this->add_device(5, DEV_PROTOCOL_RISCV);
     this->add_device(4, DEV_PROTOCOL_PULP);
   }
+  else if (this->config->get("**/chip/name")->get_str() == "pulpissimo")
+  {
+    this->add_device(5, DEV_PROTOCOL_PULP);
+    this->add_device(5, DEV_PROTOCOL_RISCV);
+  }
 
   // now we can work with the chain
   if (!jtag_auto_discovery()) {
@@ -100,6 +105,7 @@ bool Adv_dbg_itf::connect()
   int tap = 0;
   if (bridge_config->get("tap")) tap = bridge_config->get("tap")->get_int();
   this->m_jtag_device_default = tap;
+
   this->device_select(tap);
 
   return true;

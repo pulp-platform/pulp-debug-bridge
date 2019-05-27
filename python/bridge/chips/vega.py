@@ -41,6 +41,10 @@ class vega_debug_bridge(debug_bridge):
 
 
     def reset(self, stop=True):
+
+        
+
+
         if self.first_reset:
             # The first time, we need to wait enough time to let the voltage
             # regulator converge
@@ -60,9 +64,11 @@ class vega_debug_bridge(debug_bridge):
         #self.get_cable().chip_reset(True, 200000000)
         self.get_cable().chip_reset(True, 100000000)
         # It also takes some time before the JTAG is ready
-        self.get_cable().chip_reset(False, 2000000)
-        self.get_cable().jtag_reset(True)
+        self.get_cable().chip_reset(False, 4000000)
+
+        #self.get_cable().jtag_reset(True)
         self.get_cable().jtag_reset(False)
+
         return 0
 
 
