@@ -25,6 +25,7 @@ import bridge.chips.vega as vega
 import bridge.chips.arnold as arnold
 import bridge.chips.fulmine as fulmine
 import bridge.chips.pulpissimo as pulpissimo
+import bridge.chips.vivosoc3 as vivosoc3
 
 
 def get_bridge(config, binaries=[], verbose=False):
@@ -51,6 +52,8 @@ def get_bridge(config, binaries=[], verbose=False):
         bridge_class = arnold.arnold_debug_bridge
     elif chip == 'pulpissimo':
         bridge_class = pulpissimo.pulpissimo_debug_bridge
+    elif chip == 'vivosoc3':
+        bridge_class = vivosoc3.vivosoc3_debug_bridge
     else:
         bridge_class = debug_bridge
 

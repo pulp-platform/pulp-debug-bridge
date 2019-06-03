@@ -64,12 +64,19 @@
 
 Ftdi::Ftdi(js::config *config, Log* log, FTDIDeviceID id) : Cable(config), log (log), m_id (id)
 {
-  // add all our known devices to the map
-  m_descriptors[Olimex].push_back((struct device_desc){0x15ba, 0x002a});
-  m_descriptors[Olimex].push_back((struct device_desc){0x15ba, 0x002b});
+  if (config->get("**/vendor") != NULL && config->get("**/product") != NULL)
+  {
+    m_descriptors[Generic].push_back((struct device_desc){(unsigned int)config->get_child_int("**/vendor"), (unsigned int)config->get_child_int("**/product")});
+  }
+  else
+  {
+    // add all our known devices to the map
+    m_descriptors[Olimex].push_back((struct device_desc){0x15ba, 0x002a});
+    m_descriptors[Olimex].push_back((struct device_desc){0x15ba, 0x002b});
 
-  m_descriptors[Digilent].push_back((struct device_desc){0x0403, 0x6010}); // ftdi2232 Gapuino
-  m_descriptors[Digilent].push_back((struct device_desc){0x1d6b, 0x0002}); // ftdi2232 Gapuino
+    m_descriptors[Digilent].push_back((struct device_desc){0x0403, 0x6010}); // ftdi2232 Gapuino
+    m_descriptors[Digilent].push_back((struct device_desc){0x1d6b, 0x0002}); // ftdi2232 Gapuino
+  }
 }
 
 Ftdi::~Ftdi()
@@ -112,43 +119,53 @@ Ftdi::connect(js::config *config)
 
   ftdi_init(&m_ftdic);
 
-  //---------------------------------------------------------------------------
-  // Device Selection
-  if (description == NULL) {
-    std::list<struct device_desc> dev_available;
-    struct device_desc dev;
+  if (config->get("bus") != NULL)
+  {
+    if (ftdi_usb_open_bus_addr(&m_ftdic, config->get_child_int("**/bus"), config->get_child_int("**/device")))
+    {
+      error = 1;
+    }
+  }
+  else
+  {
+    //---------------------------------------------------------------------------
+    // Device Selection
+    if (description == NULL) {
+      std::list<struct device_desc> dev_available;
+      struct device_desc dev;
 
-    for (std::list<struct device_desc>::iterator it = dev_desc.begin();
-         it != dev_desc.end(); it++) {
-      struct ftdi_device_list* devlist;
-      int n = ftdi_usb_find_all(&m_ftdic, &devlist, it->vid, it->pid);
+      for (std::list<struct device_desc>::iterator it = dev_desc.begin();
+           it != dev_desc.end(); it++) {
+        struct ftdi_device_list* devlist;
+        int n = ftdi_usb_find_all(&m_ftdic, &devlist, it->vid, it->pid);
 
-      if (n > 0) {
-        for(int i = 0; i < n; ++i) {
-          if (dev_try_open(it->vid, it->pid, i)) {
-            log->user("Found ftdi device i:0x%X:0x%X:%d\n",
-                       it->vid, it->pid, i);
-            dev_available.push_back({.vid = it->vid, .pid = it->pid, .index = (unsigned int)i});
-            break;
+        if (n > 0) {
+          for(int i = 0; i < n; ++i) {
+            if (dev_try_open(it->vid, it->pid, i)) {
+              log->user("Found ftdi device i:0x%X:0x%X:%d\n",
+                         it->vid, it->pid, i);
+              dev_available.push_back({.vid = it->vid, .pid = it->pid, .index = (unsigned int)i});
+              break;
+            }
           }
         }
+
+        ftdi_list_free2(devlist);
       }
 
-      ftdi_list_free2(devlist);
-    }
+      if (dev_available.size() == 0) {
+        log->error("ft2232: Connection failed\n");
+        goto fail;
+      }
 
-    if (dev_available.size() == 0) {
-      log->error("ft2232: Connection failed\n");
-      goto fail;
+      dev = dev_available.front();
+      log->user("Connecting to ftdi device i:0x%X:0x%X:%d\n",
+                 dev.vid, dev.pid, dev.index);
+      error = ftdi_usb_open_desc_index(&m_ftdic, dev.vid, dev.pid, NULL, NULL, dev.index);
+    } else {
+      log->user("Connecting to ftdi device %s\n", description);
+      error = ftdi_usb_open_string(&m_ftdic, description);
     }
-
-    dev = dev_available.front();
-    log->user("Connecting to ftdi device i:0x%X:0x%X:%d\n",
-               dev.vid, dev.pid, dev.index);
-    error = ftdi_usb_open_desc_index(&m_ftdic, dev.vid, dev.pid, NULL, NULL, dev.index);
-  } else {
-    log->user("Connecting to ftdi device %s\n", description);
-    error = ftdi_usb_open_string(&m_ftdic, description);
   }
 
   if (error != 0) {
@@ -181,6 +198,7 @@ Ftdi::connect(js::config *config)
   //---------------------------------------------------------------------------
   // Setup layout for different devices
 
+  int buf_len;
   if (m_id == Olimex)
   {
     bits_value = 0x1 << 8;
@@ -196,6 +214,8 @@ Ftdi::connect(js::config *config)
     // than that
     buf[5] = 0x00;
     buf[6] = SEND_IMMEDIATE;
+
+    buf_len = 7;
   }
   else if (m_id == Digilent)
   {
@@ -212,6 +232,47 @@ Ftdi::connect(js::config *config)
     buf[4] = 0x02;
     buf[5] = 0x00;
     buf[6] = SEND_IMMEDIATE;
+
+    buf_len = 7;
+  }
+  else if (m_id == Generic)
+  {
+    bits_value = 0;
+    bits_direction = 0x0b;
+
+    js::config *user_gpios = config->get("user_gpios");
+    if (user_gpios != NULL)
+    {
+      for (auto x:user_gpios->get_elems())
+      {
+        this->user_gpios.push_back(x->get_int());
+        set_bit_direction(x->get_int(), 1);
+      }
+    }
+
+    if (config->get("system_reset_gpio") != NULL)
+    {
+      this->system_reset_gpio = config->get_int("system_reset_gpio");
+      set_bit_direction(this->system_reset_gpio, 1);
+    }
+
+    if (config->get("jtag_reset_gpio") != NULL)
+    {
+      this->jtag_reset_gpio = config->get_int("jtag_reset_gpio");
+      set_bit_direction(this->jtag_reset_gpio, 1);
+    }
+
+    buf[0] = SET_BITS_LOW;  // Set value & direction of ADBUS lines
+    buf[1] = 0x00;          // values
+    buf[2] = 0x0b;          // direction (1 == output)
+    //buf[3] = 0x8a;   // Activate this command to disabled the default divider by 5, otherwise by default we can just go up to 6MHz instead of 30MHz
+    buf[3] = TCK_DIVISOR;
+    buf[4] = 0x02;         // The divisor has been put to 2 as is not reliable on silicon with less
+    // than that
+    buf[5] = 0x00;
+    buf[6] = SEND_IMMEDIATE;
+
+    buf_len = 7;
   }
   else
   {
@@ -219,7 +280,7 @@ Ftdi::connect(js::config *config)
     goto fail;
   }
 
-  if(ft2232_write(buf, 7, 0) != 7) {
+  if(ft2232_write(buf, buf_len, 0) != buf_len) {
     log->error("ft2232: Initial write failed\n");
     goto fail;
   }
@@ -235,6 +296,16 @@ fail:
   return false;
 }
 
+
+bool Ftdi::chip_config(uint32_t config)
+{
+  for (auto x:this->user_gpios)
+  {
+    this->set_bit_value(x, config & 1);
+    config >>= 1;
+  }
+
+}
 
 bool Ftdi::chip_reset(bool active, int duration)
 {
@@ -268,6 +339,14 @@ bool Ftdi::chip_reset(bool active, int duration)
   } else if (m_id == Digilent) { // ftdi2232 Gapuino
     // Bit 4 is chip reset and active high.
     return set_bit_value(4, !active);
+  } else if (m_id == Generic) {
+
+    if (this->system_reset_gpio != -1)
+      return set_bit_value(this->system_reset_gpio, active);
+
+    usleep(duration / 1000);
+
+    return false;
   } else {
     // not supported
     return false;
@@ -968,6 +1047,10 @@ Ftdi::jtag_reset(bool active)
   } else if (m_id == Digilent) {
     bool result = set_bit_value(6, !active);
     return result;
+  } else if (m_id == Generic) {
+    if (this->jtag_reset_gpio != -1)
+      return set_bit_value(this->jtag_reset_gpio, !active);
+    return false;
   } else {
     // not supported
     return false;

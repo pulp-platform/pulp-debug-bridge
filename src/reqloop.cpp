@@ -241,6 +241,16 @@ void Framebuffer::update(uint32_t addr, int posx, int posy, int width, int heigh
     uint8_t buffer[size];
     this->cable->access(false, addr, size, (char*)buffer);
 
+#if 0
+    static int count = 0;
+    char name[64];
+    sprintf(name, "fb%d", count++);
+    FILE *file = fopen(name, "w");
+    fprintf(file, "P5\n%d %d\n255\n", this->width, this->height);
+    fwrite(buffer, 1, size, file);
+    fclose(file);
+#endif
+
     for (int j=0; j<height; j++)
     {
       for (int i=0; i<width; i++)
@@ -296,6 +306,7 @@ void Framebuffer::update(uint32_t addr, int posx, int posy, int width, int heigh
       }
     }
   }
+
 
   SDL_UpdateTexture(texture, NULL, pixels, this->width * sizeof(Uint32));
 

@@ -118,6 +118,7 @@ extern "C" void *cable_new(const char *config_string, const char *system_config_
     Log *log = new Log();
     Ftdi::FTDIDeviceID id = Ftdi::Olimex;
     if (strcmp(cable_name, "ftdi@digilent") == 0) id = Ftdi::Digilent;
+    if (strcmp(cable_name, "ftdi@generic") == 0) id = Ftdi::Generic;
     Adv_dbg_itf *adu = new Adv_dbg_itf(system_config, config, log, new Ftdi(system_config, log, id));
     return (void *)static_cast<Cable *>(adu);
 #else

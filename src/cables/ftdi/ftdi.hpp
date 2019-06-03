@@ -53,6 +53,7 @@ class Ftdi : public Cable {
     enum FTDIDeviceID {
       Olimex,
       Digilent,
+      Generic,
     };
 
     Ftdi(js::config *config, Log* log, FTDIDeviceID id);
@@ -71,6 +72,7 @@ class Ftdi : public Cable {
 
 
     bool chip_reset(bool active, int duration);
+    bool chip_config(uint32_t config);
 
   private:
     struct device_desc {
@@ -105,6 +107,7 @@ class Ftdi : public Cable {
     bool dev_try_open(unsigned int vid, unsigned int pid, unsigned int index) const;
 
     std::map<FTDIDeviceID, std::list<struct device_desc>> m_descriptors;
+    std::vector<int> user_gpios;
 
     Log* log;
     FTDIDeviceID m_id;
@@ -112,6 +115,8 @@ class Ftdi : public Cable {
     struct ftdi_context m_ftdic;
     unsigned int bits_value;
     unsigned int bits_direction;
+    int system_reset_gpio = -1;
+    int jtag_reset_gpio = -1;
 
 };
 
