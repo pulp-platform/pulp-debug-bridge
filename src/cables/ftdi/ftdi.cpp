@@ -66,16 +66,16 @@ Ftdi::Ftdi(js::config *config, Log* log, FTDIDeviceID id) : Cable(config), log (
 {
   if (config->get("**/vendor") != NULL && config->get("**/product") != NULL)
   {
-    m_descriptors[Generic].push_back((struct device_desc){(unsigned int)config->get_child_int("**/vendor"), (unsigned int)config->get_child_int("**/product")});
+    m_descriptors.push_back((struct device_desc){(unsigned int)config->get_child_int("**/vendor"), (unsigned int)config->get_child_int("**/product")});
   }
   else
   {
     // add all our known devices to the map
-    m_descriptors[Olimex].push_back((struct device_desc){0x15ba, 0x002a});
-    m_descriptors[Olimex].push_back((struct device_desc){0x15ba, 0x002b});
+    m_descriptors.push_back((struct device_desc){0x15ba, 0x002a});
+    m_descriptors.push_back((struct device_desc){0x15ba, 0x002b});
 
-    m_descriptors[Digilent].push_back((struct device_desc){0x0403, 0x6010}); // ftdi2232 Gapuino
-    m_descriptors[Digilent].push_back((struct device_desc){0x1d6b, 0x0002}); // ftdi2232 Gapuino
+    m_descriptors.push_back((struct device_desc){0x0403, 0x6010}); // ftdi2232 Gapuino
+    m_descriptors.push_back((struct device_desc){0x1d6b, 0x0002}); // ftdi2232 Gapuino
   }
 }
 
@@ -92,11 +92,12 @@ bool
 Ftdi::connect(js::config *config)
 {
   char buf[256];
-  std::list<struct device_desc> dev_desc = m_descriptors[m_id];
+  std::list<struct device_desc> dev_desc = m_descriptors;
   int error;
   bool result;
   int err;
   const char *description = NULL;
+  js::config *user_gpios = config->get("user_gpios");
 
   if (config && config->get("description") != NULL)
   {
@@ -121,10 +122,15 @@ Ftdi::connect(js::config *config)
 
   if (config->get("bus") != NULL)
   {
+#ifdef FTDI_1_4
     if (ftdi_usb_open_bus_addr(&m_ftdic, config->get_child_int("**/bus"), config->get_child_int("**/device")))
     {
       error = 1;
     }
+#else
+    log->error("Specifying device through USB address is only supported with at least version 1.4 of libftdi\n");
+    goto fail;
+#endif
   }
   else
   {
@@ -199,86 +205,42 @@ Ftdi::connect(js::config *config)
   // Setup layout for different devices
 
   int buf_len;
-  if (m_id == Olimex)
+  this->reverse_reset = config->get_child_bool("reverse_reset");
+  bits_value = 0;
+  bits_direction = 0x1b;
+
+  if (user_gpios != NULL)
   {
-    bits_value = 0x1 << 8;
-    set_bit_direction(8, 1);
-    set_bit_direction(9, 1);
-
-    buf[0] = SET_BITS_LOW;  // Set value & direction of ADBUS lines
-    buf[1] = 0x00;          // values
-    buf[2] = 0x1b;          // direction (1 == output)
-    //buf[3] = 0x8a;   // Activate this command to disabled the default divider by 5, otherwise by default we can just go up to 6MHz instead of 30MHz
-    buf[3] = TCK_DIVISOR;
-    buf[4] = 0x02;         // The divisor has been put to 2 as is not reliable on silicon with less
-    // than that
-    buf[5] = 0x00;
-    buf[6] = SEND_IMMEDIATE;
-
-    buf_len = 7;
-  }
-  else if (m_id == Digilent)
-  {
-    bits_value = 0x7 << 4;
-    bits_direction = 0x7b;
-
-    buf[0] = SET_BITS_LOW;  // Set value & direction of ADBUS lines
-    buf[1] = 0x70;          // values                   0111 0000
-    buf[2] = 0x7b;          // direction (1 == output)  0111 1011
-    //buf[3] = 0x8a;
-    buf[3] = TCK_DIVISOR;
-    // THe divisor has been put to 2 as is not reliable on gap board with less
-    // than that
-    buf[4] = 0x02;
-    buf[5] = 0x00;
-    buf[6] = SEND_IMMEDIATE;
-
-    buf_len = 7;
-  }
-  else if (m_id == Generic)
-  {
-    bits_value = 0;
-    bits_direction = 0x0b;
-
-    js::config *user_gpios = config->get("user_gpios");
-    if (user_gpios != NULL)
+    for (auto x:user_gpios->get_elems())
     {
-      for (auto x:user_gpios->get_elems())
-      {
-        this->user_gpios.push_back(x->get_int());
-        set_bit_direction(x->get_int(), 1);
-      }
+      this->user_gpios.push_back(x->get_int());
+      set_bit_direction(x->get_int(), 1);
     }
-
-    if (config->get("system_reset_gpio") != NULL)
-    {
-      this->system_reset_gpio = config->get_int("system_reset_gpio");
-      set_bit_direction(this->system_reset_gpio, 1);
-    }
-
-    if (config->get("jtag_reset_gpio") != NULL)
-    {
-      this->jtag_reset_gpio = config->get_int("jtag_reset_gpio");
-      set_bit_direction(this->jtag_reset_gpio, 1);
-    }
-
-    buf[0] = SET_BITS_LOW;  // Set value & direction of ADBUS lines
-    buf[1] = 0x00;          // values
-    buf[2] = 0x0b;          // direction (1 == output)
-    //buf[3] = 0x8a;   // Activate this command to disabled the default divider by 5, otherwise by default we can just go up to 6MHz instead of 30MHz
-    buf[3] = TCK_DIVISOR;
-    buf[4] = 0x02;         // The divisor has been put to 2 as is not reliable on silicon with less
-    // than that
-    buf[5] = 0x00;
-    buf[6] = SEND_IMMEDIATE;
-
-    buf_len = 7;
   }
-  else
+
+  if (config->get("system_reset_gpio") != NULL)
   {
-    log->error("ft2232: Unsupported device\n");
-    goto fail;
+    this->system_reset_gpio = config->get_int("system_reset_gpio");
+    set_bit_direction(this->system_reset_gpio, 1);
   }
+
+  if (config->get("jtag_reset_gpio") != NULL)
+  {
+    this->jtag_reset_gpio = config->get_int("jtag_reset_gpio");
+    set_bit_direction(this->jtag_reset_gpio, 1);
+  }
+
+  buf[0] = SET_BITS_LOW;  // Set value & direction of ADBUS lines
+  buf[1] = 0x00;          // values
+  buf[2] = 0x1b;          // direction (1 == output)
+  //buf[3] = 0x8a;   // Activate this command to disabled the default divider by 5, otherwise by default we can just go up to 6MHz instead of 30MHz
+  buf[3] = TCK_DIVISOR;
+  buf[4] = 0x02;         // The divisor has been put to 2 as is not reliable on silicon with less
+  // than that
+  buf[5] = 0x00;
+  buf[6] = SEND_IMMEDIATE;
+
+  buf_len = 7;
 
   if(ft2232_write(buf, buf_len, 0) != buf_len) {
     log->error("ft2232: Initial write failed\n");
@@ -309,48 +271,19 @@ bool Ftdi::chip_config(uint32_t config)
 
 bool Ftdi::chip_reset(bool active, int duration)
 {
-  if (m_id == Olimex)
+  if (this->system_reset_gpio != -1)
   {
-    std::string chip = this->config->get("**/chip/name")->get_str();
+    if (this->reverse_reset)
+      active = !active;
 
-    if (chip == "vivosoc2" || chip == "vivosoc2_1")
-    {
-      if (active)
-      {
-        char buf[256];
-        buf[0] = SET_BITS_HIGH;
-        buf[1] = ~0x01;
-        buf[2] = 0x3;
-        buf[3] = SET_BITS_HIGH;
-        buf[4] = ~0x02;
-        buf[5] = 0x3;
-        buf[6] = SEND_IMMEDIATE;
+    if (!set_bit_value(this->system_reset_gpio, active))
+      return false;
+  }
 
-        if(ft2232_write(buf, 7, 0) != 7) return false;
-      }
-      return true;
-    }
-    else
-    {
-      // Bit 9 is chip reset and active high.
-      // use set bit val with delay for controllable pulse length
-      return set_bit_value_del(9, active, 1000);
-    }
-  } else if (m_id == Digilent) { // ftdi2232 Gapuino
-    // Bit 4 is chip reset and active high.
-    return set_bit_value(4, !active);
-  } else if (m_id == Generic) {
-
-    if (this->system_reset_gpio != -1)
-      return set_bit_value(this->system_reset_gpio, active);
-
+  if (duration > 0)
     usleep(duration / 1000);
 
-    return false;
-  } else {
-    // not supported
-    return false;
-  }
+  return true;
 }
 
 int
@@ -480,8 +413,8 @@ Ftdi::ft2232_read(char* buf, int len) {
   return recvd < 0 ? -1 : (cpy_len + len);
 }
 
-int
-Ftdi::ft2232_write(char *buf, int len, int recv) {
+int Ftdi::ft2232_write(char *buf, int len, int recv) 
+{
   int xferred = 0;
 
   // this write function will try to buffer write data
@@ -521,8 +454,8 @@ Ftdi::ft2232_write(char *buf, int len, int recv) {
   return xferred < 0 ? -1 : len;
 }
 
-bool
-Ftdi::ft2232_mpsse_open() {
+bool Ftdi::ft2232_mpsse_open()
+{
   char buf[3];
   int ret;
 
@@ -624,8 +557,7 @@ fail:
   return false;
 }
 
-bool
-Ftdi::dev_try_open(unsigned int vid, unsigned int pid, unsigned int index) const
+bool Ftdi::dev_try_open(unsigned int vid, unsigned int pid, unsigned int index) const
 {
   struct ftdi_context ftdic;
   int error;
@@ -644,26 +576,22 @@ Ftdi::dev_try_open(unsigned int vid, unsigned int pid, unsigned int index) const
   return true;
 }
 
-bool
-Ftdi::bit_out(char outbit, bool last)
+bool Ftdi::bit_out(char outbit, bool last)
 {
   return stream_out_internal(&outbit, 1, false, last);
 }
 
-bool
-Ftdi::bit_inout(char* inbit, char outbit, bool last)
+bool Ftdi::bit_inout(char* inbit, char outbit, bool last)
 {
   return stream_inout(inbit, &outbit, 1, last);
 }
 
-bool
-Ftdi::stream_out(char* outstream, unsigned int n_bits, bool last)
+bool Ftdi::stream_out(char* outstream, unsigned int n_bits, bool last)
 {
   return stream_out_internal(outstream, n_bits, false, last);
 }
 
-bool
-Ftdi::stream_out_internal(char* outstream, unsigned int n_bits, bool postread, bool last)
+bool Ftdi::stream_out_internal(char* outstream, unsigned int n_bits, bool postread, bool last)
 {
   unsigned int len_bytes;
   unsigned int len_bits;
@@ -699,8 +627,7 @@ Ftdi::stream_out_internal(char* outstream, unsigned int n_bits, bool postread, b
   return true;
 }
 
-bool
-Ftdi::stream_in(char* instream, unsigned int n_bits, bool last)
+bool Ftdi::stream_in(char* instream, unsigned int n_bits, bool last)
 {
   int len_bytes;
   int len_bits;
@@ -734,8 +661,7 @@ Ftdi::stream_in(char* instream, unsigned int n_bits, bool last)
   return true;
 }
 
-bool
-Ftdi::stream_inout(char* instream, char* outstream, unsigned int n_bits, bool last)
+bool Ftdi::stream_inout(char* instream, char* outstream, unsigned int n_bits, bool last)
 {
   if (outstream)
   {
@@ -763,8 +689,7 @@ Ftdi::stream_inout(char* instream, char* outstream, unsigned int n_bits, bool la
   return true;
 }
 
-int
-Ftdi::ft2232_write_bytes(char *buf, int len, bool postread)
+int Ftdi::ft2232_write_bytes(char *buf, int len, bool postread)
 {
   int cur_command_size;
   int max_command_size;
@@ -818,8 +743,7 @@ Ftdi::ft2232_write_bytes(char *buf, int len, bool postread)
   return recv;
 }
 
-int
-Ftdi::ft2232_write_bits(char *buf, int len, bool postread, bool with_tms)
+int Ftdi::ft2232_write_bits(char *buf, int len, bool postread, bool with_tms)
 {
   int max_command_size;
   int max_chunk_len;
@@ -887,8 +811,7 @@ Ftdi::ft2232_write_bits(char *buf, int len, bool postread, bool with_tms)
   return recv;
 }
 
-int
-Ftdi::ft2232_read_packed_bits(char *buf, int packet_len, int bits_per_packet, int offset)
+int Ftdi::ft2232_read_packed_bits(char *buf, int packet_len, int bits_per_packet, int offset)
 {
   char *mybuf;
   unsigned char dst_mask;
@@ -947,8 +870,7 @@ Ftdi::ft2232_read_packed_bits(char *buf, int packet_len, int bits_per_packet, in
   return 0;
 }
 
-bool
-Ftdi::set_bit_value(int bit, int value)
+bool Ftdi::set_bit_value(int bit, int value)
 {
 
   char buf[4];
@@ -974,8 +896,7 @@ Ftdi::set_bit_value(int bit, int value)
   return true;
 }
 
-bool
-Ftdi::set_bit_value_del(int bit, int value, int del)
+bool Ftdi::set_bit_value_del(int bit, int value, int del)
 {
 
   char buf[4];
@@ -1002,58 +923,15 @@ Ftdi::set_bit_value_del(int bit, int value, int del)
   return true;
 }
 
-bool
-Ftdi::set_bit_direction(int bit, int isout)
+bool Ftdi::set_bit_direction(int bit, int isout)
 {
   bits_direction = (bits_direction & ~(1<<bit)) | (isout << bit);
 }
 
-bool
-Ftdi::jtag_reset(bool active)
+bool Ftdi::jtag_reset(bool active)
 {
-  if (m_id == Olimex) {
-    std::string chip = this->config->get("**/chip/name")->get_str();
-
-    if (chip == "vivosoc2" || chip == "vivosoc2_1")
-    {
-      if (active)
-      {
-        char buf[256];
-        buf[0] = SET_BITS_HIGH;
-        buf[1] = ~0x01;
-        buf[2] = 0x3;
-        buf[3] = SET_BITS_HIGH;
-        buf[4] = ~0x02;
-        buf[5] = 0x3;
-        buf[6] = SEND_IMMEDIATE;
-
-        if(ft2232_write(buf, 7, 0) != 7) return false;
-      }
-      return true;
-    }    
-    else if(chip == "vivosoc3")
-    {
-      // There is no JTAG reset on vivosoc3
-      // also, since this function is called upon connect,
-      // it would make mem access during application run impossible
-      //bool result = set_bit_value(9, active);
-      return true;
-    }
-    else
-    {
-      bool result = set_bit_value(8, !active);
-      return result;
-    }
-  } else if (m_id == Digilent) {
-    bool result = set_bit_value(6, !active);
-    return result;
-  } else if (m_id == Generic) {
-    if (this->jtag_reset_gpio != -1)
-      return set_bit_value(this->jtag_reset_gpio, !active);
-    return false;
-  } else {
-    // not supported
-    return false;
-  }
+  if (this->jtag_reset_gpio != -1)
+    return set_bit_value(this->jtag_reset_gpio, !active);
+  return true;
 }
 

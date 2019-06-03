@@ -106,7 +106,7 @@ class Ftdi : public Cable {
     int ft2232_write(char *buf, int len, int recv);
     bool dev_try_open(unsigned int vid, unsigned int pid, unsigned int index) const;
 
-    std::map<FTDIDeviceID, std::list<struct device_desc>> m_descriptors;
+    std::list<struct device_desc> m_descriptors;
     std::vector<int> user_gpios;
 
     Log* log;
@@ -117,6 +117,7 @@ class Ftdi : public Cable {
     unsigned int bits_direction;
     int system_reset_gpio = -1;
     int jtag_reset_gpio = -1;
+    bool reverse_reset = false;
 
 };
 

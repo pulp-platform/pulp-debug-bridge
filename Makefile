@@ -43,6 +43,11 @@ ifneq '$(FTDI_CFLAGS)$(FTDI_LDFLAGS)' ''
 USE_FTDI=1
 endif
 
+FTDI_1_4=$(shell pkg-config --exists libftdi1 --atleast-version=1.4 || echo FAILED)
+
+ifeq '$(FTDI_1_4)' ''
+FTDI_CFLAGS += -DFTDI_1_4
+endif
 
 
 SDL_CFLAGS = $(shell sdl2-config --cflags)
