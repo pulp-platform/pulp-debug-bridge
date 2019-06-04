@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-/* 
+/*
  * Authors: Germain Haugou, ETH (germain.haugou@iis.ee.ethz.ch)
  */
 
@@ -49,6 +49,7 @@ typedef struct {
     } jtag;
     struct {
       int32_t active;
+      int32_t duration;
     } reset;
     struct {
       int32_t value;
