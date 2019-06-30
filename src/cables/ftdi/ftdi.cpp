@@ -222,16 +222,20 @@ Ftdi::connect(js::config *config)
   {
     this->system_reset_gpio = config->get_int("system_reset_gpio");
     set_bit_direction(this->system_reset_gpio, 1);
+    if (reverse_reset)
+      bits_value |= 1<<this->system_reset_gpio;
   }
 
   if (config->get("jtag_reset_gpio") != NULL)
   {
     this->jtag_reset_gpio = config->get_int("jtag_reset_gpio");
     set_bit_direction(this->jtag_reset_gpio, 1);
+    bits_value |= 1<<this->jtag_reset_gpio;
   }
 
+
   buf[0] = SET_BITS_LOW;  // Set value & direction of ADBUS lines
-  buf[1] = 0x00;          // values
+  buf[1] = bits_value & 0xff;          // values
   buf[2] = 0x1b;          // direction (1 == output)
   //buf[3] = 0x8a;   // Activate this command to disabled the default divider by 5, otherwise by default we can just go up to 6MHz instead of 30MHz
   buf[3] = TCK_DIVISOR;
