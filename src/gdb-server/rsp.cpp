@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-/* 
+/*
  * Authors: Andreas Traber
  *          Martin Croome, GreenWaves Technologies (martin.croome@greenwaves-technologies.com)
  */
@@ -71,7 +71,7 @@ void Rsp::client_connected(const tcp_socket_ptr_t &client)
     // Make sure target is halted
   try {
     halt_target();
-  } catch (CableException e) {
+  } catch (CableException &e) {
     log.user("RSP:cable exception haltimg target\n");
     m_aborted = true;
     stop();
@@ -244,11 +244,11 @@ bool Rsp::Client::try_decode(char * pkt, size_t pkt_len)
 {
   try {
     return decode(pkt, pkt_len);
-  } catch (CableException e) {
+  } catch (CableException &e) {
     log.error("Cable error - %s - terminating connection\n", e.what());
-  } catch (OffCoreAccessException e) {
+  } catch (OffCoreAccessException &e) {
     log.error("Debugger attempted to access an off core - terminating connection\n");
-  } catch (std::exception e) {
+  } catch (std::exception &e) {
     log.error("Unknown exception - %s - terminating connection\n", e.what());
   }
   return false;
@@ -377,7 +377,7 @@ bool Rsp::Client::query(char* data, size_t len)
     for (auto &thread : m_top->target->get_threads())
     {
       ret += snprintf(&reply[ret], REPLY_BUF_LEN - ret, "%u,", thread->get_thread_id()+1);
-    } 
+    }
 
     return send(reply, ret-1);
   }
@@ -711,7 +711,7 @@ bool Rsp::Client::regs_send()
       else
         snprintf(&regs_str[i * 8], 9, "xxxxxxxx");
     }
-  
+
     if (core->actual_pc_read(&pc)) {
       snprintf(&regs_str[32 * 8], 9, "%08x", (unsigned int)htonl(pc));
       return send_str(regs_str);
@@ -739,7 +739,7 @@ bool Rsp::Client::signal(const std::shared_ptr<Target_core> &core)
     int sig = get_signal(core);
     len = snprintf(str, 128, "T%02xthread:%1x;", sig, core->get_thread_id()+1);
   }
-  
+
   return send(str, len);
 }
 
@@ -860,7 +860,7 @@ int64_t Rsp::Client::wait_routine()
   std::shared_ptr<Target_core> stopped_core;
   try {
     stopped_core = m_top->target->check_stopped();
-  } catch (CableException e) {
+  } catch (CableException &e) {
     log.error("cable exception checking stop status %s\n", e.what());
     stop();
     return kEventLoopTimerDone;
@@ -990,7 +990,7 @@ bool Rsp::Client::decode(char* data, size_t len)
       log.error("Unknown packet: starts with %c\n", data[0]);
       break;
   }
-  
+
   return false;
 }
 
@@ -1011,7 +1011,7 @@ bool time_has_expired(const timeval* start, const timeval* max_delay)
 {
   struct timeval now, used;
   ::gettimeofday(&now, NULL);
-  timersub(&now, start, &used);        
+  timersub(&now, start, &used);
   return timercmp(max_delay, &used, <);
 }
 
@@ -1114,7 +1114,7 @@ void Rsp_capability::parse(char * buf, size_t len, Rsp_capabilities * caps)
   // ensure terminated
   len = strnlen(caps_buf, len - (caps_buf - buf));
   caps_buf[len - 1] = 0;
-  
+
   char * cap = strtok (caps_buf, ";");
 
   while (cap != NULL) {

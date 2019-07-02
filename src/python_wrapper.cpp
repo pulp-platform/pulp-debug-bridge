@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-/* 
+/*
  * Authors: Germain Haugou, ETH (germain.haugou@iis.ee.ethz.ch)
  */
 
@@ -94,7 +94,7 @@ extern "C" bool cable_new(const char *config_string, const char *system_config_s
     s_log.error("Unknown cable: %s\n", cable_name);
     return false;
   }
-  
+
   return false;
 }
 
@@ -312,7 +312,7 @@ extern "C" bool gdb_server_open(int socket_port, cmd_cb_t cmd_cb, const char * c
         cmd_cb("__gdb_tgt_hlt", NULL, 0);
     });
     bridge->m_gdb_server->start();
-  } catch (CableException e) {
+  } catch (CableException &e) {
     s_log.error("error initializing GDB server %s\n", e.what());
     bridge->m_gdb_server = nullptr;
     return false;

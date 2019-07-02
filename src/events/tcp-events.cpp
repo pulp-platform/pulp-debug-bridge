@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-/* 
+/*
  * Authors: Martin Croome, GreenWaves Technologies (martin.croome@greenwaves-technologies.com)
  */
 
@@ -57,7 +57,7 @@ bool set_blocking(socket_t fd, bool blocking)
 #endif
 }
 
-Tcp_socket_owner::Tcp_socket_owner(Log *log, EventLoop::SpEventLoop el) 
+Tcp_socket_owner::Tcp_socket_owner(Log *log, EventLoop::SpEventLoop el)
   : log(log), el(el)
 {
   socket_init();
@@ -185,7 +185,7 @@ tcp_socket_ptr_t Tcp_client::connect_blocking(const char * address, int port, in
 
   try {
     connecting_socket = prepare_socket(connecting_socket, address, port, &addr, true);
-  } catch (TcpException ex) {
+  } catch (TcpException &ex) {
     log->error("unable to connect - %s", ex.what());
     return nullptr;
   }
@@ -412,12 +412,12 @@ const char * Tcp_socket::socket_state_str(TcpSocketState state) {
   }
 }
 
-Tcp_socket::Tcp_socket(std::shared_ptr<Tcp_socket_owner> owner, socket_t socket, size_t read_size, size_t write_size) : 
+Tcp_socket::Tcp_socket(std::shared_ptr<Tcp_socket_owner> owner, socket_t socket, size_t read_size, size_t write_size) :
   owner(owner), socket(socket), in_buffer(std::make_shared<CircularCharBuffer>(read_size)),
   out_buffer(std::make_shared<CircularCharBuffer>(write_size)), high(write_size * 90 / 100), low(write_size * 70 / 100)
 {
   this->owner->log->protocol("Tcp_socket created (fd %d)\n", socket);
-  // There are 2 events on each socket. One for events on the socket and a 
+  // There are 2 events on each socket. One for events on the socket and a
   // timer event to separate dispatch of events back to the user.
   // The events are disabled at the start to allow the user to setup callbacks
   // set_events(Readable) should then be called
@@ -664,7 +664,7 @@ bool Tcp_socket::socket_timeout()
   // record current socket events to spot changes
   FileEvents current_socket_events = socket_events;
   // if there is aset callback and writing is enabled by user and there
-  // is space to write 
+  // is space to write
   if ((user_events&Writable) && out_buffer->is_empty()) {
     emit_write(this->shared_from_this(), out_buffer);
     if (state != SocketOpen) return true;
