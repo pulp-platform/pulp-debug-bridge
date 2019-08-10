@@ -87,9 +87,11 @@ class gap_debug_bridge(debug_bridge):
             if self.load_elf(binary=binary):
                 return 1
 
+        with open(binaries[0], 'rb') as file:
+            entry = ELFFile(file).header['e_entry']
         # Be careful to set the new PC only after the code is loaded as the prefetch
         # buffer is immediately fetching instructions and would get wrong instructions
-        self.write(0x1B302000, 4, [0x80, 0x00, 0x00, 0x1c])
+        self.write_32(0x1B302000, entry)
 
         self.start_cores = True
 
