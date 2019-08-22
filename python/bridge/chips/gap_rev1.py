@@ -32,40 +32,68 @@ CONFREG_BOOT_WAIT = 1
 CONFREG_PGM_LOADED = 1
 CONFREG_INIT = 0
 
-INFO_FUSE_OFFSET = 0
-INFO2_FUSE_OFFSET = 1
-AES_KEY_FUSE_OFFSET = 2
-AES_IV_FUSE_OFFSET = 18
-WAIT_XTAL_DELTA_FUSE_OFFSET = 26
-WAIT_XTAL_MIN_FUSE_OFFSET = 28
-WAIT_XTAL_MAX_FUSE_OFFSET = 29
-HYPER_RDS_DELAY_FUSE_OFFSET = 30
-FLL_FREQ_FUSE_OFFSET = 31
-FLL_TOLERANCE_FUSE_OFFSET = 32
-FLL_ASSERT_CYCLES_FUSE_OFFSET = 33
-USER_FUSE_OFFSET = 48
-USER_FUSE_SIZE = 80
+INFO_FUSE_OFFSET                = 0
+INFO2_FUSE_OFFSET               = 1
+AES_KEY_FUSE_OFFSET             = 2
+AES_IV_FUSE_OFFSET              = 18
+WAIT_XTAL_DELTA_FUSE_OFFSET     = 26
+WAIT_XTAL_MIN_FUSE_OFFSET       = 28
+WAIT_XTAL_MAX_FUSE_OFFSET       = 29
+HYPER_RDS_DELAY_FUSE_OFFSET     = 30
+FLL_FREQ_FUSE_OFFSET            = 31
+FLL_TOLERANCE_FUSE_OFFSET       = 32
+FLL_ASSERT_CYCLES_FUSE_OFFSET   = 33
+PERIPH_DIV_FUSE_OFFSET          = 34
+REF_CLK_WAIT_CYCLES_FUSE_OFFSET = 35
+INFO3_FUSE_OFFSET               = 37
+INFO4_FUSE_OFFSET               = 38
+INFO5_FUSE_OFFSET               = 39
+INFO6_FUSE_OFFSET               = 40
+FLASH_CMD_FUSE_OFFSET           = 41
+FLASH_CMD2_FUSE_OFFSET          = 42
+FLASH_CMD3_FUSE_OFFSET          = 43
+FLASH_CMD4_FUSE_OFFSET          = 44
+FLASH_WAIT_FUSE_OFFSET          = 45
+HYPERCHIP_SIZE_FUSE_OFFSET      = 46
+I2C_DIV_FUSE_OFFSET             = 47
+I2C_CS_FUSE_OFFSET              = 49
+FLASH_RESET_WAIT_FUSE_OFFSET    = 50
+HYPER_LATENCY_FUSE_OFFSET       = 51
+REF_CLK_WAIT_CYCLES_DEEP_SLEEP_FUSE_OFFSET = 52
+FLASH_ID_FUSE_OFFSET            = 54
+
+USER_FUSE_OFFSET                = 56
+USER_FUSE_SIZE                  = 64
 
 FUSES_ORD = [
     "INFO",
-    "PLT",
-    "BOOT",
-    "ENCRYPTED",
-    "WAIT_XTAL",
     "INFO2",
-    "FLL_FREQ_SET",
-    "FLL_CONF",
-    "FLL_BYPASS_LOCK",
-    "SPIM_CLKDIV",
-    "AES_KEY",
-    "AES_IV",
-    "WAIT_XTAL_DELTA",
-    "WAIT_XTAL_MAX",
+    "KEY",
+    "IV",
     "WAIT_XTAL_MIN",
+    "WAIT_XTAL_MAX",
     "HYPER_RDS_DELAY",
     "FLL_FREQ",
-    "FLL_TOLERANCE",
+    "FLL_LOCK_TOLERANCE",
     "FLL_ASSERT_CYCLES",
+    "PERIPH_DIV",
+    "REF_CLK_WAIT_CYCLES",
+    "INFO3",
+    "INFO4",
+    "INFO5",
+    "INFO6",
+    "FLASH_CMD",
+    "FLASH_CMD2",
+    "FLASH_CMD3",
+    "FLASH_CMD4",
+    "FLASH_WAIT",
+    "HYPERCHIP_SIZE",
+    "I2C_DIV",
+    "I2C_CS",
+    "FLASH_RESET_WAIT",
+    "HYPER_LATENCY",
+    "REF_CLK_WAIT_CYCLES_DEEP_SLEEP",
+    "FLASH_ID"
 ]
 
 FUSES = {
@@ -73,79 +101,24 @@ FUSES = {
         "fuse_offset": INFO_FUSE_OFFSET * 8,
         "bit_len": 8,
         "format": "binary",
-        "writable": False
-    },
-    "PLT": {
-        "fuse_offset": (INFO_FUSE_OFFSET * 8) + 5, # Offset is from bit 7 in all cases
-        "bit_len": 3,
-        "format": "binary",
-        "writable": False
-    },
-    "BOOT": {
-        "fuse_offset": (INFO_FUSE_OFFSET * 8) + 2,
-        "bit_len": 3,
-        "format": "binary",
-        "writable": True,
-        "danger": True
-    },
-    "ENCRYPTED": {
-        "fuse_offset": (INFO_FUSE_OFFSET * 8) + 1,
-        "bit_len": 1,
-        "format": "binary",
-        "writable": True,
-        "danger": True
-    },
-    "WAIT_XTAL": {
-        "fuse_offset": (INFO_FUSE_OFFSET * 8) + 0,
-        "bit_len": 1,
-        "format": "binary",
-        "writable": True,
-        "danger": True
+        "writable": True
     },
     "INFO2": {
         "fuse_offset": INFO2_FUSE_OFFSET * 8,
         "bit_len": 8,
         "format": "binary",
-        "writable": False
+        "writable": True
     },
-    "FLL_FREQ_SET": {
-        "fuse_offset": (INFO2_FUSE_OFFSET * 8) + 7,
-        "bit_len": 1,
-        "format": "binary",
-        "writable": True,
-        "danger": True
-    },
-    "FLL_CONF": {
-        "fuse_offset": (INFO2_FUSE_OFFSET * 8) + 6,
-        "bit_len": 1,
-        "format": "binary",
-        "writable": True,
-        "danger": True
-    },
-    "FLL_BYPASS_LOCK": {
-        "fuse_offset": (INFO2_FUSE_OFFSET * 8) + 5,
-        "bit_len": 1,
-        "format": "binary",
-        "writable": True,
-        "danger": True
-    },
-    "SPIM_CLKDIV": {
-        "fuse_offset": (INFO2_FUSE_OFFSET * 8) + 4,
-        "bit_len": 1,
-        "format": "binary",
-        "writable": True,
-        "danger": True
-    },
-    "AES_KEY": {
+    "KEY": {
         "fuse_offset": AES_KEY_FUSE_OFFSET * 8,
-        "bit_len": 16 * 8,
+        "bit_len": 4*4*8,
         "format": "hex",
         "writable": True,
         "danger": True
     },
-    "AES_IV": {
+    "IV": {
         "fuse_offset": AES_IV_FUSE_OFFSET * 8,
-        "bit_len": 8 * 8,
+        "bit_len": 2*4*8,
         "format": "hex",
         "writable": True,
         "danger": True
@@ -196,6 +169,66 @@ FUSES = {
         "fuse_offset": FLL_ASSERT_CYCLES_FUSE_OFFSET * 8,
         "bit_len": 1 * 8,
         "format": "hex",
+        "writable": True,
+        "danger": True
+    },
+    "PERIPH_DIV": {
+        "fuse_offset": PERIPH_DIV_FUSE_OFFSET*8,
+        "bit_len": 3,
+        "format": "binary",
+        "writable": True
+    },
+    "BOOT": {
+        "fuse_offset": (INFO_FUSE_OFFSET * 8) + 2,
+        "bit_len": 3,
+        "format": "binary",
+        "writable": True,
+        "danger": True
+    },
+    "ENCRYPTED": {
+        "fuse_offset": (INFO_FUSE_OFFSET * 8) + 1,
+        "bit_len": 1,
+        "format": "binary",
+        "writable": True,
+        "danger": True
+    },
+    "WAIT_XTAL": {
+        "fuse_offset": (INFO_FUSE_OFFSET * 8) + 0,
+        "bit_len": 1,
+        "format": "binary",
+        "writable": True,
+        "danger": True
+    },
+    "INFO2": {
+        "fuse_offset": INFO2_FUSE_OFFSET * 8,
+        "bit_len": 8, "format": "binary",
+        "writable": True
+    },
+    "FLL_FREQ_SET": {
+        "fuse_offset": (INFO2_FUSE_OFFSET * 8) + 7,
+        "bit_len": 1,
+        "format": "binary",
+        "writable": True,
+        "danger": True
+    },
+    "FLL_CONF": {
+        "fuse_offset": (INFO2_FUSE_OFFSET * 8) + 6,
+        "bit_len": 1,
+        "format": "binary",
+        "writable": True,
+        "danger": True
+    },
+    "FLL_BYPASS_LOCK": {
+        "fuse_offset": (INFO2_FUSE_OFFSET * 8) + 5,
+        "bit_len": 1,
+        "format": "binary",
+        "writable": True,
+        "danger": True
+    },
+    "SPIM_CLKDIV": {
+        "fuse_offset": (INFO2_FUSE_OFFSET * 8) + 4,
+        "bit_len": 1,
+        "format": "binary",
         "writable": True,
         "danger": True
     },

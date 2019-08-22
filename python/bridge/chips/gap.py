@@ -469,7 +469,7 @@ class gap_debug_bridge(debug_bridge):
             do_write = False
         else:
             do_write = True
-            write_buffer = buffer           
+            write_buffer = buffer
 
         class state:
             state = "init"
