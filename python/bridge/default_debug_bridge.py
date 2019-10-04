@@ -178,7 +178,7 @@ class debug_bridge(object):
         self.module.bridge_reqloop_open.restype = ctypes.c_void_p
         
         self.module.bridge_reqloop_buffer_alloc.argtypes = [ctypes.c_void_p, ctypes.c_int]
-        self.module.bridge_reqloop_open.restype = ctypes.c_uint
+        self.module.bridge_reqloop_buffer_alloc.restype = ctypes.c_uint
         
         self.module.bridge_reqloop_buffer_free.argtypes = [ctypes.c_void_p, ctypes.c_uint, ctypes.c_int]
         

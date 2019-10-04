@@ -22,7 +22,7 @@
 import bridge.debug_bridge as db
 import argparse
 import code
-import imp
+from importlib.machinery import SourceFileLoader
 import os.path
 import sys
 import pulp_config as plpconf
@@ -241,7 +241,7 @@ def script(bridge):
         else:
             script_entry, script_name = script.split('@')
 
-        module = imp.load_source("user_script", script_name)
+        module = SourceFileLoader("user_script", script_name).load_module()
 
         entry = getattr(module, script_entry)
         if entry(bridge):
