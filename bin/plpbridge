@@ -358,6 +358,12 @@ if args.help:
 config_path = args.config
 
 
+if args.chip is None:
+    config_path = os.path.join(
+        os.path.dirname(os.path.dirname(sys.argv[0])),
+        'configs', 'config', '%s.json' % config_path
+    )
+
 if args.chip is not None:
     config_path = os.path.join(
         os.path.dirname(os.path.dirname(sys.argv[0])),
