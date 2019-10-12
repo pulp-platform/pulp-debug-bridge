@@ -289,6 +289,7 @@ parser.add_argument('command', metavar='CMD', type=str, nargs='*',
 
 parser.add_argument("--script", dest="scripts", default=[], action="append", help="Specify a script to be executed with the script command")
 parser.add_argument("--config", dest="config", default=None, help="Specify the system configuration")
+parser.add_argument("--config-path", dest="config_path", default=None, help="Specify the system configuration")
 parser.add_argument("--ipython", dest="ipython", action="store_true", help="Enter ipython shell")
 parser.add_argument("--shell", dest="shell", action="store_true", help="Enter python shell")
 parser.add_argument("--port", dest="port", type=int, default=None, help="Specify port for proxy mode")
@@ -355,16 +356,17 @@ if args.help:
 
 
 
-config_path = args.config
+config_path = args.config_path
+config_name = args.config
 
 
-if args.chip is None:
+if config_name is not None:
     config_path = os.path.join(
         os.path.dirname(os.path.dirname(sys.argv[0])),
-        'configs', 'config', '%s.json' % config_path
+        'configs', 'config', '%s.json' % config_name
     )
 
-if args.chip is not None:
+elif args.chip is not None:
     config_path = os.path.join(
         os.path.dirname(os.path.dirname(sys.argv[0])),
         'configs', 'chips', args.chip, '%s.json' % args.chip

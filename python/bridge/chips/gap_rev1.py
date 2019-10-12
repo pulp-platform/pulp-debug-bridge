@@ -40,11 +40,12 @@ class gap_debug_bridge(debug_bridge):
         self.boot_mode = None
         self.stopped = False
 
-    def reset(self):
+    def reset(self, jtag_boot=True):
         self.get_cable().jtag_reset(True)
         self.get_cable().jtag_reset(False)
         self.get_cable().chip_reset(True)
-        self.get_cable().jtag_set_reg(JTAG_SOC_CONFREG, JTAG_SOC_CONFREG_WIDTH, (BOOT_MODE_JTAG << 1) | 1)
+        if jtag_boot:
+            self.get_cable().jtag_set_reg(JTAG_SOC_CONFREG, JTAG_SOC_CONFREG_WIDTH, (BOOT_MODE_JTAG << 1) | 1)
         self.get_cable().chip_reset(False)
         return 0
 
