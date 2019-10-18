@@ -18,6 +18,7 @@
 
 from bridge.default_debug_bridge import *
 import bridge.chips.gap as gap
+import bridge.chips.gap_rev1 as gap_rev1
 import bridge.chips.wolfe as wolfe
 import bridge.chips.vega as vega
 import bridge.chips.fulmine as fulmine
@@ -33,6 +34,8 @@ def get_bridge(config, binaries=[], verbose=0):
 
     if chip == 'gap':
         bridge_class = gap.gap_debug_bridge
+    elif chip == 'gap_rev1':
+        bridge_class = gap_rev1.gap_debug_bridge
     elif chip == 'fulmine' or chip == 'vivosoc2' or chip == 'vivosoc2_1':
         bridge_class = fulmine.fulmine_debug_bridge
     elif chip == 'wolfe':
